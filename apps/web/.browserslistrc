@@ -1,0 +1,7 @@
+# Supported browsers (NFR-10): last two majors of the desktop engines, iOS Safari 17+, Android Chrome.
+last 2 Chrome major versions
+last 2 Edge major versions
+last 2 Firefox major versions
+last 2 Safari major versions
+iOS >= 17
+last 2 ChromeAndroid versions
