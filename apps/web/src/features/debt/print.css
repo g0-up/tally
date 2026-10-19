@@ -1,0 +1,32 @@
+/* Printed reconciliation statement: one A4 sheet outside the app shell. The toolbar is
+ * screen-only. */
+@page stp-a4 { size: A4; margin: 12mm; }
+
+.stp-page { min-height: 100vh; background: var(--surface-100); padding: 24px 16px 60px; }
+.stp-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; max-width: 210mm; margin: 0 auto 16px; }
+.stp-bar .sp { flex: 1; }
+.stp-page > .callout, .stp-page > .card { max-width: 210mm; margin: 0 auto; }
+
+.stp-doc { page: stp-a4; background: var(--surface-0); color: var(--gray-800); width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm; box-shadow: var(--shadow-card); font-size: 12px; line-height: 1.45; }
+.stp-seller { display: grid; gap: 1px; margin-bottom: 10px; }
+.stp-seller b { font-size: 14px; color: var(--navy-900); text-transform: uppercase; }
+.stp-title { font-family: var(--font-display); font-size: 18px; text-align: center; text-transform: uppercase; color: var(--navy-900); margin: 8px 0 2px; }
+.stp-no { margin: 0; text-align: center; color: var(--gray-600); }
+.stp-party { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; margin: 12px 0; }
+.stp-party dt { color: var(--gray-600); }
+.stp-party dd { margin: 0; }
+.stp-lines { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.stp-lines th { text-align: left; font-weight: 600; color: var(--navy-900); border-bottom: 1px solid var(--gray-800); padding: 3px 4px; }
+.stp-lines td { border-bottom: 1px dotted var(--gray-300); padding: 3px 4px; vertical-align: top; }
+.stp-lines .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stp-lines tfoot td { font-weight: 700; color: var(--navy-900); border-top: 1px solid var(--gray-800); border-bottom: 0; }
+.stp-sign { display: grid; grid-template-columns: 1fr 1fr; text-align: center; margin-top: 24px; gap: 16px; }
+.stp-sign span { display: block; color: var(--gray-600); font-size: 11px; }
+.stp-foot { margin-top: 40px; font-size: 10px; color: var(--gray-500); text-align: center; }
+
+@media print {
+  .stp-page { min-height: 0; background: none; padding: 0; }
+  .stp-bar { display: none; }
+  .stp-doc { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+  .stp-lines tr { break-inside: avoid; }
+}
