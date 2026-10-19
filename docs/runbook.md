@@ -354,6 +354,21 @@ make db-backup STACK=prod        # ad-hoc backup
 make prod-down                   # stop the stack (volume tally-prod_pgdata stays)
 ```
 
+**Web-only redeploy.** A front-end change ships without restarting api, worker or postgres. Tag the running
+image first so it can be restored, then rebuild and recreate only `web`. Add
+`-f infra/docker-compose.backup.yml` only when the stack runs the walg sidecar; it fails to interpolate
+while the `WALG_S3_*` values are unset.
+
+```sh
+docker tag "$(docker inspect -f '{{.Image}}' tally-prod-web-1)" tally-web:rollback-$(date +%Y%m%d%H%M)
+VERSION=$(git describe --tags --always --dirty) docker compose -f infra/docker-compose.prod.yml \
+  -f infra/docker-compose.homelab.yml --env-file infra/.env up -d --build --no-deps web
+docker compose -p tally-prod ps web       # healthy; then reload a tenant host and check the new asset hash
+```
+
+Rollback: `docker tag tally-web:rollback-<stamp> tally-web:<VERSION>` and run the same `up` command
+without `--build`.
+
 Volumes and projects are named per compose project (`tally` for dev, `tally-prod` for production), so
 removing a Tally project never touches another stack's volumes. Always address a project explicitly
 (`docker compose -p tally-prod ...` or the Make targets) instead of relying on the current directory.
