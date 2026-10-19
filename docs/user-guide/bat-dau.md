@@ -25,26 +25,34 @@
 
 ## Thiết lập cửa hàng (bắt buộc trước khi dùng)
 
-Lần đầu vào cửa hàng, màn hình **Thiết lập cửa hàng** hiện danh sách bước. Bước bắt buộc phải xong thì mới dùng được cửa hàng.
-Bước ghi **Có thể bỏ qua** thì không chặn việc sử dụng.
+Lần đầu vào cửa hàng, màn hình **Thiết lập cửa hàng** mở ra, ngoài khung app. Bên trái là danh sách 7 bước, chia làm ba
+nhóm: **Cửa hàng**, **Số dư đầu kỳ** và **Chạy thử**. Bên phải là nội dung của bước đang mở. Trên điện thoại, danh sách bước
+thu gọn thành một nút ghi bước hiện tại, bấm để mở ra.
+
+Bước ghi **Bắt buộc** phải xong thì mới dùng được cửa hàng. Trong lúc đó, ngoài màn này bạn chỉ mở được **Danh mục**.
+Bước ghi **Tùy chọn** có nút **Bỏ qua bước này**. Bạn chuyển bước bằng danh sách bên trái, hoặc bằng **← Bước trước** và
+**Bước tiếp →**.
 
 | Bước | Việc cần làm |
 |---|---|
-| Thông tin cửa hàng | Tên pháp lý, tên hiển thị, mã số thuế, địa chỉ, số điện thoại và **Ngày chốt số dư đầu kỳ** (không được sau hôm nay). |
-| Danh mục hàng hóa | Thêm từng mặt hàng với đơn vị tính, giá nhập và giá bán. Hàng phải có trước khi nhập tồn đầu kỳ. |
-| Tồn kho đầu kỳ | Mỗi dòng gồm hàng, màu, số lượng và giá vốn. Hàng theo lô thì cần số lô, hàng có hạn thì cần hạn dùng. Bấm **Ghi tồn kho đầu kỳ**. |
-| Công nợ đầu kỳ | Chọn **Khách hàng nợ cửa hàng** hoặc **Cửa hàng nợ nhà cung cấp**, nhập số tiền và hạn thanh toán, rồi bấm **Ghi công nợ đầu kỳ**. |
-| Tiền đầu kỳ | Nhập số dư của từng quỹ (**Tiền mặt**, **Ngân hàng**) cuối ngày chốt, rồi bấm **Lưu số dư**. |
-| Bán đơn đầu tiên | Bấm **Mở POS bán hàng** và bán thử một đơn. Bước này tự xong khi hóa đơn đầu tiên được ghi sổ. |
-| Xác nhận số dư đầu kỳ | Kiểm tra bảng tổng hợp (tồn kho theo màu, phải thu, phải trả, ứng trước, tổng tiền quỹ). Tích ô đồng ý, bấm **Xác nhận số dư đầu kỳ** rồi nhập lại mật khẩu. |
+| 1. Thông tin cửa hàng | Tên pháp lý, tên hiển thị, mã số thuế, số điện thoại, địa chỉ và **Ngày chốt số dư đầu kỳ** (không được sau hôm nay). Bấm **Lưu và tiếp tục**. Các bước 3 đến 6 chỉ mở khi đã có ngày chốt. |
+| 2. Danh mục hàng hóa (tùy chọn) | Bấm **+ Thêm hàng hóa** để thêm các mặt hàng chính với đơn vị tính, giá nhập và giá bán, rồi bấm **Xong, sang tồn kho**. Danh mục đầy đủ làm sau ở **Danh mục**. |
+| 3. Tồn kho đầu kỳ | Mỗi dòng gồm hàng, màu, số lượng và giá vốn. Hàng theo lô thì cần số lô, hàng có hạn thì cần hạn dùng. Bấm **Ghi tồn kho đầu kỳ**. Nếu kho đang trống, bấm **Không có tồn kho đầu kỳ** rồi xác nhận. |
+| 4. Công nợ đầu kỳ | Chọn **Khách hàng nợ cửa hàng** hoặc **Cửa hàng nợ nhà cung cấp**, nhập số tiền và hạn thanh toán, rồi bấm **Ghi công nợ đầu kỳ**. Mỗi khoản ghi một lần. Nếu không có khoản nào, bấm **Không có công nợ đầu kỳ** rồi xác nhận. |
+| 5. Tiền đầu kỳ | Nhập số dư cuối ngày chốt của từng quỹ (tiền mặt, ngân hàng). Quỹ chưa có tiền thì nhập 0. Bấm **Lưu số dư các quỹ** để lưu tất cả cùng lúc. |
+| 6. Xác nhận và khóa số dư | Kiểm tra bảng tổng hợp: ngày chốt, giá trị tồn kho, khách nợ (phải thu), nợ nhà cung cấp (phải trả), từng quỹ, tổng tiền các quỹ và tồn kho theo màu. Tích ô đồng ý rồi bấm **Xác nhận số dư đầu kỳ**. Nếu bạn đăng nhập đã lâu, hệ thống hỏi lại mật khẩu. |
+| 7. Bán đơn đầu tiên (tùy chọn) | Mở sau khi xác nhận số dư. Bấm **Mở POS bán hàng** và bán thử một đơn. Bước này tự xong khi hóa đơn đầu tiên được ghi sổ. |
 
 Sau khi xác nhận số dư đầu kỳ:
 
 - Sổ sách bị **khóa đến hết ngày chốt**. Không ghi hay sửa được chứng từ nào có ngày từ ngày chốt trở về trước.
-- Ngày chốt và các số dư đầu kỳ **không đổi được nữa**.
+- Ngày chốt và các số dư đầu kỳ **không đổi được nữa**. Sai lệch phát hiện sau đó thì xử lý bằng chứng từ điều chỉnh.
+- POS và các màn bán hàng được mở. Màn hình chuyển sang bước **Bán đơn đầu tiên** và hiện thông báo **Cửa hàng đã sẵn sàng bán**.
+  Bấm **Vào cửa hàng** để vào màn chính.
 
-Bạn nên kiểm tra kỹ trước khi xác nhận. Có thể đánh dấu từng bước bằng **Đánh dấu xong** hoặc **Bỏ qua**.
-Khi các bước bắt buộc đã xong, bấm **Vào cửa hàng**.
+Bạn nên kiểm tra kỹ trước khi xác nhận.
+
+Sau này, bạn xem lại tiến độ các bước ở **Thiết lập › Khởi tạo cửa hàng**. Bấm **Mở màn onboarding** để quay lại màn thiết lập.
 
 ## Màn hình và thao tác dùng chung
 

@@ -2,7 +2,8 @@
 
 [Về mục lục](README.md)
 
-Menu **Thiết lập** có ba màn hình: **Tài khoản & bảo mật**, **Thuê bao** và **Nhật ký**.
+Menu **Thiết lập** có bốn màn hình: **Tài khoản & bảo mật**, **Khởi tạo cửa hàng**
+([xem tiến độ thiết lập](bat-dau.md#thiết-lập-cửa-hàng-bắt-buộc-trước-khi-dùng)), **Thuê bao** và **Nhật ký**.
 
 Tally dành cho cửa hàng một người: **chỉ có tài khoản chủ cửa hàng**, toàn quyền mọi màn hình.
 
