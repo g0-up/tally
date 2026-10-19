@@ -22,18 +22,21 @@ test.afterEach(() => {
 
 const heading = (page: Page) => page.getByRole("heading", { level: 1 });
 const step = (page: Page, name: string) => page.getByRole("region", { name });
+const rail = (page: Page) => page.getByRole("navigation", { name: "Các bước thiết lập" });
 
-/** Opens a step from the checklist and returns its screen. */
-async function openStep(page: Page, name: string): Promise<Locator> {
-  await page.getByRole("button", { name: new RegExp(`^(Chưa làm|Đã xong|Bỏ qua)\\s*${name}`) }).click();
+/** The step the screen opened on its own; each finished step hands over to the next. */
+async function expectStep(page: Page, name: string): Promise<Locator> {
   const region = step(page, name);
   await expect(region).toBeVisible();
   return region;
 }
 
-async function expectStatus(region: Locator, status: "Đã xong" | "Bỏ qua"): Promise<void> {
-  // The status pill in the step's header; the step's own buttons are gone once it is not pending.
-  await expect(region.getByText(status, { exact: true })).toBeVisible();
+/** Completes a balance step that has nothing to enter through its "Không có …" confirmation. */
+async function confirmNone(page: Page, region: Locator, what: string): Promise<void> {
+  await region.getByRole("button", { name: `Không có ${what}` }).click();
+  const dialog = page.getByRole("dialog", { name: `Xác nhận không có ${what}?` });
+  await dialog.getByRole("button", { name: `Đúng, không có ${what}` }).click();
+  await expect(page.getByText(`Đã ghi nhận không có ${what}.`)).toBeVisible();
 }
 
 test.describe("new store onboarding @root", () => {
@@ -75,50 +78,48 @@ test.describe("new store onboarding @root", () => {
 
     // Store profile, with the cutoff on yesterday's business date.
     const cutoff = addDays(todayBusinessDate(), -1);
-    const profile = await openStep(page, "Thông tin cửa hàng");
+    const profile = await expectStep(page, "Thông tin cửa hàng");
     await profile.getByLabel(/^Tên pháp lý/).fill("Công ty TNHH Kiểm Thử Thiết Lập");
     await profile.getByLabel(/^Mã số thuế/).fill("0101234567");
-    await profile.getByRole("textbox", { name: "Ngày chốt số dư đầu kỳ" }).fill(fd(cutoff));
-    await profile.getByRole("button", { name: "Lưu và đánh dấu xong" }).click();
-    await expect(page.getByText("Đã lưu thông tin cửa hàng.")).toBeVisible();
-    await expectStatus(profile, "Đã xong");
+    await profile.getByRole("textbox", { name: /^Ngày chốt/ }).fill(fd(cutoff));
+    await profile.getByRole("button", { name: "Lưu và tiếp tục" }).click();
+    await expect(page.getByText(`Đã lưu thông tin cửa hàng. Số dư đầu kỳ tính đến hết ngày ${fd(cutoff)}.`)).toBeVisible();
 
     // The catalog is entered later: skipped.
-    const catalog = await openStep(page, "Danh mục hàng hóa");
-    await catalog.getByRole("button", { name: "Bỏ qua" }).click();
-    await expectStatus(catalog, "Bỏ qua");
+    const catalog = await expectStep(page, "Danh mục hàng hóa");
+    await catalog.getByRole("button", { name: "Bỏ qua bước này" }).click();
+    await expect(rail(page).getByRole("button", { name: /^Bước \d+:\s*Danh mục hàng hóa/ })).toContainText("Đã bỏ qua");
 
     // A new store has no stock and no debts yet.
-    for (const name of ["Tồn kho đầu kỳ", "Công nợ đầu kỳ"]) {
-      const region = await openStep(page, name);
-      await region.getByRole("button", { name: "Đánh dấu xong" }).click();
-      await expectStatus(region, "Đã xong");
-    }
+    await confirmNone(page, await expectStep(page, "Tồn kho đầu kỳ"), "tồn kho đầu kỳ");
+    await confirmNone(page, await expectStep(page, "Công nợ đầu kỳ"), "công nợ đầu kỳ");
 
-    // The cash fund opens with 1.000.000 ₫; saving it completes the step.
-    const cash = await openStep(page, "Tiền đầu kỳ");
-    const amount = cash.getByRole("textbox", { name: "Số dư đầu kỳ Tiền mặt tại cửa hàng" });
-    await amount.fill("1000000");
-    await cash.getByRole("button", { name: "Lưu số dư Tiền mặt tại cửa hàng" }).click();
-    await expect(page.getByText("Đã lưu số dư đầu kỳ của Tiền mặt tại cửa hàng.")).toBeVisible();
-    await expectStatus(cash, "Đã xong");
+    // The cash fund opens with 1.000.000 ₫; every fund is saved at once and the step completes.
+    const cash = await expectStep(page, "Tiền đầu kỳ");
+    await cash.getByRole("textbox", { name: "Tiền mặt tại cửa hàng" }).fill("1000000");
+    await cash.getByRole("button", { name: "Lưu số dư các quỹ" }).click();
+    await expect(page.getByText(/^Đã lưu số dư \d+ quỹ\.$/)).toBeVisible();
 
-    const sale = await openStep(page, "Bán đơn đầu tiên");
-    await expect(sale.getByRole("button", { name: "Đánh dấu xong" })).toHaveCount(0);
-    await sale.getByRole("button", { name: "Bỏ qua" }).click();
-    await expectStatus(sale, "Bỏ qua");
-
-    // The confirmation shows the totals at the cutoff, then asks for the password.
-    const confirm = await openStep(page, "Xác nhận số dư đầu kỳ");
+    // The confirmation shows the totals at the cutoff; the API asks for the password again only when
+    // the sign-in is not recent.
+    const confirm = await expectStep(page, "Xác nhận và khóa số dư");
     await expect(confirm.getByText(fd(cutoff), { exact: true })).toBeVisible();
     await expect(confirm.getByText("Tiền mặt tại cửa hàng", { exact: true }).locator("xpath=following-sibling::*[1]")).toHaveText(/^1\.000\.000\s₫$/);
     await confirm.getByRole("checkbox").check();
     await confirm.getByRole("button", { name: "Xác nhận số dư đầu kỳ" }).click();
-    const reauth = page.getByRole("dialog", { name: "Xác nhận lại mật khẩu" });
-    await reauth.getByLabel("Mật khẩu").fill(password);
-    await reauth.getByRole("button", { name: "Xác nhận" }).click();
+    const reauth = page.getByRole("dialog", { name: "Nhập lại mật khẩu để khóa sổ" });
+    const locked = page.getByText("Đã khóa số dư đầu kỳ. POS đã mở.");
+    await expect(reauth.or(locked)).toBeVisible();
+    if (await reauth.isVisible()) {
+      await reauth.getByLabel("Mật khẩu").fill(password);
+      await reauth.getByRole("button", { name: "Khóa sổ và xác nhận" }).click();
+    }
+    await expect(locked).toBeVisible();
 
+    // The first sale is optional; the store is ready and opens on the dashboard.
+    await expectStep(page, "Bán đơn đầu tiên");
+    await expect(page.getByRole("heading", { name: "Cửa hàng đã sẵn sàng bán" })).toBeVisible();
+    await page.getByRole("button", { name: "Vào cửa hàng" }).click();
     await expect(page).toHaveURL(`${storeOrigin}${HOME_PATH}`);
-    await expect(page.getByText(`Đã xác nhận số dư đầu kỳ. Sổ sách đến hết ngày ${fd(cutoff)} đã khóa.`)).toBeVisible();
   });
 });

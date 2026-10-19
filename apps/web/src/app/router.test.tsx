@@ -14,10 +14,10 @@ async function landsOn(path: string, target: string, kind: "tenant" | "root" | "
 }
 
 describe("store route tree", () => {
-  it("has 40 menu routes with unique paths and view ids", () => {
-    expect(MENU_ROUTES).toHaveLength(40);
-    expect(new Set(MENU_ROUTES.map((r) => r.path)).size).toBe(40);
-    expect(new Set(MENU_ROUTES.map((r) => r.viewId)).size).toBe(40);
+  it("has 41 menu routes with unique paths and view ids", () => {
+    expect(MENU_ROUTES).toHaveLength(41);
+    expect(new Set(MENU_ROUTES.map((r) => r.path)).size).toBe(41);
+    expect(new Set(MENU_ROUTES.map((r) => r.viewId)).size).toBe(41);
   });
 
   it("renders every menu route inside the shell with its page header", async () => {

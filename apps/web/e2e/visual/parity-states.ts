@@ -17,8 +17,11 @@ export interface ParityState {
   path: string;
   /** Environment variable that supplies a document id for the path; the state is skipped without it. */
   requires?: "E2E_SALES_DOC_ID" | "E2E_STATEMENT_ID";
-  /** Prototype view and the JavaScript that opens the same dialog there (prototype actions are global). */
-  prototype?: { viewId: string; open?: string };
+  /**
+   * Prototype view, the JavaScript that opens the same dialog there (prototype actions are global),
+   * and a selector of prototype-only controls the app leaves out on purpose, masked in its capture.
+   */
+  prototype?: { viewId: string; open?: string; mask?: string };
   /** Runs before the first navigation (cookies, network state). */
   setup?: (page: Page) => Promise<void>;
   /** Runs after the screen has rendered (opens a dialog, goes offline). */
@@ -61,13 +64,13 @@ function clickOpens(button: string): (page: Page) => Promise<void> {
   };
 }
 
-const routeStates: ParityState[] = MENU_ROUTES.map((r) => ({
-  id: r.viewId,
-  kind: "route",
-  host: "tenant",
-  path: r.path,
-  prototype: { viewId: r.viewId },
-}));
+/** Prototype-only controls per view: the store-setup page has no "Đặt lại onboarding" reset. */
+const PROTOTYPE_ONLY: Readonly<Record<string, string>> = { "thiet-lap.khoi-tao": '.btn-row:has-text("Đặt lại onboarding")' };
+
+const routeStates: ParityState[] = MENU_ROUTES.map((r) => {
+  const mask = PROTOTYPE_ONLY[r.viewId];
+  return { id: r.viewId, kind: "route", host: "tenant", path: r.path, prototype: { viewId: r.viewId, ...(mask ? { mask } : {}) } };
+});
 
 const dialogStates: ParityState[] = [
   {
@@ -165,7 +168,7 @@ const additionStates: ParityState[] = [
   },
 ];
 
-/** Every state: 40 menu screens, the primary dialogs the prototype draws, and the additions. */
+/** Every state: 41 menu screens, the primary dialogs the prototype draws, and the additions. */
 export const PARITY_STATES: readonly ParityState[] = [...routeStates, ...dialogStates, ...additionStates];
 
 /** Prototype-mapped states, compared with a prototype capture at run time. */

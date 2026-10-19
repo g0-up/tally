@@ -1,14 +1,16 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import { useNavigate } from "react-router";
 import { HOME_PATH } from "../../../app/menu";
 import { RouteLoading, ScreenError } from "../../../app/route-fallbacks";
 import type { OnboardingStepKey } from "../../../shared/api/endpoints";
 import { useOnboarding, useTenant } from "../../../shared/api/platform-queries";
+import { useEscapeLayer } from "../../../shared/hooks/use-hotkeys";
+import { fd } from "../../../shared/lib/format";
 import { Button } from "../../../shared/ui/button";
-import { Callout } from "../../../shared/ui/callout";
 import { PageHeader } from "../../../shared/ui/page-header";
-import { Stepper } from "../../../shared/ui/stepper";
-import { OnboardingChecklist } from "../components/onboarding-checklist";
+import { StepFrame } from "../components/step-card";
+import { StepRail } from "../components/step-rail";
+import { OnboardingContext, type OnboardingScreen } from "../onboarding-context";
 import { CatalogSetupStep } from "../steps/catalog-setup-step";
 import { ConfirmOpeningStep } from "../steps/confirm-opening-step";
 import { FirstSaleStep } from "../steps/first-sale-step";
@@ -16,89 +18,124 @@ import { OpeningCashStep } from "../steps/opening-cash-step";
 import { OpeningDebtStep } from "../steps/opening-debt-step";
 import { OpeningStockStep } from "../steps/opening-stock-step";
 import { StoreProfileStep } from "../steps/store-profile-step";
-import { firstOpenStep, leadingFinished, orderedSteps, requiredStepsDone, stepLabel, type ChecklistStep } from "../steps";
+import { firstOpenStep, orderedSteps, requiredProgress, type ChecklistStep } from "../steps";
 
-export const READY_TEXT = "Các bước bắt buộc đã xong. Cửa hàng sẵn sàng sử dụng.";
-export const ENTER_STORE = "Vào cửa hàng";
+const STEP_BODIES: Record<OnboardingStepKey, ComponentType> = {
+  store_profile: StoreProfileStep,
+  catalog_setup: CatalogSetupStep,
+  opening_stock: OpeningStockStep,
+  opening_debt: OpeningDebtStep,
+  opening_cash: OpeningCashStep,
+  confirm_opening_balances: ConfirmOpeningStep,
+  first_sale: FirstSaleStep,
+};
 
-/** Onboarding: the seven steps as a stepper, the checklist, and the screen of the step opened. */
+/** Prototype `#onboarding`: the required-step meter, the ready banner, the step rail and the open step. */
 export default function OnboardingPage() {
-  const navigate = useNavigate();
   const onboarding = useOnboarding();
-  const tenant = useTenant();
-  const [opened, setOpened] = useState<OnboardingStepKey | null>(null);
   const steps = orderedSteps(onboarding.data?.steps ?? []);
-  const open = (key: OnboardingStepKey) => setOpened(key);
-  // The first open step is chosen once: a posting that completes the step on the server keeps the
-  // owner on it (several debts in a row) until they pick another one.
-  if (opened === null && onboarding.data) setOpened(firstOpenStep(steps));
-
-  const body = () => {
-    if (onboarding.isPending) return <RouteLoading />;
-    if (onboarding.isError) return <ScreenError error={onboarding.error} onRetry={() => void onboarding.refetch()} />;
-    const active = steps.find((s) => s.key === (opened ?? firstOpenStep(steps)));
-    const confirmed = steps.some((s) => s.key === "confirm_opening_balances" && s.status === "completed");
-    return (
-      <>
-        {requiredStepsDone(steps) ? (
-          <Callout tone="ok" role="status">
-            {READY_TEXT}{" "}
-            <Button variant="navy" size="sm" onClick={() => navigate(HOME_PATH)}>
-              {ENTER_STORE}
-            </Button>
-          </Callout>
-        ) : null}
-        <OnboardingChecklist steps={steps} onOpen={open} />
-        {active ? (
-          <StepBody
-            step={active}
-            steps={steps}
-            cutoff={tenant.data?.opening_cutoff_date ?? onboarding.data.totals?.cutoff ?? null}
-            confirmed={confirmed}
-            totals={onboarding.data.totals}
-            lockedThrough={onboarding.data.locked_through}
-            onOpen={open}
-          />
-        ) : null}
-      </>
-    );
-  };
+  const { done, total } = requiredProgress(steps);
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  const progress = (
+    <div className="onb-prog">
+      <span className="k" id="onb-prog-k">
+        Bước bắt buộc
+      </span>
+      <b className="tab-n">
+        {done}
+        <small> / {total} đã xong</small>
+      </b>
+      <div className="meter acc" role="progressbar" aria-labelledby="onb-prog-k" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done} aria-valuetext={`${done} trên ${total} bước bắt buộc đã xong`}>
+        <i style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
 
   return (
     <>
-      <PageHeader eyebrow="Bắt đầu" title="Thiết lập cửa hàng" lead="Hoàn tất các bước bắt buộc để mở cửa hàng. Bước có thể bỏ qua không chặn việc sử dụng." />
-      <Stepper steps={steps.map((s) => stepLabel(s.key))} done={leadingFinished(steps)} label="Các bước thiết lập" />
-      {body()}
+      <PageHeader eyebrow="Bắt đầu" title="Thiết lập cửa hàng" lead={`Làm ${total} bước bắt buộc để mở bán. Bước tùy chọn có thể bỏ qua và làm sau.`} actions={progress} />
+      {onboarding.isPending ? (
+        <RouteLoading />
+      ) : onboarding.isError ? (
+        <ScreenError error={onboarding.error} onRetry={() => void onboarding.refetch()} />
+      ) : (
+        <OnboardingSteps steps={steps} ready={done === total} totals={onboarding.data.totals} />
+      )}
     </>
   );
 }
 
-interface StepBodyProps {
-  step: ChecklistStep;
-  steps: readonly ChecklistStep[];
-  cutoff: string | null;
-  confirmed: boolean;
-  totals: Parameters<typeof ConfirmOpeningStep>[0]["totals"];
-  lockedThrough: string | null;
-  onOpen: (key: OnboardingStepKey) => void;
-}
+function OnboardingSteps({ steps, ready, totals }: { steps: readonly ChecklistStep[]; ready: boolean; totals: OnboardingScreen["totals"] }) {
+  const navigate = useNavigate();
+  const tenant = useTenant();
+  // The first open step is chosen once: a posting that completes the step on the server keeps the
+  // owner on it (several debts in a row) until they move on.
+  const [opened, setOpened] = useState<OnboardingStepKey>(() => firstOpenStep(steps));
+  const [railOpen, setRailOpen] = useState(false);
+  const [moves, setMoves] = useState(0);
+  const toggleRef = useRef<HTMLButtonElement>(null);
 
-function StepBody({ step, steps, cutoff, confirmed, totals, lockedThrough, onOpen }: StepBodyProps) {
-  const openProfile = () => onOpen("store_profile");
-  switch (step.key) {
-    case "store_profile":
-      return <StoreProfileStep step={step} confirmed={confirmed} />;
-    case "catalog_setup":
-      return <CatalogSetupStep step={step} />;
-    case "opening_stock":
-      return <OpeningStockStep step={step} cutoff={cutoff} confirmed={confirmed} onOpenProfile={openProfile} />;
-    case "opening_debt":
-      return <OpeningDebtStep step={step} cutoff={cutoff} confirmed={confirmed} onOpenProfile={openProfile} />;
-    case "opening_cash":
-      return <OpeningCashStep step={step} cutoff={cutoff} confirmed={confirmed} onOpenProfile={openProfile} />;
-    case "first_sale":
-      return <FirstSaleStep step={step} />;
-    case "confirm_opening_balances":
-      return <ConfirmOpeningStep step={step} steps={steps} totals={totals} lockedThrough={lockedThrough} onOpen={onOpen} />;
-  }
+  const confirmStep = steps.find((s) => s.key === "confirm_opening_balances");
+  const confirmed = confirmStep?.status === "completed";
+  const cutoff = tenant.data?.opening_cutoff_date ?? totals?.cutoff ?? null;
+  const lock = { cutoff, confirmed };
+
+  const goTo = (key: OnboardingStepKey) => {
+    setOpened(key);
+    setRailOpen(false);
+    setMoves((n) => n + 1);
+  };
+
+  // Prototype `onbGoTo`: the step title takes focus, and the card scrolls into view when it is off screen.
+  useEffect(() => {
+    if (moves === 0) return;
+    const h = document.getElementById("onb-h");
+    if (!h) return;
+    h.focus({ preventScroll: true });
+    const top = h.closest(".onb-card")?.getBoundingClientRect().top ?? 0;
+    if (top < 70 || top > window.innerHeight * 0.6) window.scrollTo(0, Math.max(0, window.scrollY + top - 80));
+  }, [moves]);
+
+  useEscapeLayer(
+    railOpen,
+    () => {
+      setRailOpen(false);
+      toggleRef.current?.focus();
+    },
+    { blocking: false },
+  );
+
+  const active = steps.find((s) => s.key === opened) ?? steps[0];
+  if (!active) return null;
+  const Body = STEP_BODIES[active.key];
+  const screen: OnboardingScreen = {
+    ...lock,
+    steps,
+    cta: ready ? "navy" : "primary",
+    totals,
+    confirmedAt: confirmStep?.completed_at ?? null,
+    goTo,
+  };
+
+  return (
+    <OnboardingContext.Provider value={screen}>
+      {ready ? (
+        <section className="card onb-ready" aria-labelledby="onb-ready-h">
+          <div>
+            <h2 id="onb-ready-h">Cửa hàng đã sẵn sàng bán</h2>
+            <p>Các bước bắt buộc đã xong và số dư đầu kỳ đã khóa đến hết ngày {fd(cutoff)}. Bán đơn đầu tiên ngay hoặc vào màn chính.</p>
+          </div>
+          <Button variant="primary" onClick={() => navigate(HOME_PATH)}>
+            Vào cửa hàng
+          </Button>
+        </section>
+      ) : null}
+      <div className="onb-grid">
+        <StepRail steps={steps} current={active.key} lock={lock} open={railOpen} onToggle={() => setRailOpen((o) => !o)} onGo={goTo} toggleRef={toggleRef} />
+        <StepFrame key={active.key} step={active} steps={steps} lock={lock} onGo={goTo}>
+          <Body />
+        </StepFrame>
+      </div>
+    </OnboardingContext.Provider>
+  );
 }

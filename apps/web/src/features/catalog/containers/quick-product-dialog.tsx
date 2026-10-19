@@ -8,12 +8,18 @@ import { productFormErrors } from "../api/mutations";
 import { skuKeys, useUnits } from "../api/queries";
 import { initialProductDraft, quickCreateRequest, validateProductDraft, type ProductDraft, type ProductErrors } from "../components/product-draft";
 import { ProductFormFields } from "../components/product-form";
-import { quickCreateResultSchema } from "../schemas";
+import { quickCreateResultSchema, type QuickCreateResult } from "../schemas";
 
 const TITLE = "Thêm hàng hóa mới";
 
+interface QuickProductDialogProps {
+  onClose: () => void;
+  /** Receives the created product, e.g. to put its SKU on the line being entered. */
+  onCreated?: ((result: QuickCreateResult) => void) | undefined;
+}
+
 /** Prototype newQuickProd (Nhập hàng → Danh sách hàng hóa): name, units, purchase and sale prices. Mount per opening. */
-export function QuickProductDialog({ onClose }: { onClose: () => void }) {
+export function QuickProductDialog({ onClose, onCreated }: QuickProductDialogProps) {
   const units = useUnits();
   if (units.isLoading) {
     return (
@@ -22,10 +28,10 @@ export function QuickProductDialog({ onClose }: { onClose: () => void }) {
       </CommitDialog>
     );
   }
-  return <QuickProductForm onClose={onClose} initial={initialProductDraft("quick", units.idByName)} />;
+  return <QuickProductForm onClose={onClose} onCreated={onCreated} initial={initialProductDraft("quick", units.idByName)} />;
 }
 
-function QuickProductForm({ onClose, initial }: { onClose: () => void; initial: ProductDraft }) {
+function QuickProductForm({ onClose, onCreated, initial }: QuickProductDialogProps & { initial: ProductDraft }) {
   const client = useApiClient();
   const [draft, setDraft] = useState(initial);
   const [errors, setErrors] = useState<ProductErrors>({});
@@ -45,7 +51,10 @@ function QuickProductForm({ onClose, initial }: { onClose: () => void; initial: 
       </>
     ),
     invalidate: [skuKeys.all],
-    after: onClose,
+    after: (r) => {
+      onCreated?.(r);
+      onClose();
+    },
   });
 
   const submit = () => {

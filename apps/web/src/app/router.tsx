@@ -40,7 +40,7 @@ function routeMeta(r: MenuRoute): RouteMeta {
   };
 }
 
-/** The 40 menu screens plus, per group, "/group" and "/group/<unknown>" → first screen. */
+/** The 41 menu screens plus, per group, "/group" and "/group/<unknown>" → first screen. */
 function menuRoutes(): RouteObject[] {
   const pages: RouteObject[] = MENU_ROUTES.map((r) => {
     const page: RouteObject = {

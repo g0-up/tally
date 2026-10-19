@@ -5,4 +5,4 @@ export { etagOf } from "./api/mutations";
 export { catalogKeys, skuKeys, useCategories, useColorDirectory, useSkuList, useSkuPicker, useSkusByIds, useUnits, type ColorDirectory, type SkuListParams, type SkuPicker } from "./api/queries";
 export { ColorBreak } from "./components/color-break";
 export { QuickProductDialog } from "./containers/quick-product-dialog";
-export type { ProductType, SkuListItem, SkuUnit, Unit } from "./schemas";
+export type { ProductType, QuickCreateResult, SkuListItem, SkuUnit, Unit } from "./schemas";

@@ -1,51 +1,91 @@
-import type { ReactNode } from "react";
+import { Component, type ReactNode } from "react";
+import type { OnboardingStepKey } from "../../../shared/api/endpoints";
+import { cx } from "../../../shared/lib/cx";
 import { Button, ButtonRow } from "../../../shared/ui/button";
-import { Card } from "../../../shared/ui/card";
-import { StatusPill } from "../../../shared/ui/status-pill";
+import { Callout } from "../../../shared/ui/callout";
+import { LinkButton } from "../../../shared/ui/link-button";
 import { useStepCommand } from "../api/mutations";
-import { STEP_STATUS_LABELS, STEP_STATUS_TONES, stepLabel, type ChecklistStep } from "../steps";
+import { nextStep, ONBOARDING_PHASES, stepStatusChip, type ChecklistStep, type LockState } from "../steps";
 
-export const MARK_DONE = "Đánh dấu xong";
-export const SKIP = "Bỏ qua";
+/** A step body that throws shows its error inside the card instead of blanking the screen. */
+class StepBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  override state: { error: Error | null } = { error: null };
 
-/**
- * "Đánh dấu xong" on a step the owner completes by hand and "Bỏ qua" on a step the API lets them
- * skip, while the step is still pending.
- */
-export function StepActions({ step, markDone = true }: { step: ChecklistStep; markDone?: boolean }) {
-  const complete = useStepCommand(step.key, "complete");
-  const skip = useStepCommand(step.key, "skip");
-  if (step.status !== "pending") return null;
-  const showDone = markDone && step.manual;
-  if (!showDone && !step.skippable) return null;
-  return (
-    <ButtonRow>
-      {showDone ? (
-        <Button variant="primary" pending={complete.pending} disabled={skip.pending} onClick={() => void complete.run()}>
-          {MARK_DONE}
-        </Button>
-      ) : null}
-      {step.skippable ? (
-        <Button pending={skip.pending} pendingLabel="Đang bỏ qua…" disabled={complete.pending} onClick={() => void skip.run()}>
-          {SKIP}
-        </Button>
-      ) : null}
-    </ButtonRow>
-  );
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  override render() {
+    if (this.state.error) return <Callout tone="bad">Không hiển thị được bước này: {this.state.error.message}</Callout>;
+    return this.props.children;
+  }
 }
 
-/** One step's screen: its name and status above the body, the step commands below. */
-export function StepCard({ step, note, children, markDone = true }: { step: ChecklistStep; note?: ReactNode; children: ReactNode; markDone?: boolean }) {
+/** Prototype `obStatusChip` as a `.st` pill. */
+export function StepStatusChip({ step, lock }: { step: ChecklistStep; lock: LockState }) {
+  const chip = stepStatusChip(step, lock);
+  return <span className={cx("st", chip.tone)}>{chip.label}</span>;
+}
+
+export function StepTypeTag({ step }: { step: ChecklistStep }) {
+  return step.skippable ? <span className="tag alt">Tùy chọn</span> : <span className="tag">Bắt buộc</span>;
+}
+
+export interface StepFrameProps {
+  step: ChecklistStep;
+  steps: readonly ChecklistStep[];
+  lock: LockState;
+  onGo: (key: OnboardingStepKey) => void;
+  children: ReactNode;
+}
+
+/** Prototype `obCard`: eyebrow, title, note, type and status, the step body, then the step navigation. */
+export function StepFrame({ step, steps, lock, onGo, children }: StepFrameProps) {
+  const i = steps.findIndex((s) => s.key === step.key);
+  const prev = steps[i - 1];
+  const next = steps[i + 1];
+  const skip = useStepCommand(step.key, "skip", { after: () => onGo(nextStep(step.key)) });
   return (
-    <Card
-      title={stepLabel(step.key)}
-      note={note}
-      actions={<StatusPill label={STEP_STATUS_LABELS[step.status]} tone={STEP_STATUS_TONES[step.status]} />}
-      aria-label={stepLabel(step.key)}
-      role="region"
-    >
-      {children}
-      <StepActions step={step} markDone={markDone} />
-    </Card>
+    <section className="card onb-card" aria-labelledby="onb-h">
+      <div className="onb-sh">
+        <div>
+          <p className="eyebrow">
+            Bước {i + 1}/{steps.length} · {ONBOARDING_PHASES[step.phase]}
+          </p>
+          <h2 id="onb-h" tabIndex={-1}>
+            {step.label}
+          </h2>
+          <p>{step.note}</p>
+        </div>
+        <ButtonRow>
+          <StepTypeTag step={step} />
+          <StepStatusChip step={step} lock={lock} />
+        </ButtonRow>
+      </div>
+      <div className="onb-body">
+        <StepBoundary key={step.key}>{children}</StepBoundary>
+      </div>
+      <div className="onb-foot">
+        <div>
+          {prev ? (
+            <Button size="sm" onClick={() => onGo(prev.key)}>
+              ← Bước trước
+            </Button>
+          ) : null}
+        </div>
+        <ButtonRow className="onb-nav">
+          {step.skippable && step.status === "pending" ? (
+            <LinkButton disabled={skip.pending} aria-busy={skip.pending || undefined} onClick={() => void skip.run()}>
+              Bỏ qua bước này
+            </LinkButton>
+          ) : null}
+          {next ? (
+            <Button size="sm" onClick={() => onGo(next.key)}>
+              Bước tiếp →
+            </Button>
+          ) : null}
+        </ButtonRow>
+      </div>
+    </section>
   );
 }

@@ -84,6 +84,11 @@ export function testSkuItem(over: Record<string, unknown> = {}) {
   };
 }
 
+/** A line of a posted opening stock document (`GET /stock-adjustments/{id}`). */
+export function testStockLine(over: Record<string, unknown> = {}) {
+  return { id: "adj-line-1", sku_id: "sku-1", sku_code: "SP001", name: "Bánh quy bơ", variant_label: "", qty: "10", color_id: null, lot_no: null, expiry_date: null, unit_cost: "45000", ...over };
+}
+
 const SKIPPABLE: ReadonlySet<OnboardingStepKey> = new Set(["catalog_setup", "first_sale"]);
 
 export type StepStatuses = Partial<Record<OnboardingStepKey, OnboardingStepStatus>>;
@@ -139,6 +144,8 @@ export interface OnboardingApiOptions {
   profile?: Tenant;
   funds?: ReturnType<typeof testFund>[];
   skus?: ReturnType<typeof testSkuItem>[];
+  /** Opening stock documents already posted. */
+  stockDocs?: { id: string; reversal_of?: string; lines: object[] }[];
 }
 
 /** Installs the onboarding API for one test and returns what it recorded. */
@@ -147,6 +154,10 @@ export function installOnboardingApi(options: OnboardingApiOptions = {}) {
   let profile = options.profile ?? TEST_PROFILE;
   let funds = options.funds ?? TEST_FUNDS;
   const calls: RecordedCall[] = [];
+  // Posted opening documents, read back by the step's "posted" tables.
+  const stockDocs = [...(options.stockDocs ?? [])];
+  const debtDocs: { id: string; kind: string; detail: object }[] = [];
+  const customers = [...TEST_CUSTOMERS];
   const status = () => testStatus(statuses, { totals: options.totals === undefined ? TEST_TOTALS : options.totals, locked_through: statuses.confirm_opening_balances === "completed" ? CUTOFF : null });
   const stepView = (key: OnboardingStepKey) => {
     const s = status().steps.find((x) => x.key === key);
@@ -178,23 +189,52 @@ export function installOnboardingApi(options: OnboardingApiOptions = {}) {
     }),
     http.get(apiUrl("/reasons"), () => HttpResponse.json({ data: TEST_REASONS })),
     http.get(apiUrl("/colors"), () => HttpResponse.json({ data: TEST_COLORS })),
-    http.get(apiUrl("/skus"), () => HttpResponse.json({ data: options.skus ?? [testSkuItem()] })),
+    http.get(apiUrl("/skus"), () => HttpResponse.json({ data: options.skus ?? [testSkuItem()], next_cursor: null })),
     http.get(apiUrl("/customers"), () => HttpResponse.json({ data: TEST_CUSTOMERS })),
+    http.get(apiUrl("/stock-adjustments"), () => HttpResponse.json({ data: stockDocs.map((d) => ({ id: d.id, reversal_of: d.reversal_of ?? null })), next_cursor: null })),
+    http.get(apiUrl("/stock-adjustments/:id"), ({ params }) => HttpResponse.json(stockDocs.find((d) => d.id === params.id))),
     http.post(apiUrl("/stock-adjustments"), async ({ request }) => {
       const call = await record(calls, request);
       const key = COMPLETES[call.path];
       if (key) statuses[key] = "completed";
-      return HttpResponse.json({ id: "adj-1", doc_no: "DC-0001", kind: "opening", business_date: CUTOFF, status: "posted" }, { status: 201 });
+      const id = `adj-${stockDocs.length + 1}`;
+      const body = call.body as { lines: { sku_id: string; qty: string; unit_cost: string; color_id?: string; lot_no?: string; expiry_date?: string }[] };
+      const lines = body.lines.map((l, i) => {
+        const sku = (options.skus ?? [testSkuItem()]).find((s) => s.id === l.sku_id);
+        return { id: `${id}-${i}`, sku_id: l.sku_id, sku_code: sku?.code ?? "", name: sku?.display_name ?? "", variant_label: "", qty: l.qty, color_id: l.color_id ?? null, lot_no: l.lot_no ?? null, expiry_date: l.expiry_date ?? null, unit_cost: l.unit_cost };
+      });
+      stockDocs.push({ id, lines });
+      return HttpResponse.json({ id, doc_no: `DC-000${stockDocs.length}`, kind: "opening", business_date: CUTOFF, status: "posted" }, { status: 201 });
     }),
+    http.get(apiUrl("/debt-adjustments"), () => HttpResponse.json({ data: debtDocs.map((d) => ({ id: d.id, kind: d.kind })), next_cursor: null })),
+    http.get(apiUrl("/debt-adjustments/:id"), ({ params }) => HttpResponse.json(debtDocs.find((d) => d.id === params.id)?.detail)),
     http.post(apiUrl("/debt-adjustments"), async ({ request }) => {
       const call = await record(calls, request);
       const key = COMPLETES[call.path];
       if (key) statuses[key] = "completed";
-      return HttpResponse.json({ id: "dadj-1", doc_no: "DCN-0001" }, { status: 201 });
+      const body = call.body as { party_id: string; direction: string; kind: string; amount: string; reason_id: string; due_date?: string; note?: string };
+      const id = `dadj-${debtDocs.length + 1}`;
+      const doc_no = `DCN-000${debtDocs.length + 1}`;
+      debtDocs.push({
+        id,
+        kind: body.kind,
+        detail: {
+          id,
+          doc_no,
+          direction: body.direction,
+          amount: body.amount,
+          note: body.note ?? null,
+          party_name: customers.find((c) => c.id === body.party_id)?.name ?? body.party_id,
+          reason_name: TEST_REASONS.find((r) => r.id === body.reason_id)?.name ?? "",
+          obligation: { due_date: body.due_date ?? null },
+        },
+      });
+      return HttpResponse.json({ id, doc_no }, { status: 201 });
     }),
     http.post(apiUrl("/customers"), async ({ request }) => {
       const call = await record(calls, request);
       const body = call.body as { name: string; phone: string | null; payment_terms_days: number };
+      customers.push({ id: NEW_CUSTOMER_ID, name: body.name, phone: body.phone ?? "", customer_group_name: null });
       return HttpResponse.json(
         {
           id: NEW_CUSTOMER_ID,

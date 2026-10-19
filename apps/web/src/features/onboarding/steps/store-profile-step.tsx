@@ -1,162 +1,163 @@
 import { useState } from "react";
 import type { Tenant } from "../../../shared/api/endpoints";
 import { useBusinessDate, useTenant } from "../../../shared/api/platform-queries";
+import { fd } from "../../../shared/lib/format";
 import { Button, ButtonRow } from "../../../shared/ui/button";
+import { Callout } from "../../../shared/ui/callout";
 import { DatePicker } from "../../../shared/ui/date-picker";
-import { Field } from "../../../shared/ui/field";
-import { FormGrid } from "../../../shared/ui/form-grid";
 import { Input } from "../../../shared/ui/input";
 import { ListLoading } from "../../../shared/ui/list-footer";
-import { toast } from "../../../shared/ui/toast-store";
 import { ScreenError } from "../../../app/route-fallbacks";
 import { useSaveTenantProfile, useStepCommand, type TenantProfilePatch } from "../api/mutations";
-import { StepCard } from "../components/step-card";
-import type { ChecklistStep } from "../steps";
-
-const PROFILE_LABELS = {
-  legalName: "Tên pháp lý",
-  displayName: "Tên hiển thị",
-  taxCode: "Mã số thuế",
-  address: "Địa chỉ",
-  phone: "Số điện thoại",
-  cutoff: "Ngày chốt số dư đầu kỳ",
-  saveAndDone: "Lưu và đánh dấu xong",
-  save: "Lưu thay đổi",
-} as const;
+import { OnbField } from "../components/onb-field";
+import { withoutError, type FieldErrors } from "../components/field-errors";
+import { useOnbFail } from "../hooks/use-onb-fail";
+import { useOnboardingScreen } from "../onboarding-context";
+import { nextStep } from "../steps";
 
 const NAME_MAX = 200;
 const TAX_CODE = /^[0-9]{10}(-[0-9]{3})?$/;
 
 interface Draft {
-  legal_name: string;
-  display_name: string;
-  tax_code: string;
-  address: string;
+  legal: string;
+  display: string;
+  tax: string;
   phone: string;
-  opening_cutoff_date: string | null;
+  addr: string;
+  cutoff: string | null;
 }
 
-type Errors = Partial<Record<keyof Draft, string>>;
+/** The API's field names, for the errors of a refused save. */
+const API_FIELDS: Readonly<Record<string, keyof Draft>> = {
+  legal_name: "legal",
+  display_name: "display",
+  tax_code: "tax",
+  phone: "phone",
+  address: "addr",
+  opening_cutoff_date: "cutoff",
+};
 
 const draftOf = (p: Tenant): Draft => ({
-  legal_name: p.legal_name,
-  display_name: p.display_name,
-  tax_code: p.tax_code ?? "",
-  address: p.address ?? "",
+  legal: p.legal_name,
+  display: p.display_name,
+  tax: p.tax_code ?? "",
   phone: p.phone ?? "",
-  opening_cutoff_date: p.opening_cutoff_date,
+  addr: p.address ?? "",
+  cutoff: p.opening_cutoff_date,
 });
 
-function validate(d: Draft, today: string): Errors {
-  const e: Errors = {};
-  if (d.legal_name.trim() === "") e.legal_name = "Nhập tên pháp lý.";
-  else if (d.legal_name.trim().length > NAME_MAX) e.legal_name = `Tên pháp lý tối đa ${NAME_MAX} ký tự.`;
-  if (d.display_name.trim() === "") e.display_name = "Nhập tên hiển thị.";
-  else if (d.display_name.trim().length > NAME_MAX) e.display_name = `Tên hiển thị tối đa ${NAME_MAX} ký tự.`;
-  if (d.tax_code.trim() !== "" && !TAX_CODE.test(d.tax_code.trim())) e.tax_code = "Mã số thuế gồm 10 chữ số, hoặc 10 chữ số kèm -3 chữ số chi nhánh.";
-  if (d.opening_cutoff_date === null) e.opening_cutoff_date = "Chọn ngày chốt số dư đầu kỳ.";
-  else if (d.opening_cutoff_date > today) e.opening_cutoff_date = "Ngày chốt số dư đầu kỳ không được sau hôm nay.";
+/** Prototype `A.onbSaveProfile` checks; the cutoff is not checked once it is frozen. */
+function validate(d: Draft, today: string, confirmed: boolean): FieldErrors {
+  const e: Record<string, string> = {};
+  const legal = d.legal.trim();
+  const display = d.display.trim();
+  const tax = d.tax.trim();
+  if (!legal) e.legal = "Nhập tên pháp lý.";
+  else if (legal.length > NAME_MAX) e.legal = `Tối đa ${NAME_MAX} ký tự.`;
+  if (!display) e.display = "Nhập tên hiển thị.";
+  else if (display.length > NAME_MAX) e.display = `Tối đa ${NAME_MAX} ký tự.`;
+  if (tax && !TAX_CODE.test(tax)) e.tax = "Mã số thuế gồm 10 số, hoặc 10 số-3 số (ví dụ 0312345678-001).";
+  if (!confirmed) {
+    if (d.cutoff === null) e.cutoff = "Chọn ngày chốt số dư đầu kỳ.";
+    else if (d.cutoff > today) e.cutoff = `Ngày chốt không được sau hôm nay (${fd(today)}).`;
+  }
   return e;
 }
 
 const orNull = (v: string) => (v.trim() === "" ? null : v.trim());
 
-/** Store profile: legal and display names, tax code, contact and the opening cutoff date. */
-export function StoreProfileStep({ step, confirmed }: { step: ChecklistStep; confirmed: boolean }) {
+/** Store profile: names and contact printed on the documents, and the opening cutoff date. */
+export function StoreProfileStep() {
   const profile = useTenant();
-  // Lives above the form, which remounts on the new version the save returns.
-  const complete = useStepCommand("store_profile", "complete", { quiet: true });
-  const onSaved = () => {
-    if (step.status === "pending") void complete.run();
-  };
-  return (
-    <StepCard step={step} note="Thông tin in trên chứng từ và ngày chốt số dư đầu kỳ" markDone={false}>
-      {profile.isPending ? (
-        <ListLoading />
-      ) : profile.isError ? (
-        <ScreenError error={profile.error} onRetry={() => void profile.refetch()} />
-      ) : (
-        <ProfileForm key={profile.data.version} profile={profile.data} step={step} confirmed={confirmed} onSaved={onSaved} completing={complete.pending} />
-      )}
-    </StepCard>
-  );
+  const { goTo } = useOnboardingScreen();
+  // Lives above the form, which starts again from the version the save returns.
+  const complete = useStepCommand("store_profile", "complete", { quiet: true, after: () => goTo(nextStep("store_profile")) });
+  if (profile.isPending) return <ListLoading />;
+  if (profile.isError) return <ScreenError error={profile.error} onRetry={() => void profile.refetch()} />;
+  return <ProfileForm key={profile.data.version} profile={profile.data} complete={complete} />;
 }
 
-interface ProfileFormProps {
-  profile: Tenant;
-  step: ChecklistStep;
-  confirmed: boolean;
-  onSaved: () => void;
-  completing: boolean;
-}
-
-function ProfileForm({ profile, step, confirmed, onSaved, completing }: ProfileFormProps) {
-  const [draft, setDraft] = useState<Draft>(() => draftOf(profile));
-  const [errors, setErrors] = useState<Errors>({});
+function ProfileForm({ profile, complete }: { profile: Tenant; complete: ReturnType<typeof useStepCommand> }) {
+  const { steps, confirmed, cta } = useOnboardingScreen();
   const today = useBusinessDate();
+  const [draft, setDraft] = useState<Draft>(() => draftOf(profile));
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const fail = useOnbFail(setErrors);
+  const first = steps.find((s) => s.key === "store_profile")?.status !== "completed";
   const save = useSaveTenantProfile(profile, {
-    setFieldError: (field, message) => setErrors((e) => ({ ...e, [field]: message })),
-    after: onSaved,
+    setFieldError: (field, message) => {
+      const key = API_FIELDS[field];
+      if (key) setErrors((e) => ({ ...e, [key]: message }));
+    },
+    success: (saved) =>
+      first ? (
+        <>
+          Đã lưu thông tin cửa hàng. Số dư đầu kỳ tính đến hết ngày <b>{fd(saved.opening_cutoff_date)}</b>.
+        </>
+      ) : (
+        "Đã lưu thay đổi."
+      ),
+    after: () => {
+      if (first) void complete.run();
+    },
   });
 
-  const set = (patch: Partial<Draft>) => {
-    setDraft((d) => ({ ...d, ...patch }));
-    setErrors((e) => Object.fromEntries(Object.entries(e).filter(([k]) => !(k in patch))));
+  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
+    setDraft((d) => ({ ...d, [key]: value }));
+    setErrors((e) => withoutError(e, key));
   };
 
   const submit = () => {
-    const found = validate(draft, today);
-    if (confirmed) delete found.opening_cutoff_date;
-    setErrors(found);
-    const first = Object.values(found)[0];
-    if (first !== undefined) return toast.commitError(first);
+    const found = validate(draft, today, confirmed);
+    if (Object.keys(found).length > 0) return fail(found);
+    setErrors({});
     const patch: TenantProfilePatch = {
-      legal_name: draft.legal_name.trim(),
-      display_name: draft.display_name.trim(),
-      tax_code: orNull(draft.tax_code),
-      address: orNull(draft.address),
+      legal_name: draft.legal.trim(),
+      display_name: draft.display.trim(),
+      tax_code: orNull(draft.tax),
+      address: orNull(draft.addr),
       phone: orNull(draft.phone),
-      ...(confirmed || draft.opening_cutoff_date === null ? {} : { opening_cutoff_date: draft.opening_cutoff_date }),
+      ...(confirmed || draft.cutoff === null ? {} : { opening_cutoff_date: draft.cutoff }),
     };
     void save.run(patch);
   };
 
   return (
     <>
-      <FormGrid>
-        <Field label={PROFILE_LABELS.legalName} error={errors.legal_name}>
-          <Input value={draft.legal_name} maxLength={NAME_MAX} invalid={errors.legal_name !== undefined} onChange={(e) => set({ legal_name: e.target.value })} />
-        </Field>
-        <Field label={PROFILE_LABELS.displayName} error={errors.display_name}>
-          <Input value={draft.display_name} maxLength={NAME_MAX} invalid={errors.display_name !== undefined} onChange={(e) => set({ display_name: e.target.value })} />
-        </Field>
-        <Field label={PROFILE_LABELS.taxCode} hint="10 chữ số, chi nhánh thêm -3 chữ số" error={errors.tax_code}>
-          <Input value={draft.tax_code} inputMode="numeric" invalid={errors.tax_code !== undefined} onChange={(e) => set({ tax_code: e.target.value })} />
-        </Field>
-        <Field label={PROFILE_LABELS.phone} error={errors.phone}>
-          <Input value={draft.phone} inputMode="tel" invalid={errors.phone !== undefined} onChange={(e) => set({ phone: e.target.value })} />
-        </Field>
-        <Field label={PROFILE_LABELS.address} error={errors.address}>
-          <Input value={draft.address} invalid={errors.address !== undefined} onChange={(e) => set({ address: e.target.value })} />
-        </Field>
-        <Field
-          label={PROFILE_LABELS.cutoff}
-          hint={confirmed ? "Đã khóa vì số dư đầu kỳ đã xác nhận." : "Tồn kho, công nợ và tiền đầu kỳ tính đến hết ngày này."}
-          error={errors.opening_cutoff_date}
-        >
-          <DatePicker
-            value={draft.opening_cutoff_date}
-            onChange={(v) => set({ opening_cutoff_date: v })}
-            disabled={confirmed}
-            invalid={errors.opening_cutoff_date !== undefined}
-            today={today}
-            aria-label={PROFILE_LABELS.cutoff}
-          />
-        </Field>
-      </FormGrid>
+      <fieldset className="onb-fs">
+        <legend>Pháp lý và liên hệ</legend>
+        <div className="fg">
+          <OnbField id="ob-pf-legal" label="Tên pháp lý" required hint="Như trên giấy đăng ký kinh doanh." error={errors.legal}>
+            <Input id="ob-pf-legal" value={draft.legal} maxLength={NAME_MAX} autoComplete="organization" aria-required="true" onChange={(e) => set("legal", e.target.value)} />
+          </OnbField>
+          <OnbField id="ob-pf-display" label="Tên hiển thị" required hint="Hiện trên hóa đơn và màn chính." error={errors.display}>
+            <Input id="ob-pf-display" value={draft.display} maxLength={NAME_MAX} aria-required="true" onChange={(e) => set("display", e.target.value)} />
+          </OnbField>
+          <OnbField id="ob-pf-tax" label="Mã số thuế" hint="10 số, hoặc 10 số-3 số với chi nhánh." error={errors.tax}>
+            <Input id="ob-pf-tax" value={draft.tax} inputMode="numeric" autoComplete="off" onChange={(e) => set("tax", e.target.value)} />
+          </OnbField>
+          <OnbField id="ob-pf-phone" label="Số điện thoại" error={errors.phone}>
+            <Input id="ob-pf-phone" type="tel" value={draft.phone} autoComplete="tel" onChange={(e) => set("phone", e.target.value)} />
+          </OnbField>
+          <OnbField id="ob-pf-addr" label="Địa chỉ" wide error={errors.addr}>
+            <Input id="ob-pf-addr" value={draft.addr} autoComplete="street-address" onChange={(e) => set("addr", e.target.value)} />
+          </OnbField>
+        </div>
+      </fieldset>
+      <fieldset className="onb-fs">
+        <legend>Ngày chốt số dư đầu kỳ</legend>
+        <div className="onb-cut">
+          <OnbField id="ob-pf-cutoff" label="Ngày chốt" required hint={confirmed ? "Đã khóa cùng số dư đầu kỳ." : `Không sau hôm nay (${fd(today)}).`} error={errors.cutoff}>
+            <DatePicker id="ob-pf-cutoff" value={draft.cutoff} onChange={(v) => set("cutoff", v)} disabled={confirmed} required today={today} />
+          </OnbField>
+          <Callout role="note">
+            Tồn kho, công nợ và tiền ở các bước sau là số dư <b>đến hết ngày này</b>. Thường chọn ngày cuối tháng trước khi bắt đầu dùng phần mềm. Sau khi xác nhận số dư, ngày chốt không sửa được.
+          </Callout>
+        </div>
+      </fieldset>
       <ButtonRow>
-        <Button variant="primary" pending={save.pending || completing} onClick={submit}>
-          {step.status === "pending" ? PROFILE_LABELS.saveAndDone : PROFILE_LABELS.save}
+        <Button variant={cta} pending={save.pending || complete.pending} onClick={submit}>
+          {first ? "Lưu và tiếp tục" : "Lưu thay đổi"}
         </Button>
       </ButtonRow>
     </>

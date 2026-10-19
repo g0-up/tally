@@ -5,8 +5,8 @@ import { cashFundBalance, finishJourney, openStoreAs, requireEnv, watchPageError
 
 // AT-12: a store that was never used is moved onto Tally, and its opening balances agree with the
 // figures its owner entered. The cutover itself is run by hand on a fresh store (OPEN-14 default: the
-// manual onboarding wizard); this journey checks the outcome, not the wizard's screens, which are not
-// covered yet. It needs a fresh store with its own owner.
+// manual onboarding wizard); this journey checks the outcome, while e2e/onboarding.spec.ts drives the
+// wizard's screens. It needs a fresh store with its own owner.
 
 interface StockListBody {
   data: unknown[];

@@ -1,4 +1,4 @@
-// The app menu: single source of the 40 menu routes, the sidebar, the module tabs, page headers
+// The app menu: single source of the 41 menu routes, the sidebar, the module tabs, page headers
 // and the visual-test mapping to prototype view ids ("mod.sub"). Order and labels follow the
 // prototype MENU verbatim; paths are the product's English URLs.
 
@@ -156,6 +156,7 @@ export const MENU: readonly MenuGroup[] = [
     segment: "settings",
     subs: [
       sub("tai-khoan", "Tài khoản & bảo mật", "account", "settings"),
+      sub("khoi-tao", "Khởi tạo cửa hàng", "store-setup", "settings"),
       sub("thue-bao", "Thuê bao", "subscription", "settings"),
       sub("nhat-ky", "Nhật ký", "audit-log", "settings"),
     ],

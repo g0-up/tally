@@ -91,7 +91,7 @@ for (const vp of VIEWPORTS) {
         await openPrototype(page, proto.viewId);
         if (proto.open) await page.evaluate(proto.open);
         await waitForFonts(page);
-        const expected = await page.screenshot({ ...SHOT_OPTIONS, mask: maskLocators(page) });
+        const expected = await page.screenshot({ ...SHOT_OPTIONS, mask: [...maskLocators(page), ...(proto.mask ? [page.locator(proto.mask)] : [])] });
 
         const name = `prototype/${state.id}-${vp.name}.png`;
         const file = testInfo.snapshotPath(name);

@@ -8,7 +8,14 @@ import { createContext, useContext } from "react";
 // password (and TOTP code when MFA is on), false when the owner cancelled. The provider lives in
 // `shared/ui/reauth-dialog.tsx` and is mounted once by the app.
 
-export type RequestReauth = () => Promise<boolean>;
+/** Wording of the password prompt for an action that names what the password unlocks. */
+export interface ReauthCopy {
+  title: string;
+  sub: string;
+  submitLabel?: string;
+}
+
+export type RequestReauth = (copy?: ReauthCopy) => Promise<boolean>;
 
 export const RecentAuthContext = createContext<RequestReauth | null>(null);
 

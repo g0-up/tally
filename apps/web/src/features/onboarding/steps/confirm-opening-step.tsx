@@ -1,141 +1,158 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
-import { HOME_PATH } from "../../../app/menu";
-import { NO_COLOR_LABEL } from "../../../shared/domain/color";
-import { dec } from "../../../shared/lib/decimal";
+import type { OnboardingStepKey, OpeningTotals } from "../../../shared/api/endpoints";
+import { colorLabel } from "../../../shared/domain/color";
+import { fdt } from "../../../shared/lib/dates";
+import { dec, type Decimal } from "../../../shared/lib/decimal";
 import { fd, num, vnd } from "../../../shared/lib/format";
 import { Button, ButtonRow } from "../../../shared/ui/button";
 import { Callout } from "../../../shared/ui/callout";
 import { Checkbox } from "../../../shared/ui/checkbox";
-import { TableCaption } from "../../../shared/ui/data-table/table-caption";
+import { DataTable, type Column } from "../../../shared/ui/data-table/data-table";
 import { KeyValueGrid } from "../../../shared/ui/key-value-grid";
 import { LinkButton } from "../../../shared/ui/link-button";
-import type { OnboardingStepKey, OpeningTotals } from "../../../shared/api/endpoints";
+import { useColorDirectory } from "../../catalog";
 import { useConfirmOpeningBalances } from "../api/mutations";
-import { CUTOFF_MISSING } from "../components/opening-gate";
-import { StepCard } from "../components/step-card";
-import { isOnboardingStepKey, stepLabel, type ChecklistStep } from "../steps";
+import { useOpeningFunds, useOpeningStockLines } from "../api/queries";
+import { CutoffGate } from "../components/opening-gate";
+import { useOnboardingScreen } from "../onboarding-context";
+import type { OpeningStockDocLine } from "../schemas";
+import { blockers, isOnboardingStepKey, stepLabel } from "../steps";
 
-const CONFIRM_LABELS = {
-  agree: "Tôi đã kiểm tra các số dư trên và đồng ý khóa sổ đến hết ngày chốt.",
-  confirm: "Xác nhận số dư đầu kỳ",
-  pendingFirst: "Còn bước chưa xong:",
-} as const;
-
-/** The opening figures as of the cutoff, in the order the owner checks them. */
-function totalsItems(t: OpeningTotals) {
-  const fundsTotal = t.funds.reduce((s, f) => s.plus(f.balance), dec(0));
-  return [
-    { label: "Ngày chốt", value: fd(t.cutoff) },
-    { label: "Giá trị tồn kho", value: vnd(t.stock_value) },
-    { label: "Khách hàng nợ (phải thu)", value: vnd(t.receivables) },
-    { label: "Nợ nhà cung cấp (phải trả)", value: vnd(t.payables) },
-    { label: "Khách ứng trước", value: vnd(t.customer_advances) },
-    { label: "Ứng trước nhà cung cấp", value: vnd(t.supplier_advances) },
-    ...t.funds.map((f) => ({ label: f.name, value: vnd(f.balance) })),
-    { label: "Tổng tiền các quỹ", value: vnd(fundsTotal) },
-  ];
-}
-
-function StockByColor({ totals }: { totals: OpeningTotals }) {
-  if (totals.stock_by_color.length === 0) return null;
+/** Prototype `.onb-sum`: the opening figures as of the cutoff, in the order the owner checks them. */
+function OpeningSummary({ totals }: { totals: OpeningTotals }) {
+  const funds = useOpeningFunds();
+  const unsaved = (id: string) => funds.data?.find((f) => f.id === id)?.opening_date === null;
+  const fundsTotal = totals.funds.reduce((s, f) => s.plus(f.balance), dec(0));
   return (
-    <div className="tw flat">
-      <table className="t">
-        <TableCaption>Tồn kho đầu kỳ theo màu</TableCaption>
-        <thead>
-          <tr>
-            <th scope="col">Màu</th>
-            <th scope="col" className="num">
-              Số lượng
-            </th>
-            <th scope="col" className="num">
-              Giá trị
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {totals.stock_by_color.map((c) => (
-            <tr key={c.color_id ?? "none"}>
-              <td>{c.color_name ?? NO_COLOR_LABEL}</td>
-              <td className="num tab-n">{num(c.qty)}</td>
-              <td className="num tab-n">{vnd(c.value)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="onb-sum">
+      <KeyValueGrid
+        items={[
+          { label: "Ngày chốt", value: fd(totals.cutoff) },
+          { label: "Giá trị tồn kho", value: vnd(totals.stock_value) },
+          { label: "Khách nợ (phải thu)", value: vnd(totals.receivables) },
+          { label: "Nợ nhà cung cấp (phải trả)", value: vnd(totals.payables) },
+          ...totals.funds.map((f) => ({ label: f.name, value: unsaved(f.id) ? <span className="hint">Chưa lưu</span> : vnd(f.balance) })),
+          { label: "Tổng tiền các quỹ", value: vnd(fundsTotal) },
+        ]}
+      />
     </div>
   );
 }
 
-interface ConfirmStepProps {
-  step: ChecklistStep;
-  steps: readonly ChecklistStep[];
-  totals: OpeningTotals | null;
-  lockedThrough: string | null;
-  onOpen: (key: OnboardingStepKey) => void;
+interface ColorRow {
+  key: string;
+  name: string;
+  colorId: string | null;
+  qty: Decimal;
+  value: Decimal;
+}
+
+/** The posted opening stock lines summed per SKU and color. */
+function byColor(lines: readonly OpeningStockDocLine[]): ColorRow[] {
+  const rows = new Map<string, ColorRow>();
+  for (const l of lines) {
+    const key = `${l.sku_id}|${l.color_id ?? ""}`;
+    const row = rows.get(key) ?? { key, name: l.name, colorId: l.color_id, qty: dec(0), value: dec(0) };
+    rows.set(key, { ...row, qty: row.qty.plus(l.qty), value: row.value.plus(dec(l.qty).times(l.unit_cost ?? 0)) });
+  }
+  return [...rows.values()];
+}
+
+/** Prototype "Tồn kho theo màu". */
+function StockByColor() {
+  const colors = useColorDirectory();
+  const stock = useOpeningStockLines();
+  const columns: ReadonlyArray<Column<ColorRow>> = [
+    { key: "sku", header: "Hàng", cell: (r) => r.name },
+    { key: "color", header: "Màu", cell: (r) => (r.colorId ? colorLabel(colors.codeOf(r.colorId)) : "—") },
+    { key: "qty", header: "Số lượng", numeric: true, cell: (r) => <span className="tab-n">{num(r.qty)}</span> },
+    { key: "value", header: "Giá trị", numeric: true, cell: (r) => vnd(r.value) },
+  ];
+  return (
+    <>
+      <h3 className="sec-h">Tồn kho theo màu</h3>
+      <DataTable caption="Tồn kho theo màu" columns={columns} rows={byColor(stock.data?.lines ?? [])} rowKey={(r) => r.key} flat empty="Không có tồn kho đầu kỳ." />
+    </>
+  );
 }
 
 /**
- * Confirmation of the opening balances: the totals at the cutoff, then a password check, then
- * every period up to the cutoff is locked. Back to the dashboard on success.
+ * Prototype `OB_BODY.confirm_opening_balances`: the totals at the cutoff, then a password check, then
+ * every period up to the cutoff is locked and the first sale opens.
  */
-export function ConfirmOpeningStep({ step, steps, totals, lockedThrough, onOpen }: ConfirmStepProps) {
-  const navigate = useNavigate();
+export function ConfirmOpeningStep() {
+  const { steps, cutoff, confirmed, confirmedAt, totals, goTo } = useOnboardingScreen();
   const [agreed, setAgreed] = useState(false);
-  const [refused, setRefused] = useState<OnboardingStepKey[]>([]);
-  const confirm = useConfirmOpeningBalances({
+  // The steps the API refused over, with the checklist they were refused against.
+  const [refused, setRefused] = useState<{ against: string; keys: OnboardingStepKey[] }>({ against: "", keys: [] });
+  const pending = blockers(steps);
+  const confirm = useConfirmOpeningBalances(cutoff, {
     setFieldError: (field) => {
-      if (isOnboardingStepKey(field)) setRefused((r) => (r.includes(field) ? r : [...r, field]));
+      if (isOnboardingStepKey(field)) setRefused((r) => ({ against: pending.join(), keys: r.keys.includes(field) ? r.keys : [...r.keys, field] }));
     },
-    after: () => navigate(HOME_PATH),
+    after: () => goTo("first_sale"),
   });
-  const done = step.status === "completed";
-  const pending = steps.filter((s) => s.key !== step.key && !s.skippable && s.status === "pending").map((s) => s.key);
-  // The API's refusal names the steps it still sees pending; it is the authority over a stale list.
-  const blocking = [...new Set([...pending, ...refused])];
-
-  const run = () => {
-    setRefused([]);
-    void confirm.run();
-  };
-
-  return (
-    <StepCard step={step} note={done && lockedThrough ? `Sổ sách đã khóa đến hết ngày ${fd(lockedThrough)}` : "Cần nhập lại mật khẩu khi xác nhận"}>
-      {totals === null ? (
-        <Callout tone="warn">
-          {CUTOFF_MISSING} <LinkButton onClick={() => onOpen("store_profile")}>Mở Thông tin cửa hàng</LinkButton>
+  if (!confirmed && cutoff === null) return <CutoffGate onOpenProfile={() => goTo("store_profile")} />;
+  const figures = (
+    <>
+      {totals ? <OpeningSummary totals={totals} /> : null}
+      <StockByColor />
+    </>
+  );
+  if (confirmed) {
+    return (
+      <>
+        <Callout tone="ok" role="note">
+          <b>Đã xác nhận lúc {fdt(confirmedAt)}.</b> Sổ đã khóa đến hết ngày {fd(cutoff)}. POS và các màn bán hàng đã mở.
         </Callout>
-      ) : (
-        <>
-          <KeyValueGrid items={totalsItems(totals)} />
-          <StockByColor totals={totals} />
-        </>
-      )}
-      {!done && blocking.length > 0 ? (
-        <Callout tone="warn">
-          {CONFIRM_LABELS.pendingFirst}{" "}
-          {blocking.map((k, i) => (
-            <span key={k}>
-              {i > 0 ? ", " : null}
-              <LinkButton onClick={() => onOpen(k)}>{stepLabel(k)}</LinkButton>
-            </span>
-          ))}
+        {figures}
+      </>
+    );
+  }
+  // The API's refusal is the authority over a stale checklist, until the checklist changes.
+  const blocking = [...new Set([...pending, ...(refused.against === pending.join() ? refused.keys : [])])];
+  const disabled = !agreed || blocking.length > 0;
+  return (
+    <>
+      {figures}
+      {blocking.length > 0 ? (
+        <Callout tone="warn" role="note">
+          <b>Còn {blocking.length} bước bắt buộc chưa xong:</b>
+          <ul className="onb-ul" style={{ marginTop: 6 }}>
+            {blocking.map((k) => (
+              <li key={k}>
+                <LinkButton onClick={() => goTo(k)}>{stepLabel(k)}</LinkButton>
+              </li>
+            ))}
+          </ul>
         </Callout>
       ) : null}
-      {done ? (
-        <Callout tone="ok">Số dư đầu kỳ đã xác nhận. Chứng từ từ ngày chốt trở về trước không ghi thêm được.</Callout>
-      ) : (
-        <>
-          <Callout tone="info">Sau khi xác nhận, không ghi hay sửa được chứng từ nào trong kỳ đến hết ngày chốt. Số dư đầu kỳ không đổi được nữa.</Callout>
-          <Checkbox label={CONFIRM_LABELS.agree} checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-          <ButtonRow>
-            <Button variant="danger" disabled={!agreed} pending={confirm.pending} onClick={run}>
-              {CONFIRM_LABELS.confirm}
-            </Button>
-          </ButtonRow>
-        </>
-      )}
-    </StepCard>
+      <Callout role="note">
+        <b>Khi xác nhận:</b>
+        <ul className="onb-ul" style={{ marginTop: 6 }}>
+          <li>Tồn kho, công nợ, tiền đầu kỳ và ngày chốt bị khóa, không sửa được.</li>
+          <li>Sổ khóa đến hết ngày {fd(cutoff)}. Sai lệch sau đó xử lý bằng chứng từ điều chỉnh.</li>
+          <li>POS và các màn bán hàng được mở.</li>
+        </ul>
+      </Callout>
+      <Checkbox id="ob-agree" label="Tôi đã kiểm tra các số dư trên và đồng ý khóa sổ đến hết ngày chốt." checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+      <ButtonRow>
+        <Button
+          variant="danger"
+          disabled={disabled}
+          pending={confirm.pending}
+          onClick={() => {
+            setRefused({ against: "", keys: [] });
+            void confirm.run();
+          }}
+          {...(disabled ? { "aria-describedby": "ob-confirm-h" } : {})}
+        >
+          Xác nhận số dư đầu kỳ
+        </Button>
+        <span className="hint" id="ob-confirm-h">
+          {blocking.length > 0 ? "Hoàn tất các bước còn thiếu trước." : !agreed ? "Đánh dấu ô đồng ý để xác nhận." : "Cần nhập lại mật khẩu khi xác nhận."}
+        </span>
+      </ButtonRow>
+    </>
   );
 }

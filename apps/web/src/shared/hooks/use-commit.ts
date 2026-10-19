@@ -4,7 +4,7 @@ import { ERROR_CODES, errorMessage, fieldReasonMessage, isApiError, isExceptionR
 import { toast } from "../ui/toast-store";
 import { ConfirmExceptionContext, type ExceptionPrompt } from "./use-confirm-exception";
 import { useIdempotentMutation } from "./use-idempotent-mutation";
-import { RecentAuthContext } from "./use-recent-auth";
+import { RecentAuthContext, type ReauthCopy } from "./use-recent-auth";
 
 // The one write contract of the app (prototype `post(btn, fn, okMsg, after)`):
 //   - the submit button shows "Đang ghi sổ…" and is disabled while the request is in flight;
@@ -38,6 +38,8 @@ export interface CommitOptions<TData, TVariables> {
   setFieldError?: (field: string, message: string, reason: string) => void;
   /** Bold lead of the refusal toast when the write posts nothing to the books; "Chưa ghi sổ." otherwise. */
   failedLead?: string;
+  /** Wording of the password prompt when the API asks for it; the shared wording otherwise. */
+  reauth?: ReauthCopy;
   /** Describes the exception to confirm for a 409 + exception_kind answer; null shows the error instead. */
   exception?: (error: ApiError & { exceptionKind: string }, variables: TVariables) => ExceptionPrompt | null;
 }
@@ -123,7 +125,7 @@ export function useCommit<TData, TVariables = void>(options: CommitOptions<TData
           return await options.mutationFn(variables, { idempotencyKey, exceptionConfirmationId });
         } catch (e) {
           if (isReauthRequired(e) && !reauthenticated && requestReauth) {
-            if (!(await requestReauth())) throw new CommitCancelledError();
+            if (!(await requestReauth(options.reauth))) throw new CommitCancelledError();
             reauthenticated = true;
             continue;
           }

@@ -46,15 +46,18 @@ describe("OnboardingGate", () => {
     const { router } = renderApp("/inventory/stock");
     await waitFor(() => expect(router.state.location.pathname).toBe("/onboarding"));
     expect(await screen.findByRole("heading", { level: 1, name: "Thiết lập cửa hàng" })).toBeInTheDocument();
-    expect(await screen.findByText("Việc cần làm để bắt đầu")).toBeInTheDocument();
+    expect(await screen.findByRole("navigation", { name: "Các bước thiết lập" })).toBeInTheDocument();
   });
 
   it("keeps the screens the steps link to open while a required step is pending, and nothing else", async () => {
-    server.use(withOnboarding(testOnboarding({ catalog_setup: "pending", opening_stock: "pending", confirm_opening_balances: "pending" })));
+    server.use(
+      withOnboarding(testOnboarding({ catalog_setup: "pending", opening_stock: "pending", confirm_opening_balances: "pending" })),
+      http.get(apiUrl("/skus"), () => HttpResponse.json({ data: [], next_cursor: null })),
+    );
     const user = userEvent.setup();
     const { router } = renderApp("/onboarding");
 
-    await user.click(await screen.findByRole("link", { name: "Mở danh mục hàng hóa" }));
+    await user.click(await screen.findByRole("link", { name: "Mở danh mục đầy đủ" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Hàng hóa" })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/catalog/products");
 
