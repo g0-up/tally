@@ -223,9 +223,10 @@ prod-logs: check-env
 	$(COMPOSE_HOMELAB) logs -f --tail=200 $(SERVICE)
 
 # A backup always precedes a production migration; the migrator records which dump it follows.
+# The dump is 0600 and owned by the invoking user, so the migrator runs as that user to read it.
 prod-migrate: check-env
 	$(MAKE) --no-print-directory db-backup STACK=prod BACKUP_FILE=$(BACKUP_FILE)
-	$(COMPOSE_HOMELAB) --profile ops run --rm migrate up --backup-file /backups/$(notdir $(BACKUP_FILE))
+	$(COMPOSE_HOMELAB) --profile ops run --rm --user "$$(id -u):$$(id -g)" migrate up --backup-file /backups/$(notdir $(BACKUP_FILE))
 
 # --- Release checks ---------------------------------------------------------------------------
 # The load dataset and the ledger checks run in the api image of the production-like stack
