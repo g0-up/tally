@@ -1,0 +1,29 @@
+# Secrets: only the documented example is tracked.
+.env
+.env.*
+!.env.example
+
+# Database dumps (may hold customer data).
+infra/backups/*
+!infra/backups/.gitkeep
+
+# Dependencies and generated output.
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+# prototype captures are taken on every parity run and never committed
+apps/web/e2e/visual/parity.spec.ts-snapshots/prototype/
+# acceptance evidence (traces, screenshots) of each dated run
+apps/web/e2e/acceptance/evidence/
+blob-report/
+*.tsbuildinfo
+apps/api/bin/
+*.test
+*.out
+
+# Editors and OS files.
+.idea/
+.vscode/
+.DS_Store
