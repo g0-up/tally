@@ -1,0 +1,25 @@
+{
+  "lookup": {
+    "http_req_duration{kind:lookup}": ["p(95)<1000"],
+    "http_req_failed{kind:lookup}": ["rate<0.005"],
+    "tally_unexpected_responses{kind:lookup}": ["rate<0.005"]
+  },
+  "posting": {
+    "http_req_duration{kind:posting}": ["p(95)<2000"],
+    "http_req_failed{kind:posting}": ["rate<0.005"],
+    "tally_unexpected_responses{kind:posting}": ["rate<0.005"],
+    "tally_unexpected_responses{kind:pricing}": ["rate<0.005"]
+  },
+  "reports": {
+    "http_req_duration{kind:report}": ["p(95)<5000"],
+    "http_req_failed{kind:report}": ["rate<0.005"],
+    "tally_unexpected_responses{kind:report}": ["rate<0.005"]
+  },
+  "devices": {
+    "http_req_duration{kind:posting}": ["p(95)<2000"],
+    "tally_unexpected_responses{kind:posting}": ["rate<0.005"],
+    "tally_unexpected_responses{kind:pricing}": ["rate<0.005"],
+    "pos_final_stock_ok": ["rate==1"],
+    "pos_oversold": ["count==0"]
+  }
+}
