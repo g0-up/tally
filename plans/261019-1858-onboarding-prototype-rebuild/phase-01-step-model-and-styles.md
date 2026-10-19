@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Step model and onboarding styles"
-status: pending
+status: completed
 effort: 0.5d
 ---
 

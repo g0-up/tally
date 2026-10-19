@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Profile, catalog, confirmation and first-sale steps"
-status: pending
+status: completed
 effort: 1d
 ---
 

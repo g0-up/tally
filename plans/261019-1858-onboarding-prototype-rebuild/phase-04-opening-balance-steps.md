@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Opening stock, debt and cash steps"
-status: pending
+status: completed
 effort: 1d
 ---
 

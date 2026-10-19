@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Frame: top bar, page head, rail, step card"
-status: pending
+status: completed
 effort: 1d
 ---
 

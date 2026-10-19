@@ -1,7 +1,7 @@
 ---
 title: "Rebuild the onboarding screen from prototype v6.14"
 description: "Port the new #onboarding screen of docs/design/prototype-v6.14.html into apps/web: frame with step rail, per-step card, new step bodies, and the Thiết lập › Khởi tạo cửa hàng page."
-status: pending
+status: completed
 priority: P1
 effort: 4d
 branch: master
@@ -59,11 +59,11 @@ Commit the prototype change together with phase 1 so the source and the port lan
 
 | # | Phase | Status | Files owned |
 |---|---|---|---|
-| 1 | [Step model and onboarding styles](phase-01-step-model-and-styles.md) | pending | `features/onboarding/steps.ts`, `shared/styles/globals.css`, prototype commit |
-| 2 | [Frame: top bar, page head, rail, step card](phase-02-frame-rail-and-step-card.md) | pending | `app/layouts/onboarding-layout.tsx`, `pages/onboarding-page.tsx`, `components/*` |
-| 3 | [Profile, catalog, confirmation and first-sale steps](phase-03-profile-catalog-confirm-first-sale.md) | pending | `steps/store-profile-step.tsx`, `catalog-setup-step.tsx`, `confirm-opening-step.tsx`, `first-sale-step.tsx`, `shared/ui/reauth-dialog.tsx` |
-| 4 | [Opening stock, debt and cash steps](phase-04-opening-balance-steps.md) | pending | `steps/opening-stock-step.tsx`, `opening-debt-step.tsx`, `opening-cash-step.tsx`, `api/queries.ts`, `api/mutations.ts` |
-| 5 | [Settings › Khởi tạo cửa hàng, tests, parity and docs](phase-05-settings-page-tests-docs.md) | pending | `app/menu.ts`, `features/settings/pages/store-setup-page.tsx`, tests, `e2e/*`, `docs/user-guide/bat-dau.md` |
+| 1 | [Step model and onboarding styles](phase-01-step-model-and-styles.md) | completed | `features/onboarding/steps.ts`, `shared/styles/globals.css`, prototype commit |
+| 2 | [Frame: top bar, page head, rail, step card](phase-02-frame-rail-and-step-card.md) | completed | `app/layouts/onboarding-layout.tsx`, `pages/onboarding-page.tsx`, `components/*` |
+| 3 | [Profile, catalog, confirmation and first-sale steps](phase-03-profile-catalog-confirm-first-sale.md) | completed | `steps/store-profile-step.tsx`, `catalog-setup-step.tsx`, `confirm-opening-step.tsx`, `first-sale-step.tsx`, `shared/ui/reauth-dialog.tsx` |
+| 4 | [Opening stock, debt and cash steps](phase-04-opening-balance-steps.md) | completed | `steps/opening-stock-step.tsx`, `opening-debt-step.tsx`, `opening-cash-step.tsx`, `api/queries.ts`, `api/mutations.ts` |
+| 5 | [Settings › Khởi tạo cửa hàng, tests, parity and docs](phase-05-settings-page-tests-docs.md) | completed | `app/menu.ts`, `features/settings/pages/store-setup-page.tsx`, tests, `e2e/*`, `docs/user-guide/bat-dau.md` |
 
 Phases run in order; 3 and 4 may run in parallel after 2 (disjoint files; both consume the phase 2 `StepFrame` contract).
 

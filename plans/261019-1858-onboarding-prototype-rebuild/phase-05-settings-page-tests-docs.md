@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Settings › Khởi tạo cửa hàng, tests, parity and docs"
-status: pending
+status: completed
 effort: 0.5d
 ---
 
