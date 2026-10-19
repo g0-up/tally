@@ -1,0 +1,116 @@
+version: "2"
+
+run:
+  timeout: 5m
+  build-tags:
+    - integration
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - depguard
+    - gocritic
+    - gosec
+    - revive
+  settings:
+    depguard:
+      rules:
+        # Domains never import each other. A domain declares the small interface it needs in its
+        # own ports.go and internal/app wires the concrete type; internal/posting is the only
+        # package allowed to call several domains in one transaction. Domain packages are flat,
+        # so the rule denies every domain path to every domain directory.
+        domain-isolation:
+          list-mode: lax # allowed unless denied; the longer of an allow and a deny match wins
+          files:
+            - "**/internal/org/**"
+            - "**/internal/identity/**"
+            - "**/internal/partner/**"
+            - "**/internal/catalog/**"
+            - "**/internal/pricing/**"
+            - "**/internal/inventory/**"
+            - "**/internal/procurement/**"
+            - "**/internal/sales/**"
+            - "**/internal/kits/**"
+            - "**/internal/debt/**"
+            - "**/internal/cash/**"
+            - "**/internal/campaign/**"
+            - "**/internal/crm/**"
+            - "**/internal/notification/**"
+            - "**/internal/reporting/**"
+            - "**/internal/analytics/**"
+            - "**/internal/printing/**"
+            - "**/internal/saas/**"
+          deny:
+            - pkg: github.com/g0-up/tally/apps/api/internal/org
+              desc: &cross-domain "a domain depends on another domain only through a port interface in its own ports.go"
+            - pkg: github.com/g0-up/tally/apps/api/internal/identity
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/partner
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/catalog
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/pricing
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/inventory
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/procurement
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/sales
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/kits
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/debt
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/cash
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/campaign
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/crm
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/notification
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/reporting
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/analytics
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/printing
+              desc: *cross-domain
+            - pkg: github.com/g0-up/tally/apps/api/internal/saas
+              desc: *cross-domain
+          allow:
+            # saas's own payment provider port; the saas-provider rule keeps other domains out.
+            - github.com/g0-up/tally/apps/api/internal/saas/provider
+        # The payment provider port is a saas subpackage: only saas and the wiring use it.
+        saas-provider:
+          files:
+            - $all
+            - "!**/internal/saas/**"
+            - "!**/internal/app/**"
+            - "!**/internal/cli/**"
+          deny:
+            - pkg: github.com/g0-up/tally/apps/api/internal/saas/provider
+              desc: the payment provider port is used by saas and wired in internal/app and internal/cli
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: var-naming
+        - name: indent-error-flow
+        - name: error-strings
+        - name: error-return
+        - name: errorf
+        - name: blank-imports
+        - name: context-as-argument
+        - name: unused-parameter
+        - name: unreachable-code
+        - name: redefines-builtin-id
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
