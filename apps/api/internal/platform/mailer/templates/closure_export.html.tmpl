@@ -1,0 +1,5 @@
+{{define "title"}}Cửa hàng đã đóng{{end}}{{define "content"}}<p>Chào {{.Name}},</p>
+<p>Cửa hàng <strong>{{.StoreName}}</strong> đã đóng theo yêu cầu của bạn. Không dữ liệu nào bị xoá.</p>
+<p>Tải bản xuất toàn bộ dữ liệu cuối cùng của cửa hàng bằng liên kết dưới đây. Liên kết dùng được nhiều lần, đến {{.Time}}; không cần đăng nhập, nên đừng chuyển tiếp thư này.</p>
+<p><a href="{{.Link}}" style="display:inline-block;padding:10px 16px;background:#1c1917;color:#ffffff;text-decoration:none;border-radius:6px;">Tải dữ liệu cửa hàng</a></p>
+<p style="color:#78716c;">Nếu liên kết hết hạn hoặc thư bị thất lạc, hãy liên hệ bộ phận hỗ trợ của Tally để được gửi lại.</p>{{end}}

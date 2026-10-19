@@ -1,0 +1,5 @@
+{{define "title"}}Đăng nhập mới{{end}}{{define "content"}}<p>Chào {{.Name}},</p>
+<p>Tài khoản của bạn tại cửa hàng <strong>{{.StoreName}}</strong> (<a href="{{.StoreURL}}">{{.StoreURL}}</a>) vừa đăng nhập từ một thiết bị mới:</p>
+<p>Thiết bị: <strong>{{.Device}}</strong><br>Thời gian: <strong>{{.Time}}</strong></p>
+<p>Nếu đó là bạn, không cần làm gì thêm. Nếu không, hãy đăng xuất thiết bị đó và đổi mật khẩu:</p>
+<p><a href="{{.Link}}" style="display:inline-block;padding:10px 16px;background:#1c1917;color:#ffffff;text-decoration:none;border-radius:6px;">Kiểm tra bảo mật</a></p>{{end}}
