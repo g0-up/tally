@@ -1,0 +1,59 @@
+/* Tailwind 4 theme mapped onto the prototype tokens. The default palette, fonts, shadows, radii and
+ * breakpoints are reset so utilities can only produce token values (`bg-navy-700`, `text-gray-600`,
+ * `font-display`, `shadow-card`). Breakpoints mirror the prototype media queries (max-width 520 /
+ * 860 / 1100): the `max-s:`, `max-m:` and `max-l:` variants give the same behaviour. */
+@theme inline {
+  --color-*: initial;
+  --color-navy-900: var(--navy-900);
+  --color-navy-700: var(--navy-700);
+  --color-navy-deep: var(--navy-deep);
+  --color-accent-orange: var(--accent-orange);
+  --color-accent-crimson: var(--accent-crimson);
+  --color-on-accent: var(--on-accent);
+  --color-slate-600: var(--slate-600);
+  --color-gray-800: var(--gray-800);
+  --color-gray-600: var(--gray-600);
+  --color-gray-500: var(--gray-500);
+  --color-gray-300: var(--gray-300);
+  --color-gray-200: var(--gray-200);
+  --color-surface-0: var(--surface-0);
+  --color-surface-50: var(--surface-50);
+  --color-surface-100: var(--surface-100);
+  --color-surface-blue-50: var(--surface-blue-50);
+  --color-surface-blue-100: var(--surface-blue-100);
+  --color-surface-dark: var(--surface-dark);
+  --color-ok-ink: var(--ok-ink);
+  --color-ok-bg: var(--ok-bg);
+  --color-ok-line: var(--ok-line);
+  --color-warn-ink: var(--warn-ink);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-line: var(--warn-line);
+  --color-bad-ink: var(--bad-ink);
+  --color-bad-bg: var(--bad-bg);
+  --color-bad-line: var(--bad-line);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-row-hover: var(--row-hover);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --font-*: initial;
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+  --font-ui: var(--font-ui);
+
+  --shadow-*: initial;
+  --shadow-card: var(--shadow-card);
+  --shadow-card-strong: var(--shadow-card-strong);
+  --shadow-float: var(--shadow-float);
+
+  --radius-*: initial;
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-pill: var(--radius-pill);
+
+  --breakpoint-*: initial;
+  --breakpoint-s: 521px;
+  --breakpoint-m: 861px;
+  --breakpoint-l: 1101px;
+}

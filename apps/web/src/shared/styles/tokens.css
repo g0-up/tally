@@ -1,0 +1,41 @@
+/* Design tokens copied byte-for-byte from the prototype :root (docs/design/prototype-v6.14.html).
+ * Keep names and values identical; tokens.test.ts compares them. Tokens after the marker name
+ * values the prototype writes inline (row hover, scrims, product colors, hatch) and the contrast-safe
+ * companions added for accessibility. */
+:root {
+  color-scheme: light;
+  --navy-900: #0a0d53; --navy-700: #233c65; --navy-deep: #001a2d;
+  --accent-orange: #f45d29; --accent-crimson: #f2295b; --on-accent: #eaeaea;
+  --slate-600: #4b5863; --gray-800: #333333; --gray-600: #555555; --gray-500: #777777; --gray-300: #c4c4c4; --gray-200: #d8d8d8;
+  --surface-0: #ffffff; --surface-50: #f5f5f5; --surface-100: #f2f2f2; --surface-blue-50: #e8edf7; --surface-blue-100: #d8e2ec; --surface-dark: #23282d;
+  --shadow-card: 0 0 7px 0 rgba(0,0,0,.15); --shadow-card-strong: 0 0 7px 0 rgba(0,0,0,.2); --shadow-float: 0 5px 15px 0 rgba(0,0,0,.15);
+  --gradient-accent: linear-gradient(260deg, #f45d29 0%, #f2295b 100%);
+  --space-1: 2px; --space-2: 6px; --space-3: 10px; --space-4: 18px; --space-5: 24px; --space-6: 35px; --space-7: 60px;
+  --radius-xs: 2px; --radius-sm: 3px; --radius-pill: 50px;
+  --font-sans: "Inter Tight", system-ui, sans-serif; --font-display: Manrope, "Inter Tight", system-ui, sans-serif; --font-ui: Roboto, "Inter Tight", system-ui, sans-serif;
+  --ok-ink: #1d6a3a; --ok-bg: #e7f3eb; --ok-line: #b6dbc3;
+  --warn-ink: #7a5200; --warn-bg: #fdf3dc; --warn-line: #efd28c;
+  --bad-ink: #a01431; --bad-bg: #fde9ed; --bad-line: #f1b5c2;
+  --series-1: #2f5da8; --series-2: #f45d29;
+  /* named inline values from the prototype */
+  --row-hover: #fafbfd;
+  --scrim-modal: rgba(0, 26, 45, .45);
+  --scrim-drawer: rgba(0, 26, 45, .25);
+  --chart-hit-hover: rgba(35, 60, 101, .06);
+  --on-navy-line: rgba(255, 255, 255, .12);
+  --on-navy-hover: rgba(255, 255, 255, .06);
+  --on-navy-current: rgba(255, 255, 255, .08);
+  --swatch-line: rgba(0, 0, 0, .15);
+  --product-xanh: #1f6fd1; --product-do: #d62828; --product-tim: #7b3fbf; --product-vang: #f2c200;
+  --product-nau: #8b5a2b; --product-den: #1f1f1f; --product-trang: #ffffff;
+  --hatch: repeating-linear-gradient(45deg, var(--gray-300) 0 2px, var(--surface-0) 2px 4px);
+  /* Contrast-safe companions (WCAG 2.2 AA). The prototype values above stay untouched; these darker
+   * shades carry white text (>= 4.5:1), control borders (>= 3:1) and the focus ring on dark headers. */
+  --accent-orange-strong: #cb4d22; --accent-crimson-strong: #e22655;
+  --gradient-accent-strong: linear-gradient(260deg, #cb4d22 0%, #e22655 100%);
+  --input-line: #8a8a8a;
+  --placeholder: #767676;
+  --muted-strong: #767676;
+  --on-dark-focus: #ffffff;
+  --on-dark-line: #6d7174;
+}
