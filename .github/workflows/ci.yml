@@ -1,0 +1,311 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Nightly: the jobs above plus the browser suites against a seeded stack (e2e-nightly).
+  schedule:
+    - cron: "30 19 * * *" # 02:30 Asia/Ho_Chi_Minh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION_FILE: apps/api/go.mod
+  GOLANGCI_LINT_VERSION: v2.7.2
+
+jobs:
+  api:
+    name: API (vet, lint, unit, integration)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache-dependency-path: apps/api/go.sum
+      - name: go vet
+        run: |
+          go vet ./...
+          go vet -tags integration ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          working-directory: apps/api
+      - name: Unit tests
+        run: go test -race -count=1 ./...
+      # Postgres comes from testcontainers inside the tests; the object store and mailer tests use
+      # the dev-stack MinIO and Mailpit on their default localhost ports.
+      - name: Start MinIO and Mailpit
+        working-directory: .
+        run: |
+          docker compose -f infra/docker-compose.yml up -d --wait mailpit minio
+          docker compose -f infra/docker-compose.yml up --no-log-prefix minio-init
+      - name: Integration tests
+        run: go test -race -count=1 -tags integration ./...
+
+  web:
+    name: Web (lint, typecheck, test, bundle)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm run build
+
+  migrations:
+    name: Migrations (lint, up, down, up)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: tally
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tally"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://tally_app:tally_app_ci@localhost:5432/tally?sslmode=disable
+      MIGRATE_DATABASE_URL: postgres://tally_owner:tally_owner_ci@localhost:5432/tally?sslmode=disable
+    steps:
+      - uses: actions/checkout@v5
+      # Every step below is skipped until the first migration file exists.
+      - name: No migrations yet
+        if: hashFiles('apps/api/migrations/*.sql') == ''
+        run: echo "apps/api/migrations has no .sql files; nothing to check."
+      - uses: actions/setup-go@v6
+        if: hashFiles('apps/api/migrations/*.sql') != ''
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache-dependency-path: apps/api/go.sum
+      - name: Create database roles
+        if: hashFiles('apps/api/migrations/*.sql') != ''
+        working-directory: .
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGPASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: tally
+          TALLY_OWNER_PASSWORD: tally_owner_ci
+          TALLY_APP_PASSWORD: tally_app_ci
+          TALLY_READONLY_PASSWORD: tally_readonly_ci
+          ROLES_SQL: infra/postgres/roles.sql
+        run: sh infra/postgres/init/01-roles.sh
+      - name: Migration lint
+        if: hashFiles('apps/api/migrations/*.sql') != ''
+        run: go test -count=1 ./migrations/...
+      # Catalog guard, per-table tenant isolation and up/down/up schema equality, on a
+      # testcontainers postgres:16-alpine.
+      - name: Catalog guard, isolation, reversibility
+        if: hashFiles('apps/api/migrations/*.sql') != ''
+        run: go test -count=1 -tags integration ./migrations/...
+      - name: Up, down, up
+        if: hashFiles('apps/api/migrations/*.sql') != ''
+        run: |
+          go run ./cmd/tally migrate up
+          go run ./cmd/tally migrate down --all
+          go run ./cmd/tally migrate up
+
+  docker:
+    name: Docker images and compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: API image
+        run: docker build --build-arg VERSION=${{ github.sha }} -t tally-api:ci apps/api
+      - name: API image is small and nonroot
+        run: |
+          size=$(docker image inspect -f '{{.Size}}' tally-api:ci)
+          user=$(docker image inspect -f '{{.Config.User}}' tally-api:ci)
+          echo "tally-api:ci size=${size} bytes user=${user}"
+          test "$size" -lt 30000000
+          test "$user" = "nonroot:nonroot"
+          docker run --rm tally-api:ci --version
+      - name: Web image
+        run: docker build -t tally-web:ci apps/web
+      - name: Production compose config
+        run: |
+          docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.example config -q
+          docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.homelab.yml --env-file infra/.env.example config -q
+          docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.homelab.yml -f infra/docker-compose.backup.yml --env-file infra/.env.example config -q
+          docker compose -f infra/docker-compose.yml config -q
+      - name: Backup sidecar image
+        run: |
+          docker build -t tally-walg:ci infra/backup
+          docker run --rm --entrypoint wal-g tally-walg:ci --version
+          docker run --rm tally-walg:ci help
+      - name: Ops scripts and alert rules
+        run: |
+          docker run --rm -v "$PWD:/mnt:ro" -w /mnt koalaman/shellcheck:v0.11.0 \
+            infra/scripts/restore-drill.sh infra/backup/walg-sidecar.sh
+          infra/scripts/restore-drill.sh --help > /dev/null
+          docker run --rm -v "$PWD/infra/monitoring:/m:ro" -w /m --entrypoint promtool prom/prometheus:v3.15.0 \
+            check rules alerts.yml
+          docker run --rm -v "$PWD/infra/monitoring:/m:ro" -w /m --entrypoint promtool prom/prometheus:v3.15.0 \
+            test rules alerts.test.yml
+      - name: k6 scripts
+        run: |
+          for script in load/k6/lookup.js load/k6/posting.js load/k6/reports.js load/k6/pos-devices.js load/k6/soak.js; do
+            docker run --rm -v "$PWD/load:/load" -w /load grafana/k6:2.3.0 inspect "${script#load/}" > /dev/null
+          done
+
+  security-scan:
+    name: Security scan (govulncheck, gosec, pnpm audit, trivy, gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # gitleaks reads the whole history
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache-dependency-path: apps/api/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/web/package.json
+      # The images are scanned by the release workflow after they are built.
+      - run: make security-scan SCAN_IMAGES=
+
+  e2e-nightly:
+    name: Browser suite ${{ matrix.suite }} (nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Acceptance journeys run once, on the Chromium `acceptance` project with traces kept as evidence.
+          - suite: acceptance
+            browsers: chromium
+            run: make acceptance
+          # Prototype parity screenshots, compared with the committed baselines (Linux).
+          - suite: visual
+            browsers: chromium
+            run: pnpm -C apps/web e2e:visual
+          # Axe, keyboard, focus and target size on Chromium and Edge (CI adds the a11y-msedge project).
+          - suite: a11y
+            browsers: chromium msedge
+            run: pnpm -C apps/web e2e:a11y
+    env:
+      # A test stack: `make seed` runs seed dev, which needs APP_ENV development or test, and the
+      # browser fixtures that drive a live stack run only with APP_ENV=test. Beyond development, test
+      # only lets the API honour TALLY_FAULT_INJECT, which this job never sets job-wide.
+      APP_ENV: test
+      # The dev-stack databases of `make db-up`, as the apps/api/Makefile defaults name them (dev
+      # credentials, not secrets). The make targets would default them; E2E_LEDGER_VERIFY_CMD runs
+      # outside make and needs DATABASE_URL, the tally_app role the ledger commands require (they
+      # refuse a superuser or a role that bypasses row level security).
+      DATABASE_URL: postgres://tally_app:tally_app_dev@localhost:5442/tally?sslmode=disable
+      MIGRATE_DATABASE_URL: postgres://tally_owner:tally_owner_dev@localhost:5442/tally?sslmode=disable
+      # The store `make seed` creates; its owner's password is a repository secret.
+      E2E_OWNER_PASSWORD: ${{ secrets.E2E_OWNER_PASSWORD }}
+      E2E_SALES_DOC_ID: ${{ vars.E2E_SALES_DOC_ID }}
+      E2E_STATEMENT_ID: ${{ vars.E2E_STATEMENT_ID }}
+      # Each acceptance journey ends with `tally ledger verify --tenant <id>` on the seeded database;
+      # run from apps/web, where Playwright runs. It runs outside make, so it takes the application
+      # role's DATABASE_URL set above.
+      E2E_LEDGER_VERIFY_CMD: go -C ../api run ./cmd/tally ledger verify
+    steps:
+      - uses: actions/checkout@v5
+      - name: Suite present
+        id: suite
+        run: |
+          if [ -d "apps/web/e2e/${{ matrix.suite }}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::apps/web/e2e/${{ matrix.suite }} does not exist yet; the ${{ matrix.suite }} suite is skipped"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-go@v6
+        if: steps.suite.outputs.present == 'true'
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache-dependency-path: apps/api/go.sum
+      - uses: pnpm/action-setup@v4
+        if: steps.suite.outputs.present == 'true'
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v5
+        if: steps.suite.outputs.present == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Install web dependencies and browsers
+        if: steps.suite.outputs.present == 'true'
+        working-directory: apps/web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps ${{ matrix.browsers }}
+      - name: Database, migrations and seed
+        if: steps.suite.outputs.present == 'true'
+        run: |
+          make db-up
+          make migrate-up
+          make seed
+      - name: Start API, worker and web
+        if: steps.suite.outputs.present == 'true'
+        run: |
+          mkdir -p test-results
+          nohup make dev-api > test-results/api.log 2>&1 &
+          nohup make worker > test-results/worker.log 2>&1 &
+          nohup make dev-web > test-results/web.log 2>&1 &
+          curl -fsS --retry 60 --retry-delay 2 --retry-all-errors http://localhost:8080/readyz
+          curl -fsS --retry 60 --retry-delay 2 --retry-all-errors -o /dev/null http://localhost:5173/
+      - name: Run ${{ matrix.suite }}
+        if: steps.suite.outputs.present == 'true'
+        run: ${{ matrix.run }}
+      - name: Upload report and logs
+        if: failure() && steps.suite.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ matrix.suite }}
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+            test-results
+          retention-days: 14
+      # Acceptance traces and screenshots are release evidence, kept for passing runs too.
+      - name: Upload acceptance evidence
+        if: always() && matrix.suite == 'acceptance' && steps.suite.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-evidence
+          path: |
+            apps/web/e2e/acceptance/evidence
+            apps/web/playwright-report
+          retention-days: 90
