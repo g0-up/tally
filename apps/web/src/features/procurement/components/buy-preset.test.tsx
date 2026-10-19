@@ -41,6 +41,23 @@ describe("BuyEditor", () => {
     expect(screen.queryByRole("textbox", { name: "Tên hàng mới" })).not.toBeInTheDocument();
   });
 
+  it("turns a search that finds nothing into a new product named after the typed text", async () => {
+    const user = userEvent.setup();
+    server.use(http.get(apiUrl("/skus"), () => HttpResponse.json({ data: [] })));
+    const { platform } = renderEditor([emptyBuyLine()]);
+    await waitFor(() => expect(platform.queryClient.getQueryState(["catalog", "lookup", "units"])?.status).toBe("success"));
+
+    await user.click(screen.getByRole("combobox", { name: "Tên hàng – dòng 1" }));
+    await user.type(screen.getByRole("combobox", { name: "Tên hàng – dòng 1" }), "Kẹo gừng");
+    await user.click(await screen.findByRole("option", { name: "+ Tạo hàng mới “Kẹo gừng”" }));
+
+    expect(screen.getByText("Hàng mới", { selector: ".tag" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Tên hàng mới" })).toHaveValue("Kẹo gừng");
+    expect(screen.getByRole("textbox", { name: "Tên hàng mới" })).toHaveFocus();
+    expect(screen.getByRole("combobox", { name: "Đơn vị cơ sở – Kẹo gừng" })).toHaveValue(UNIT_HOP);
+    expect(screen.queryByRole("combobox", { name: "Tên hàng – dòng 1" })).not.toBeInTheDocument();
+  });
+
   it("asks for lot and expiry only on lot-tracked rows when receiving", async () => {
     const tracked = withSku(emptyBuyLine(), testSku({ id: "sku-lot", display_name: "Kẹo sữa", track_lot: true, track_expiry: true }));
     const plain = withSku(emptyBuyLine(), testSku());

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { toMoney } from "../../../shared/domain/money";
 import { dec } from "../../../shared/lib/decimal";
 import { money, num, vnd } from "../../../shared/lib/format";
@@ -29,6 +29,9 @@ export interface BuyEditorProps {
 const BUY_HINT =
   "Quy cách là ghi chú tự do (VD: 24 hộp/thùng, hộp thiếc vuông). Giá bán lẻ sửa ở đây được áp dụng khi lưu chứng từ, cho các giao dịch bán mới; chứng từ bán cũ giữ giá đã chụp và mọi thay đổi giá được ghi vào lịch sử giá.";
 
+/** Shorter than the combobox default so it fits the product column without clipping. */
+const SKU_PLACEHOLDER = "Mã, tên hoặc mã vạch…";
+
 /** Goods and materials are bought; kits and combos are not. */
 const isBuyable = (sku: SkuListItem | undefined) => sku?.product_type === "goods" || sku?.product_type === "material";
 
@@ -43,13 +46,15 @@ const rowLabel = (label: string, line: BuyLine, index: number) => `${label} – 
 export function BuyEditor({ lines, onChange, receive = false, fixed = false }: BuyEditorProps) {
   const units = useUnits();
   const picker = useSkuPicker(null);
+  /** New-product row made from a search that found nothing; its name field takes focus. */
+  const [created, setCreated] = useState<string | null>(null);
 
   const set = (index: number, next: BuyLine) => onChange(lines.map((l, i) => (i === index ? next : l)));
   const remove = (index: number) => onChange(lines.filter((_, i) => i !== index));
 
   const spec = (l: BuyLine, i: number) => (
     <td>
-      <Input style={{ width: 140 }} value={l.spec} onChange={(e) => set(i, { ...l, spec: e.target.value })} placeholder="VD: 24 hộp/thùng" aria-label={rowLabel("Quy cách", l, i)} />
+      <Input style={{ width: 112 }} value={l.spec} onChange={(e) => set(i, { ...l, spec: e.target.value })} placeholder="VD: 24 hộp/thùng" aria-label={rowLabel("Quy cách", l, i)} />
     </td>
   );
 
@@ -84,57 +89,64 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false }: B
     const unitName = l.inBig && big !== null ? units.name(big) : base;
     const factor = l.inBig && big !== null ? dec(l.factor ?? 0) : dec(1);
     return (
-      <tr key={l.key} style={{ background: "var(--warn-bg)" }}>
+      <tr key={l.key} className="bp-new">
         <td style={{ minWidth: 260 }}>
-          <span className="tag" style={{ background: "var(--accent-crimson-strong)" }}>
-            Hàng mới
-          </span>
-          <Input style={{ marginTop: 6 }} value={l.name} onChange={(e) => set(i, { ...l, name: e.target.value })} placeholder="Tên hàng hóa mới" aria-label="Tên hàng mới" />
-          <ButtonRow style={{ marginTop: 6, gap: 6 }}>
-            <select
-              className="in"
-              style={{ width: 96 }}
-              value={l.baseUnitId ?? ""}
-              onChange={(e) => {
-                const id = e.target.value === "" ? null : e.target.value;
-                set(i, { ...l, baseUnitId: id, inBig: l.inBig && l.bigUnitId !== null && l.bigUnitId !== id });
-              }}
-              aria-label={rowLabel("Đơn vị cơ sở", l, i)}
-            >
-              <option value="">ĐV cơ sở</option>
-              {units.active.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-            <select
-              className="in"
-              style={{ width: 96 }}
-              value={l.bigUnitId ?? ""}
-              onChange={(e) => {
-                const id = e.target.value === "" ? null : e.target.value;
-                set(i, { ...l, bigUnitId: id, inBig: l.inBig && id !== null && id !== l.baseUnitId });
-              }}
-              aria-label={rowLabel("Đơn vị lớn", l, i)}
-            >
-              <option value="">ĐV lớn</option>
-              {units.active.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-            <span className="hint">=</span>
-            <QtyInput size="sm" style={{ width: 56 }} value={l.factor} onChange={(factor) => set(i, { ...l, factor })} placeholder="hệ số" aria-label={rowLabel("Hệ số quy đổi", l, i)} />
-          </ButtonRow>
+          <div className="bp-name">
+            <Input value={l.name} onChange={(e) => set(i, { ...l, name: e.target.value })} placeholder="Tên hàng hóa mới" aria-label="Tên hàng mới" autoFocus={l.key === created} />
+            <span className="tag">Hàng mới</span>
+          </div>
+          <div className="bp-units">
+            <span>
+              ĐV cơ sở
+              <select
+                className="in"
+                style={{ width: 88 }}
+                value={l.baseUnitId ?? ""}
+                onChange={(e) => {
+                  const id = e.target.value === "" ? null : e.target.value;
+                  set(i, { ...l, baseUnitId: id, inBig: l.inBig && l.bigUnitId !== null && l.bigUnitId !== id });
+                }}
+                aria-label={rowLabel("Đơn vị cơ sở", l, i)}
+              >
+                <option value="">ĐV cơ sở</option>
+                {units.active.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </span>
+            <span>
+              Quy đổi 1
+              <select
+                className="in"
+                style={{ width: 88 }}
+                value={l.bigUnitId ?? ""}
+                onChange={(e) => {
+                  const id = e.target.value === "" ? null : e.target.value;
+                  set(i, { ...l, bigUnitId: id, inBig: l.inBig && id !== null && id !== l.baseUnitId });
+                }}
+                aria-label={rowLabel("Đơn vị lớn", l, i)}
+              >
+                <option value="">ĐV lớn</option>
+                {units.active.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+              =
+              <QtyInput size="sm" style={{ width: 56 }} value={l.factor} onChange={(factor) => set(i, { ...l, factor })} placeholder="hệ số" aria-label={rowLabel("Hệ số quy đổi", l, i)} />
+              {base}
+            </span>
+          </div>
           <div style={{ marginTop: 6, fontSize: 12 }}>
             <Checkbox label="Quản lý lô/hạn" aria-label={rowLabel("Quản lý lô/hạn", l, i)} checked={l.trackLot} onChange={(e) => set(i, { ...l, trackLot: e.target.checked })} />
           </div>
           {swatches(l, i)}
         </td>
         <td>
-          <select className="in" value={l.inBig && big !== null ? "big" : "base"} onChange={(e) => set(i, { ...l, inBig: e.target.value === "big" })} aria-label={rowLabel("Đơn vị tính", l, i)}>
+          <select className="in" style={{ minWidth: 96 }} value={l.inBig && big !== null ? "big" : "base"} onChange={(e) => set(i, { ...l, inBig: e.target.value === "big" })} aria-label={rowLabel("Đơn vị tính", l, i)}>
             <option value="base">{base || "ĐVT"}</option>
             {big !== null ? <option value="big">{units.name(big)}</option> : null}
           </select>
@@ -152,7 +164,7 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false }: B
           <MoneyInput size="md" value={l.price} onChange={(price) => set(i, { ...l, price })} aria-label={rowLabel("Đơn giá", l, i)} />
           <CellSub>/{unitName || "ĐVT"}</CellSub>
         </td>
-        <td className="num">{money(lineAmount(l))}</td>
+        <td className="num amt">{money(lineAmount(l))}</td>
         <td className="num">
           <MoneyInput size="md" value={l.sell} onChange={(sell) => set(i, { ...l, sell })} placeholder={`/${base || "ĐV"}`} aria-label={rowLabel("Giá bán lẻ", l, i)} />
         </td>
@@ -193,6 +205,13 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false }: B
                   const picked = picker.picked(it.id);
                   if (picked) set(i, withSku(l, picked));
                 }}
+                onCreate={(name) => {
+                  const line = { ...newProductLine(units.idByName), name, color: l.color };
+                  setCreated(line.key);
+                  set(i, line);
+                }}
+                createLabel={(name) => `+ Tạo hàng mới “${name}”`}
+                placeholder={SKU_PLACEHOLDER}
                 aria-label={rowLabel("Tên hàng", l, i)}
               />
               {sku ? (
@@ -227,7 +246,7 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false }: B
           {fixed ? money(l.price ?? toMoney(0)) : <MoneyInput size="md" value={l.price} onChange={(price) => set(i, { ...l, price })} aria-label={rowLabel("Đơn giá", l, i)} />}
           {sku ? <CellSub>/{unitName}</CellSub> : null}
         </td>
-        <td className="num">{money(lineAmount(l))}</td>
+        <td className="num amt">{money(lineAmount(l))}</td>
         <td className="num">
           {sku ? (
             <>
@@ -254,7 +273,7 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false }: B
 
   return (
     <>
-      <div className="tw flat">
+      <div className="tw flat bp">
         <table className="t">
           <TableCaption>Hàng nhập</TableCaption>
           <thead>
@@ -283,8 +302,10 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false }: B
       </div>
       {fixed ? null : (
         <ButtonRow>
-          <Button onClick={() => onChange([...lines, emptyBuyLine()])}>+ Hàng có sẵn</Button>
-          <Button variant="navy" size="sm" onClick={() => onChange([...lines, newProductLine(units.idByName)])}>
+          <Button size="sm" onClick={() => onChange([...lines, emptyBuyLine()])}>
+            + Hàng có sẵn
+          </Button>
+          <Button size="sm" onClick={() => onChange([...lines, newProductLine(units.idByName)])}>
             + Hàng hóa mới
           </Button>
         </ButtonRow>
