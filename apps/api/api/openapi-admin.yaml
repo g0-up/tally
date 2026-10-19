@@ -1,0 +1,1592 @@
+openapi: 3.1.0
+info:
+  title: Tally Admin API
+  version: 0.1.0
+  description: |
+    Platform operator API, served only on the admin host; on a store or root host every path
+    answers 404. Every route registered under the admin prefix must appear here and every path
+    here must be served (enforced by the OpenAPI contract test).
+
+    Sign-in always takes two steps: `POST /auth/login` with the password answers a challenge, and
+    `POST /auth/totp` with the challenge and a TOTP code opens a session of 8 hours in its own
+    cookie. Admins are created with `tally admin create`; there is no sign-up.
+
+    The admin API sees store metadata, subscriptions, invoices and usage counters, never a store's
+    products, parties, documents or amounts. The only way into a store's records is the support
+    view, opened by the store owner for a ticket: read-only, limited to the granted modules,
+    expiring and audited in the store's log.
+
+    Conventions and the error contract follow the store API: money is a decimal string, custom
+    methods use `POST /<resource>/{id}:<verb>`, unsafe methods need `X-CSRF-Token` equal to the
+    admin CSRF cookie (`GET /host-context` on the admin host issues it), and every error body is
+    `ErrorResponse`. Lists use cursor pagination (`?cursor=&limit=`, limit at most 200, default 50)
+    and answer `{data, next_cursor}`; `next_cursor` is null on the last page.
+servers:
+  - url: /api/admin/v1
+security:
+  - adminSessionCookie: []
+    csrfHeader: []
+tags:
+  - name: auth
+    description: Two-step sign-in with a password and a TOTP code.
+  - name: tenants
+    description: Store directory and subscription actions.
+  - name: billing
+    description: Plans and service invoices.
+  - name: support
+    description: Support tickets of every store, the admin's support sessions and the read-only support view.
+  - name: operations
+    description: Feature flags, incidents, partners and referrals, feedback and daily usage.
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: adminLogin
+      summary: Check the password and get a TOTP challenge
+      description: Limited to ten attempts a minute per client address and ten a minute per e-mail. A locked account (too many wrong TOTP codes) is refused with rate_limited even with the right password.
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: {type: string, maxLength: 254}
+                password: {type: string, maxLength: 1024}
+      responses:
+        '200':
+          description: The password is right; send a TOTP code with the challenge.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, challenge]
+                properties:
+                  status: {type: string, const: mfa_required}
+                  challenge: {type: string}
+        '401':
+          description: invalid_credentials.
+          $ref: '#/components/responses/Error'
+        '403':
+          description: csrf_failed.
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+        '429':
+          description: rate_limited (Retry-After) — throttled, or the account is locked after too many wrong TOTP codes.
+          $ref: '#/components/responses/Error'
+  /auth/totp:
+    post:
+      tags: [auth]
+      operationId: adminVerifyTotp
+      summary: Finish sign-in with a TOTP code
+      description: Sets the admin session cookie and rotates the admin CSRF cookie, whose token is also returned.
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge, code]
+              properties:
+                challenge: {type: string, maxLength: 512}
+                code: {type: string, maxLength: 12}
+      responses:
+        '200':
+          description: Signed in.
+          headers:
+            Set-Cookie:
+              schema: {type: string}
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, csrf_token, expires_at]
+                properties:
+                  status: {type: string, const: signed_in}
+                  csrf_token: {type: string}
+                  expires_at: {type: string, format: date-time}
+        '401':
+          description: invalid_code or challenge_invalid (sign in again).
+          $ref: '#/components/responses/Error'
+        '403':
+          description: csrf_failed.
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+        '429':
+          description: rate_limited (Retry-After) — ten attempts a minute per client address or per account, or the account is locked for 15 minutes after 5 wrong codes in a row; a locked account refuses even the right code.
+          $ref: '#/components/responses/Error'
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: adminLogout
+      summary: End the admin session
+      responses:
+        '200':
+          description: Signed out, with the CSRF token of the signed-out state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, csrf_token]
+                properties:
+                  status: {type: string, const: signed_out}
+                  csrf_token: {type: string}
+        '401':
+          $ref: '#/components/responses/Error'
+  /me:
+    get:
+      tags: [auth]
+      operationId: adminGetMe
+      summary: The signed-in admin and its session
+      description: Answers only for a session that passed the TOTP step; the password step alone opens no session. csrf_token is the admin CSRF token of this session, the one in the CSRF cookie while it is valid for the session, else a new one also written to the cookie.
+      security:
+        - adminSessionCookie: []
+      responses:
+        '200':
+          description: Signed in.
+          headers:
+            Set-Cookie:
+              description: Only when the CSRF cookie was missing or belonged to another session.
+              schema: {type: string}
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [admin, csrf_token, expires_at]
+                properties:
+                  admin:
+                    $ref: '#/components/schemas/AdminRef'
+                  csrf_token: {type: string}
+                  expires_at: {type: string, format: date-time, description: End of the session; there is no remember-me.}
+        '401':
+          description: unauthenticated — no admin session, or it expired or was revoked.
+          $ref: '#/components/responses/Error'
+  /admins:
+    get:
+      tags: [auth]
+      operationId: adminListAdmins
+      summary: Platform admins by name
+      description: The directory support tickets are assigned from; inactive admins are listed with `active` false.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Admins.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/AdminEntry'}}
+                  next_cursor:
+                    oneOf:
+                      - $ref: '#/components/schemas/Cursor'
+                      - type: 'null'
+        '401':
+          $ref: '#/components/responses/Error'
+        '422':
+          description: invalid_cursor or invalid_limit.
+          $ref: '#/components/responses/Error'
+  /tenants:
+    get:
+      tags: [tenants]
+      operationId: adminListTenants
+      summary: Store directory
+      description: Metadata, subscription and usage counters only; sandboxes replaced by a reset are left out.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Part of the store address or name.
+          schema: {type: string, maxLength: 100}
+        - name: status
+          in: query
+          required: false
+          schema: {type: string, enum: [active, read_only, closed]}
+        - name: subscription_status
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/SubscriptionStatus'}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Stores, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/Tenant'}}
+                  next_cursor:
+                    oneOf:
+                      - $ref: '#/components/schemas/Cursor'
+                      - type: 'null'
+        '401':
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+  /tenants/{id}:
+    get:
+      tags: [tenants]
+      operationId: adminGetTenant
+      summary: One store with its subscription, recent usage and closure
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Store.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantDetail'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /tenants/{id}/account-closure:retry-export:
+    post:
+      tags: [tenants]
+      operationId: adminRetryTenantClosureExport
+      summary: Retry a closure's final export, or re-send its download link
+      description: |
+        An `export_failed` closure starts a new round of final exports: it is `exporting` again and
+        the store still only reads. A `completed` closure whose final export can still be downloaded
+        e-mails the owner a new download link; the earlier links stop working. Recorded in the
+        store's audit log as an admin action.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: The closure after the retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountClosureView'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          description: not_found (no such store, or it never asked to close).
+          $ref: '#/components/responses/Error'
+        '409':
+          description: |
+            closure_state_invalid: the closure is neither export_failed nor completed, its final
+            export can no longer be downloaded, or the store has no active owner to send the link to.
+          $ref: '#/components/responses/Error'
+  /tenants/{id}/subscription:change:
+    post:
+      tags: [tenants]
+      operationId: adminChangeTenantPlan
+      summary: Move the store to another plan now, without an invoice
+      description: Recorded in the store's audit log as an admin action.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan_id]
+              properties:
+                plan_id: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Subscription.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: subscription_missing, subscription_state_invalid, sandbox_not_billable or tenant_closed (the store's closure request completed).
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+  /tenants/{id}/subscription:extend:
+    post:
+      tags: [tenants]
+      operationId: adminExtendTenantSubscription
+      summary: Add days to the current period or trial
+      description: A lapsed subscription becomes active again from today. Recorded in the store's audit log.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [days]
+              properties:
+                days: {type: integer, minimum: 1, maximum: 366}
+      responses:
+        '200':
+          description: Subscription.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: subscription_missing or subscription_state_invalid (closed).
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+  /tenants/{id}/subscription:set-status:
+    post:
+      tags: [tenants]
+      operationId: adminSetTenantSubscriptionStatus
+      summary: Set the subscription status by hand, or the legal hold
+      description: |
+        grace and read_only start today with the plan's durations. A store under legal hold is never
+        closed by its closure request nor purged. At least one of the fields is required. Recorded in
+        the store's audit log.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: {type: string, enum: [active, grace, read_only, closed]}
+                legal_hold: {type: boolean}
+      responses:
+        '200':
+          description: Subscription.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: subscription_missing or sandbox_not_billable.
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+  /plans:
+    get:
+      tags: [billing]
+      operationId: adminListPlans
+      summary: Every plan, inactive ones included
+      responses:
+        '200':
+          description: Plans.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/Plan'}}
+        '401':
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [billing]
+      operationId: adminCreatePlan
+      summary: Add a plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanInput'
+      responses:
+        '201':
+          description: Plan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plan'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: plan_code_taken.
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+  /plans/{id}:
+    patch:
+      tags: [billing]
+      operationId: adminUpdatePlan
+      summary: Replace a plan's terms
+      description: Stores already on the plan keep their period; the new modules and limits apply at once, the new terms from their next status change.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanInput'
+      responses:
+        '200':
+          description: Plan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plan'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: plan_code_taken.
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+  /saas-invoices:
+    get:
+      tags: [billing]
+      operationId: adminListSaasInvoices
+      summary: Service invoices of every store
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: {type: string, enum: [open, paid, void]}
+        - name: tenant_id
+          in: query
+          required: false
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Invoices, newest issued first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/AdminSaasInvoice'}}
+                  next_cursor:
+                    oneOf:
+                      - $ref: '#/components/schemas/Cursor'
+                      - type: 'null'
+        '401':
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [billing]
+      operationId: adminIssueSaasInvoice
+      summary: Issue a new-period invoice to a store
+      description: The amount defaults to the plan price. Recorded in the store's audit log.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_id, plan_id]
+              properties:
+                tenant_id: {type: string, format: uuid}
+                plan_id: {type: string, format: uuid}
+                amount: {$ref: '#/components/schemas/Money'}
+      responses:
+        '201':
+          description: Open invoice.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaasInvoice'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: subscription_missing, subscription_state_invalid, sandbox_not_billable or tenant_closed (the store's closure request completed).
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+  /saas-invoices/{id}:mark-paid:
+    post:
+      tags: [billing]
+      operationId: adminMarkSaasInvoicePaid
+      summary: Record a bank transfer for an open invoice
+      description: |
+        Pays the invoice and extends the period once, like a provider callback. Confirming an invoice
+        this endpoint already paid again changes nothing; an invoice a provider paid is refused.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reference]
+              properties:
+                reference: {type: string, maxLength: 120, description: Bank transfer reference; unique per provider.}
+      responses:
+        '200':
+          description: Paid invoice.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaasInvoice'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: invoice_not_open (the invoice is void, for instance by a completed closure, or a provider paid it) or tenant_closed.
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed (`reference` required or already used).
+          $ref: '#/components/responses/Error'
+  /saas-invoices/{id}:void:
+    post:
+      tags: [billing]
+      operationId: adminVoidSaasInvoice
+      summary: Void an open invoice
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Void invoice.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaasInvoice'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: invoice_not_open.
+          $ref: '#/components/responses/Error'
+  /feature-flags:
+    get:
+      tags: [operations]
+      operationId: adminListFeatureFlags
+      summary: Feature flags, global and per store
+      responses:
+        '200':
+          description: Flags.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, known_keys]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/FeatureFlag'}}
+                  known_keys:
+                    type: array
+                    description: The flag keys the server reads, whether or not a value is set.
+                    items: {$ref: '#/components/schemas/FeatureFlagKey'}
+        '401':
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [operations]
+      operationId: adminSetFeatureFlag
+      summary: Turn a flag on or off, globally or for one store
+      description: |
+        A store's own value wins over the global one. Each change is kept in the flag's history. Setting a
+        store's own value also goes to that store's audit log as `feature_flag.override_set`, with the
+        value it replaced (`before`, null when the store had none) and the new one (`after`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, enabled]
+              properties:
+                key: {$ref: '#/components/schemas/FeatureFlagKey'}
+                tenant_id: {type: [string, 'null'], format: uuid, description: Null or absent for the global value.}
+                enabled: {type: boolean}
+      responses:
+        '200':
+          description: Flag.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureFlag'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          description: No store has the id.
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+  /feature-flags/{key}/changes:
+    get:
+      tags: [operations]
+      operationId: adminListFeatureFlagChanges
+      summary: History of a flag, newest first
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: {$ref: '#/components/schemas/FeatureFlagKey'}
+      responses:
+        '200':
+          description: Changes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/FeatureFlagChange'}}
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /tenants/{id}/feature-flags/{key}:
+    delete:
+      tags: [operations]
+      operationId: adminRemoveTenantFeatureFlag
+      summary: Remove a store's own value of a flag
+      description: The store follows the global value again. The removal is kept in the flag's history with `enabled` null and in the store's audit log.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - name: key
+          in: path
+          required: true
+          schema: {$ref: '#/components/schemas/FeatureFlagKey'}
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          description: not_found (no such store or key) or flag_override_not_found (the store has no own value).
+          $ref: '#/components/responses/Error'
+  /incidents:
+    get:
+      tags: [operations]
+      operationId: adminListIncidents
+      summary: Incidents, newest first
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          required: false
+          description: Keeps the incidents of one status, or with `open` those not resolved yet (any status but `resolved`). Absent lists them all.
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/IncidentStatus'
+              - {type: string, enum: [open]}
+      responses:
+        '200':
+          description: Incidents.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/Incident'}}
+                  next_cursor:
+                    oneOf:
+                      - $ref: '#/components/schemas/Cursor'
+                      - type: 'null'
+        '401':
+          $ref: '#/components/responses/Error'
+        '422':
+          description: invalid_cursor, invalid_limit, or validation_failed with `fields.status = invalid` for an unknown status.
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [operations]
+      operationId: adminCreateIncident
+      summary: Open an incident on the public status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, impact, message]
+              properties:
+                title: {type: string, maxLength: 200}
+                impact: {$ref: '#/components/schemas/IncidentImpact'}
+                status: {$ref: '#/components/schemas/IncidentStatus'}
+                message: {type: string, maxLength: 2000, description: First update.}
+      responses:
+        '201':
+          description: Incident.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '401':
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+  /incidents/{id}:
+    patch:
+      tags: [operations]
+      operationId: adminUpdateIncident
+      summary: Post an update, change the status or impact
+      description: A message adds an update; resolving sets `resolved_at`.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string, maxLength: 200}
+                status: {$ref: '#/components/schemas/IncidentStatus'}
+                impact: {$ref: '#/components/schemas/IncidentImpact'}
+                message: {type: string, maxLength: 2000}
+      responses:
+        '200':
+          description: Incident.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+  /partners:
+    get:
+      tags: [operations]
+      operationId: adminListPartners
+      summary: Referral partners
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Partners with their referral counts, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/Partner'}}
+                  next_cursor:
+                    oneOf:
+                      - $ref: '#/components/schemas/Cursor'
+                      - type: 'null'
+        '401':
+          $ref: '#/components/responses/Error'
+        '422':
+          description: invalid_cursor or invalid_limit.
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [operations]
+      operationId: adminCreatePartner
+      summary: Add a referral partner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, referral_code, commission_percent]
+              properties:
+                name: {type: string, maxLength: 200}
+                referral_code:
+                  type: string
+                  description: Stored upper case; letters, digits and hyphens, 3 to 32 characters.
+                  pattern: '^[A-Za-z0-9][A-Za-z0-9-]{2,31}$'
+                commission_percent: {$ref: '#/components/schemas/Decimal'}
+      responses:
+        '201':
+          description: Partner.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Partner'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: referral_code_taken.
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+  /partners/{id}/referrals:
+    get:
+      tags: [operations]
+      operationId: adminListPartnerReferrals
+      summary: Stores a partner referred, with their paid invoices and the commission
+      description: The commission is the partner's percent of the paid service invoices, rounded to the dong.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Partner and referrals.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [partner, data]
+                properties:
+                  partner: {$ref: '#/components/schemas/Partner'}
+                  data: {type: array, items: {$ref: '#/components/schemas/Referral'}}
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /feedback:
+    get:
+      tags: [operations]
+      operationId: adminListFeedback
+      summary: Product feedback from stores, newest first
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema: {type: string, enum: [idea, bug, praise, nps]}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page of feedback.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/Feedback'}}
+                  next_cursor:
+                    oneOf:
+                      - $ref: '#/components/schemas/Cursor'
+                      - type: 'null'
+        '401':
+          $ref: '#/components/responses/Error'
+        '422':
+          description: invalid_cursor, invalid_limit, or validation_failed with `fields.kind = invalid`.
+          $ref: '#/components/responses/Error'
+  /usage:
+    get:
+      tags: [operations]
+      operationId: adminListUsage
+      summary: Daily usage counters of every store between two days
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: {type: string, format: date}
+        - name: to
+          in: query
+          required: true
+          description: At most 366 days after `from`.
+          schema: {type: string, format: date}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Usage rows by day, then store.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/UsageRow'}}
+                  next_cursor:
+                    oneOf:
+                      - $ref: '#/components/schemas/Cursor'
+                      - type: 'null'
+        '401':
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+  /support-tickets:
+    get:
+      tags: [support]
+      operationId: adminListSupportTickets
+      summary: Support tickets of every store
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/SupportTicketStatus'}
+        - name: tenant_id
+          in: query
+          required: false
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Tickets, nearest SLA first; tickets without an SLA last.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, next_cursor]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/AdminSupportTicket'}}
+                  next_cursor:
+                    oneOf:
+                      - $ref: '#/components/schemas/Cursor'
+                      - type: 'null'
+        '401':
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed.
+          $ref: '#/components/responses/Error'
+  /support-tickets/{id}:
+    get:
+      tags: [support]
+      operationId: adminGetSupportTicket
+      summary: One ticket with its messages
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Ticket.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SupportTicketView'
+                  - type: object
+                    required: [tenant_id]
+                    properties:
+                      tenant_id: {type: string, format: uuid}
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [support]
+      operationId: adminUpdateSupportTicket
+      summary: Change a ticket's status or priority, assign or unassign it
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: {$ref: '#/components/schemas/SupportTicketStatus'}
+                priority: {type: string, enum: [low, normal, high, urgent]}
+                assigned_admin_id: {type: string, format: uuid}
+                unassign: {type: boolean, default: false}
+      responses:
+        '200':
+          description: Ticket.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportTicket'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed (`assigned_admin_id` not an active admin).
+          $ref: '#/components/responses/Error'
+  /support-tickets/{id}/messages:
+    post:
+      tags: [support]
+      operationId: adminReplySupportTicket
+      summary: Reply to the store
+      description: Support never asks for a password or a one-time code; a reply that looks like one is refused.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, maxLength: 10000}
+      responses:
+        '201':
+          description: Message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportTicketMessage'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: ticket_closed.
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed or possible_password.
+          $ref: '#/components/responses/Error'
+  /support-sessions:
+    get:
+      tags: [support]
+      operationId: adminListSupportSessions
+      summary: Support sessions granted to the signed-in admin
+      responses:
+        '200':
+          description: Sessions with their state now.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/SupportSession'}}
+        '401':
+          $ref: '#/components/responses/Error'
+  /tenants/{id}/support-view/{module}/{rest}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+      - name: module
+        in: path
+        required: true
+        schema: {$ref: '#/components/schemas/SupportViewModule'}
+      - name: rest
+        in: path
+        required: true
+        description: |
+          Path of a store API GET route under `/api/v1`, slashes included (`products/{id}`), whose
+          first segment belongs to the module. Query parameters are passed on.
+        schema: {type: string}
+    get:
+      tags: [support]
+      operationId: adminSupportView
+      summary: Read a store route through an active support session
+      description: |
+        Runs the store's GET route as the support session the owner granted to this admin, in a
+        read-only transaction under a read-only database role, and answers what the store API
+        answers. Each request is recorded in the store's audit log. No active session for the
+        module, an expired or revoked one, or a path outside the module answers 403
+        support_session_inactive.
+      responses:
+        '200':
+          description: The store API's response.
+          content:
+            application/json:
+              schema: {}
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          description: support_session_inactive or support_read_only.
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [support]
+      operationId: adminSupportViewPost
+      summary: Refused; a support session is read-only
+      responses:
+        '403':
+          description: support_read_only.
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [support]
+      operationId: adminSupportViewPut
+      summary: Refused; a support session is read-only
+      responses:
+        '403':
+          description: support_read_only.
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [support]
+      operationId: adminSupportViewPatch
+      summary: Refused; a support session is read-only
+      responses:
+        '403':
+          description: support_read_only.
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [support]
+      operationId: adminSupportViewDelete
+      summary: Refused; a support session is read-only
+      responses:
+        '403':
+          description: support_read_only.
+          $ref: '#/components/responses/Error'
+components:
+  securitySchemes:
+    adminSessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-tally_admin_session
+      description: Admin session cookie (`tally_admin_session` in plain-http development), set after the TOTP step.
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: Double-submit token equal to the `__Host-tally_admin_csrf` cookie; required on unsafe methods.
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/Cursor'
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/Error'
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: {type: string, description: Stable snake_case machine code.}
+        message: {type: string}
+        fields:
+          type: object
+          additionalProperties: {type: string}
+    Cursor:
+      type: string
+      description: Opaque pagination cursor returned as `next_cursor`.
+    Money:
+      type: string
+      description: Amount in VND as a plain decimal string.
+      pattern: '^-?[0-9]+(\.[0-9]+)?$'
+    Decimal:
+      type: string
+      description: Percent as a plain decimal string.
+      pattern: '^-?[0-9]+(\.[0-9]+)?$'
+    SubscriptionStatus:
+      type: string
+      enum: [trialing, active, grace, read_only, closed]
+    PlanModule:
+      type: string
+      enum: [pos, kits, campaign, crm, reports_advanced, ai_qa]
+    Plan:
+      type: object
+      required: [id, code, name, kind, billing_period, price, modules, limits, terms, active]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [year_round, seasonal, addon, trial]}
+        billing_period: {type: string, enum: [month, season, year, none]}
+        price: {$ref: '#/components/schemas/Money'}
+        modules: {type: array, items: {$ref: '#/components/schemas/PlanModule'}}
+        limits:
+          type: object
+          description: skus and storage_mb; a missing key is unlimited.
+          additionalProperties: {type: integer}
+        terms:
+          type: object
+          description: trial_days, grace_days, read_only_days, support_sla_hours and period_days.
+          additionalProperties: {type: integer}
+        active: {type: boolean}
+    PlanInput:
+      type: object
+      required: [code, name, kind, billing_period, price, modules]
+      properties:
+        code: {type: string, pattern: '^[a-z0-9_]{2,40}$'}
+        name: {type: string, maxLength: 120}
+        kind: {type: string, enum: [year_round, seasonal, addon, trial]}
+        billing_period: {type: string, enum: [month, season, year, none]}
+        price: {$ref: '#/components/schemas/Money'}
+        modules: {type: array, items: {$ref: '#/components/schemas/PlanModule'}}
+        limits:
+          type: object
+          description: Limits (skus, storage_mb) and terms (trial_days, grace_days, read_only_days, support_sla_hours, period_days).
+          additionalProperties: {type: integer, minimum: 0}
+        active: {type: boolean, default: true}
+    Subscription:
+      type: object
+      required: [id, plan_id, status, current_period_start, current_period_end, trial_ends_on, grace_ends_on,
+        read_only_ends_on, cancel_at_period_end, version]
+      properties:
+        id: {type: string, format: uuid}
+        plan_id: {type: string, format: uuid}
+        status: {$ref: '#/components/schemas/SubscriptionStatus'}
+        current_period_start: {type: string, format: date}
+        current_period_end: {type: string, format: date}
+        trial_ends_on: {type: [string, 'null'], format: date}
+        grace_ends_on: {type: [string, 'null'], format: date}
+        read_only_ends_on: {type: [string, 'null'], format: date}
+        cancel_at_period_end: {type: boolean}
+        version: {type: integer}
+    Entitlements:
+      type: object
+      required: [status, modules, limits, can_post, can_export]
+      properties:
+        status: {type: string, description: Status in effect today; empty for a store without a subscription.}
+        modules: {type: [object, 'null'], additionalProperties: {type: boolean}}
+        limits: {type: [object, 'null'], additionalProperties: {type: integer}}
+        can_post: {type: boolean}
+        can_export: {type: boolean}
+    SubscriptionView:
+      type: object
+      required: [subscription, plan, entitlements]
+      properties:
+        subscription:
+          oneOf:
+            - $ref: '#/components/schemas/Subscription'
+            - type: 'null'
+        plan:
+          oneOf:
+            - $ref: '#/components/schemas/Plan'
+            - type: 'null'
+        entitlements: {$ref: '#/components/schemas/Entitlements'}
+    AdminRef:
+      type: object
+      required: [id, full_name, email]
+      properties:
+        id: {type: string, format: uuid}
+        full_name: {type: string}
+        email: {type: string, format: email}
+    AdminEntry:
+      allOf:
+        - $ref: '#/components/schemas/AdminRef'
+        - type: object
+          required: [active]
+          properties:
+            active: {type: boolean}
+    Tenant:
+      type: object
+      description: Store metadata, subscription and usage counters; never business records or their values.
+      required: [id, slug, display_name, status, is_sandbox, sandbox_of, legal_hold, maintenance, created_at,
+        subscription_status, plan_code, plan_name, current_period_end, usage_date, active_skus, storage_bytes]
+      properties:
+        id: {type: string, format: uuid}
+        slug: {type: string}
+        display_name: {type: string}
+        status: {type: string, enum: [active, read_only, closed]}
+        is_sandbox: {type: boolean}
+        sandbox_of: {type: [string, 'null'], format: uuid}
+        legal_hold: {type: boolean}
+        maintenance: {type: boolean}
+        created_at: {type: string, format: date-time}
+        subscription_status:
+          oneOf:
+            - $ref: '#/components/schemas/SubscriptionStatus'
+            - type: 'null'
+        plan_code: {type: [string, 'null']}
+        plan_name: {type: [string, 'null']}
+        current_period_end: {type: [string, 'null'], format: date}
+        usage_date: {type: [string, 'null'], format: date, description: Day of the latest usage counters.}
+        active_skus: {type: [integer, 'null']}
+        storage_bytes: {type: [integer, 'null']}
+    Usage:
+      type: object
+      required: [tenant_id, usage_date, active_skus, documents_posted, storage_bytes]
+      properties:
+        tenant_id: {type: string, format: uuid}
+        usage_date: {type: string, format: date}
+        active_skus: {type: integer}
+        documents_posted: {type: integer}
+        storage_bytes: {type: integer}
+    UsageRow:
+      allOf:
+        - $ref: '#/components/schemas/Usage'
+        - type: object
+          required: [tenant_name, slug]
+          properties:
+            tenant_name: {type: string}
+            slug: {type: string}
+    TenantDetail:
+      allOf:
+        - $ref: '#/components/schemas/Tenant'
+        - type: object
+          required: [subscription, usage, closure]
+          properties:
+            subscription: {$ref: '#/components/schemas/SubscriptionView'}
+            usage: {type: array, items: {$ref: '#/components/schemas/Usage'}, description: Latest days first.}
+            closure:
+              description: The store's latest closure request and its export; null when it never asked to close.
+              oneOf:
+                - $ref: '#/components/schemas/AccountClosureView'
+                - type: 'null'
+    AccountClosureRequest:
+      type: object
+      required: [id, status, verified_at, export_job_id, waiting_until, legal_hold, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        status:
+          type: string
+          enum: [requested, verified, waiting, exporting, export_failed, completed, cancelled]
+          description: |
+            `exporting`: the wait ended and the final export is being taken; the store only reads
+            and can no longer cancel. `export_failed`: the final export kept failing; the store
+            still only reads until an operator retries it (`account-closure:retry-export`).
+        verified_at: {type: [string, 'null'], format: date-time}
+        export_job_id: {type: [string, 'null'], format: uuid, description: The closure's latest export (the first or the final one).}
+        waiting_until:
+          type: string
+          format: date
+          description: After this day the closure takes its final export, and the store only reads from then on.
+        legal_hold: {type: boolean, description: A store under legal hold is not closed when the wait ends.}
+        created_at: {type: string, format: date-time}
+    AccountClosureView:
+      type: object
+      required: [request, export]
+      properties:
+        request:
+          oneOf:
+            - $ref: '#/components/schemas/AccountClosureRequest'
+            - type: 'null'
+        export:
+          oneOf:
+            - $ref: '#/components/schemas/AccountClosureExport'
+            - type: 'null'
+    AccountClosureExport:
+      type: object
+      required: [id, status, expires_at, final, failed_attempts]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [queued, running, succeeded, failed, expired, cancelled]}
+        expires_at: {type: [string, 'null'], format: date-time, description: The download link of a succeeded export ends then.}
+        final:
+          type: boolean
+          description: The export taken when the wait ended, once the store only reads; the store closes when it succeeded.
+        failed_attempts:
+          type: integer
+          minimum: 0
+          description: Final exports of the current round that failed; at three the closure stops at `export_failed`.
+    SaasInvoice:
+      type: object
+      required: [id, number, subscription_id, plan_id, purpose, period_start, period_end, amount, proration_note, status,
+        provider, provider_ref, issued_at, paid_at]
+      properties:
+        id: {type: string, format: uuid}
+        number: {type: string}
+        subscription_id: {type: [string, 'null'], format: uuid}
+        plan_id: {type: [string, 'null'], format: uuid}
+        purpose: {type: string, enum: [new_period, renewal, plan_change, addon]}
+        period_start: {type: string, format: date}
+        period_end: {type: string, format: date}
+        amount: {$ref: '#/components/schemas/Money'}
+        proration_note: {type: [string, 'null']}
+        status: {type: string, enum: [open, paid, void]}
+        provider: {type: [string, 'null']}
+        provider_ref: {type: [string, 'null']}
+        issued_at: {type: string, format: date-time}
+        paid_at: {type: [string, 'null'], format: date-time}
+    AdminSaasInvoice:
+      allOf:
+        - $ref: '#/components/schemas/SaasInvoice'
+        - type: object
+          required: [tenant_id, tenant_slug, tenant_name]
+          properties:
+            tenant_id: {type: string, format: uuid}
+            tenant_slug: {type: string}
+            tenant_name: {type: string}
+    FeatureFlagKey:
+      type: string
+      pattern: '^[a-z0-9][a-z0-9_.:-]{0,79}$'
+    FeatureFlag:
+      type: object
+      required: [key, tenant_id, tenant_slug, tenant_name, enabled, updated_at]
+      properties:
+        key: {$ref: '#/components/schemas/FeatureFlagKey'}
+        tenant_id: {type: [string, 'null'], format: uuid, description: Null for the global value.}
+        tenant_slug: {type: [string, 'null'], description: Slug of the store of an override; null for the global value.}
+        tenant_name: {type: [string, 'null'], description: Display name of the store of an override; null for the global value.}
+        enabled: {type: boolean}
+        updated_at: {type: string, format: date-time}
+    FeatureFlagChange:
+      type: object
+      required: [id, key, tenant_id, tenant_slug, tenant_name, enabled, admin_id, admin_full_name, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        key: {$ref: '#/components/schemas/FeatureFlagKey'}
+        tenant_id: {type: [string, 'null'], format: uuid}
+        tenant_slug: {type: [string, 'null'], description: Null on a change of the global value.}
+        tenant_name: {type: [string, 'null'], description: Null on a change of the global value.}
+        enabled: {type: [boolean, 'null'], description: Null when the store's own value was removed.}
+        admin_id: {type: string, format: uuid}
+        admin_full_name: {type: string}
+        created_at: {type: string, format: date-time}
+    IncidentStatus:
+      type: string
+      enum: [investigating, identified, monitoring, resolved]
+    IncidentImpact:
+      type: string
+      enum: [none, minor, major, critical]
+    Incident:
+      type: object
+      required: [id, title, status, impact, started_at, resolved_at, updates]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        status: {$ref: '#/components/schemas/IncidentStatus'}
+        impact: {$ref: '#/components/schemas/IncidentImpact'}
+        started_at: {type: string, format: date-time}
+        resolved_at: {type: [string, 'null'], format: date-time}
+        updates:
+          type: array
+          items:
+            type: object
+            required: [at, status, message]
+            properties:
+              at: {type: string, format: date-time}
+              status: {$ref: '#/components/schemas/IncidentStatus'}
+              message: {type: string}
+    Partner:
+      type: object
+      required: [id, name, referral_code, commission_percent, active, created_at, referrals]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        referral_code: {type: string}
+        commission_percent: {$ref: '#/components/schemas/Decimal'}
+        active: {type: boolean}
+        created_at: {type: string, format: date-time}
+        referrals: {type: integer}
+    Referral:
+      type: object
+      required: [tenant_id, slug, display_name, referred_at, subscription_status, paid_invoices, commission]
+      properties:
+        tenant_id: {type: string, format: uuid}
+        slug: {type: string}
+        display_name: {type: string}
+        referred_at: {type: string, format: date-time}
+        subscription_status:
+          oneOf:
+            - $ref: '#/components/schemas/SubscriptionStatus'
+            - type: 'null'
+        paid_invoices: {$ref: '#/components/schemas/Money'}
+        commission: {$ref: '#/components/schemas/Money'}
+    Feedback:
+      type: object
+      required: [id, tenant_id, tenant_slug, kind, score, body, page_path, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        tenant_id: {type: string, format: uuid}
+        tenant_slug: {type: string}
+        kind: {type: string, enum: [idea, bug, praise, nps]}
+        score: {type: [integer, 'null']}
+        body: {type: [string, 'null']}
+        page_path: {type: [string, 'null']}
+        created_at: {type: string, format: date-time}
+    SupportTicketStatus:
+      type: string
+      enum: [open, waiting_customer, in_progress, resolved, closed]
+    SupportTicket:
+      type: object
+      required: [id, number, subject, status, priority, sla_due_at, assigned_admin_id, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        number: {type: string}
+        subject: {type: string}
+        status: {$ref: '#/components/schemas/SupportTicketStatus'}
+        priority: {type: string, enum: [low, normal, high, urgent]}
+        sla_due_at: {type: [string, 'null'], format: date-time}
+        assigned_admin_id: {type: [string, 'null'], format: uuid}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    AdminSupportTicket:
+      allOf:
+        - $ref: '#/components/schemas/SupportTicket'
+        - type: object
+          required: [tenant_id, tenant_slug, tenant_name, last_message_at]
+          properties:
+            tenant_id: {type: string, format: uuid}
+            tenant_slug: {type: string}
+            tenant_name: {type: string}
+            last_message_at: {type: [string, 'null'], format: date-time}
+    SupportTicketMessage:
+      type: object
+      required: [id, author_type, author_id, body, attachment_ids, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        author_type: {type: string, enum: [owner, platform_admin]}
+        author_id: {type: string, format: uuid}
+        body: {type: string}
+        attachment_ids: {type: array, items: {type: string, format: uuid}}
+        created_at: {type: string, format: date-time}
+    SupportTicketView:
+      allOf:
+        - $ref: '#/components/schemas/SupportTicket'
+        - type: object
+          required: [messages]
+          properties:
+            messages: {type: array, items: {$ref: '#/components/schemas/SupportTicketMessage'}}
+    SupportViewModule:
+      type: string
+      enum: [catalog, partners, inventory, procurement, sales, debt_cash, kits, campaign, crm, reports, settings]
+    SupportSession:
+      type: object
+      required: [id, tenant_id, tenant_slug, tenant_name, admin_id, ticket_id, scope, modules, state, granted_at, expires_at, revoked_at]
+      properties:
+        id: {type: string, format: uuid}
+        tenant_id: {type: string, format: uuid}
+        tenant_slug: {type: string}
+        tenant_name: {type: string}
+        admin_id: {type: string, format: uuid}
+        ticket_id: {type: [string, 'null'], format: uuid}
+        scope: {type: string, enum: [read_only]}
+        modules: {type: array, items: {$ref: '#/components/schemas/SupportViewModule'}}
+        state: {type: string, enum: [active, expired, revoked]}
+        granted_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        revoked_at: {type: [string, 'null'], format: date-time}
