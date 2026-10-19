@@ -1,0 +1,8 @@
+{{define "title"}}Nhắc thanh toán công nợ{{end}}{{define "content"}}<p>Chào {{.PartyName}},</p>
+<p>{{.StoreName}} xin nhắc khoản công nợ còn mở của anh/chị tính đến ngày {{.AsOf}}: <strong>{{.Open}}</strong>.{{if .Overdue}} Trong đó đã quá hạn: <strong>{{.Overdue}}</strong>.{{end}}</p>
+<table role="presentation" cellpadding="4" cellspacing="0" style="border-collapse:collapse;">
+<tr><th align="left">Chứng từ</th><th align="right">Còn nợ</th><th align="left">Hạn</th></tr>
+{{range .Documents}}<tr><td>{{.DocNo}}</td><td align="right">{{.Open}}</td><td>{{.DueDate}}</td></tr>
+{{end}}</table>
+<p>Anh/chị vui lòng thanh toán hoặc liên hệ cửa hàng nếu có sai lệch.{{if .StorePhone}} Điện thoại: {{.StorePhone}}.{{end}}</p>
+<p>Cảm ơn anh/chị.<br>{{.StoreName}}</p>{{end}}

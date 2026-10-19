@@ -1,0 +1,17 @@
+Chào {{.PartyName}},
+
+{{.StoreName}} xin nhắc khoản công nợ còn mở của anh/chị tính đến ngày {{.AsOf}}: {{.Open}}.
+{{- if .Overdue}}
+Trong đó đã quá hạn: {{.Overdue}}.
+{{- end}}
+{{range .Documents}}
+- {{.DocNo}}: còn {{.Open}}, hạn {{.DueDate}}
+{{- end}}
+
+Anh/chị vui lòng thanh toán hoặc liên hệ cửa hàng nếu có sai lệch.
+{{- if .StorePhone}}
+Điện thoại: {{.StorePhone}}
+{{- end}}
+
+Cảm ơn anh/chị.
+{{.StoreName}}
