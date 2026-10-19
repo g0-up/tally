@@ -1,0 +1,62 @@
+# Continuous archiving of the production database (RPO <= 15 min): postgres archives every WAL
+# segment into a spool volume (infra/postgres/postgresql.prod.conf) and the wal-g sidecar uploads
+# it to the backup bucket, takes a base backup every night and keeps BACKUP_RETAIN_FULL of them.
+# Overlay of the production stack, deployed with it by `make prod-up`:
+#   docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.homelab.yml \
+#     -f infra/docker-compose.backup.yml --env-file infra/.env up -d
+# Restore and the measured drill: infra/scripts/restore-drill.sh and docs/runbook.md.
+services:
+  postgres:
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    volumes:
+      - ./postgres/postgresql.prod.conf:/etc/postgresql/postgresql.conf:ro
+      - walspool:/var/lib/postgresql/wal-spool
+    depends_on:
+      # Prepares the spool directory postgres archives into.
+      walg:
+        condition: service_started
+
+  walg:
+    build:
+      context: ./backup
+    image: tally-walg:${VERSION:-dev}
+    restart: always
+    environment:
+      TZ: ${APP_TZ:-Asia/Ho_Chi_Minh}
+      # The base backup runs pg_backup_start/stop as the superuser over the project network and
+      # reads the data volume read-only.
+      PGHOST: tally-postgres
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD in infra/.env}
+      PGDATABASE: ${POSTGRES_DB:-tally}
+      PGDATA: /var/lib/postgresql/data
+      # A bucket and token of their own, never the app's object store.
+      WALG_S3_PREFIX: ${WALG_S3_PREFIX:?set WALG_S3_PREFIX in infra/.env}
+      AWS_ENDPOINT: ${WALG_S3_ENDPOINT:?set WALG_S3_ENDPOINT in infra/.env}
+      AWS_REGION: ${WALG_S3_REGION:-auto}
+      AWS_S3_FORCE_PATH_STYLE: "true"
+      AWS_ACCESS_KEY_ID: ${WALG_S3_ACCESS_KEY:?set WALG_S3_ACCESS_KEY in infra/.env}
+      AWS_SECRET_ACCESS_KEY: ${WALG_S3_SECRET_KEY:?set WALG_S3_SECRET_KEY in infra/.env}
+      # Client-side encryption of every backup and WAL file; without this key nothing restores.
+      WALG_LIBSODIUM_KEY: ${WALG_LIBSODIUM_KEY:?set WALG_LIBSODIUM_KEY in infra/.env}
+      WALG_LIBSODIUM_KEY_TRANSFORM: base64
+      BACKUP_BASE_TIME: ${BACKUP_BASE_TIME:-02:30}
+      BACKUP_RETAIN_FULL: ${BACKUP_RETAIN_FULL:-7}
+    volumes:
+      - pgdata:/var/lib/postgresql/data:ro
+      - walspool:/var/lib/postgresql/wal-spool
+      - walg-state:/var/lib/walg
+    # Unhealthy when WAL waits over 15 minutes, the archiver fails or the base backup is over 26 h old.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/walg-sidecar", "health"]
+      interval: 60s
+      timeout: 30s
+      start_period: 2m
+      retries: 3
+    # Lets an upload in flight finish on `docker compose stop`.
+    stop_grace_period: 2m
+
+volumes:
+  walspool:
+  walg-state:

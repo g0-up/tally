@@ -1,0 +1,74 @@
+# Development dependencies. The API and the web app run on the host (`make dev`).
+# Credentials below are for local development only; production reads infra/.env (see docs/runbook.md).
+# Host ports are fixed and bound to 127.0.0.1; `make check-ports` names the owner of a busy port.
+name: tally
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tally
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      TALLY_OWNER_PASSWORD: tally_owner_dev
+      TALLY_APP_PASSWORD: tally_app_dev
+      TALLY_READONLY_PASSWORD: tally_readonly_dev
+    ports:
+      # 5442 by default: 5432 is commonly taken by other local Postgres instances.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5442}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./postgres/roles.sql:/etc/tally/roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.31
+    ports:
+      - "127.0.0.1:1025:1025" # SMTP
+      - "127.0.0.1:8025:8025" # web UI
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Community rebuild of upstream MinIO: the minio/minio image is no longer published.
+  minio:
+    image: alpine/minio:RELEASE.2025-10-15T17-29-55Z
+    # The image runs as user `minio` but its declared /data volume is root-owned, so data lives in the
+    # minio-owned home directory instead (a new named volume inherits that ownership).
+    command: ["server", "/home/minio/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: tally-dev
+      MINIO_ROOT_PASSWORD: tally-dev-secret
+    ports:
+      - "127.0.0.1:9000:9000" # S3 API
+      - "127.0.0.1:9001:9001" # console
+    volumes:
+      - miniodata:/home/minio
+    healthcheck:
+      # Same readiness probe `mc ready` uses; this image ships wget but not mc.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9000/minio/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: bitnamilegacy/minio-client:2025.4.16
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_HOST_local: http://tally-dev:tally-dev-secret@minio:9000
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mc ready local && mc mb --ignore-existing local/tally-dev"]
+    restart: "no"
+
+volumes:
+  pgdata:
+  miniodata:

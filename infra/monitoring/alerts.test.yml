@@ -1,0 +1,112 @@
+# promtool unit tests of alerts.yml:
+#   docker run --rm -v "$PWD/infra/monitoring:/m:ro" -w /m --entrypoint promtool \
+#     prom/prometheus:v3.15.0 test rules alerts.test.yml
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="tally-api", instance="api:9090"}'
+        values: "1 1 0 0 0 0"
+      - series: 'up{job="tally-worker", instance="worker:9091"}'
+        values: "1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: TallyTargetDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: TallyTargetDown
+        exp_alerts:
+          - exp_labels: { severity: critical, job: tally-api, instance: "api:9090" }
+            exp_annotations:
+              summary: "tally-api on api:9090 is not answering the metrics scrape"
+              runbook: docs/runbook.md#alerts-and-observability
+      - eval_time: 5m
+        alertname: TallyMetricsMissing
+        exp_alerts: []
+
+  # 1 req/s of which 2% fail: over the 0.5% budget for longer than 10 min.
+  - interval: 1m
+    input_series:
+      - series: 'tally_http_requests_total{job="tally-api", method="GET", route="/api/v1/skus", status="200"}'
+        values: "0+59x30"
+      - series: 'tally_http_requests_total{job="tally-api", method="GET", route="/api/v1/skus", status="500"}'
+        values: "0+1x30"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: TallyHigh5xxRatio
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: "1.667% of API requests answer 5xx (budget 0.5%)"
+              runbook: docs/runbook.md#alerts-and-observability
+
+  # A healthy rate of lookups all under 250 ms stays quiet; reports are judged on their own budget.
+  - interval: 1m
+    input_series:
+      - series: 'tally_http_request_duration_seconds_bucket{job="tally-api", method="GET", route="/api/v1/skus", le="0.25"}'
+        values: "0+60x30"
+      - series: 'tally_http_request_duration_seconds_bucket{job="tally-api", method="GET", route="/api/v1/skus", le="+Inf"}'
+        values: "0+60x30"
+      - series: 'tally_http_request_duration_seconds_count{job="tally-api", method="GET", route="/api/v1/skus"}'
+        values: "0+60x30"
+      - series: 'tally_http_request_duration_seconds_bucket{job="tally-api", method="GET", route="/api/v1/reports/:reportKey", le="5"}'
+        values: "0+0x30"
+      - series: 'tally_http_request_duration_seconds_bucket{job="tally-api", method="GET", route="/api/v1/reports/:reportKey", le="10"}'
+        values: "0+6x30"
+      - series: 'tally_http_request_duration_seconds_bucket{job="tally-api", method="GET", route="/api/v1/reports/:reportKey", le="+Inf"}'
+        values: "0+6x30"
+      - series: 'tally_http_request_duration_seconds_count{job="tally-api", method="GET", route="/api/v1/reports/:reportKey"}'
+        values: "0+6x30"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: TallyLookupP95High
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: TallyReportP95High
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "Report p95 is 9.75s (budget 5 s)"
+              runbook: docs/runbook.md#alerts-and-observability
+
+  - interval: 1m
+    input_series:
+      - series: 'tally_outbox_lag_seconds{job="tally-worker"}'
+        values: "0 60 400 400 400 400 400 400 400 400"
+      - series: 'tally_outbox_events_total{job="tally-worker", topic="notification.email", outcome="dead"}'
+        values: "0 0 0 1 1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: TallyOutboxLagging
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "The oldest pending outbox event is 6m 40s old"
+              runbook: docs/runbook.md#alerts-and-observability
+      - eval_time: 9m
+        alertname: TallyOutboxStuck
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: TallyOutboxDeadEvents
+        exp_alerts:
+          - exp_labels: { severity: critical, topic: notification.email }
+            exp_annotations:
+              summary: "1 notification.email events exhausted their retries in the last hour"
+              runbook: docs/runbook.md#alerts-and-observability
+
+  - interval: 1m
+    input_series:
+      - series: 'tally_http_requests_total{job="tally-api", method="POST", route="/api/v1/webhooks/saas-payments/:provider", status="401"}'
+        values: "0 1 2 3 4"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: TallyPaymentWebhookFailing
+        exp_alerts:
+          - exp_labels: { severity: warning, status: "401" }
+            exp_annotations:
+              summary: "SaaS payment webhooks answered 401 4 times in 30 min"
+              runbook: docs/runbook.md#alerts-and-observability

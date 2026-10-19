@@ -1,0 +1,150 @@
+# Prometheus alerting rules of the production stack (NFR-09 observability, NFR-03/05 latency
+# budgets, NFR-07 backups). Every expression uses a metric the API or worker exports today
+# (apps/api/internal/platform/metrics/metrics.go); signals Tally does not export yet are listed in
+# docs/runbook.md "Alerts and observability" as gaps instead of being guessed here.
+#
+# Scrape jobs assumed: `tally-api` (`tally serve`, METRICS_ADDR) and `tally-worker`
+# (`tally worker`, METRICS_ADDR). Both listeners default to 127.0.0.1, so a Prometheus outside the
+# container needs METRICS_ADDR=0.0.0.0:<port> on a network that is not published.
+#
+# Check: docker run --rm -v "$PWD/infra/monitoring:/m:ro" --entrypoint promtool \
+#          prom/prometheus:v3.15.0 check rules /m/alerts.yml
+groups:
+  - name: tally-availability
+    rules:
+      - alert: TallyTargetDown
+        expr: up{job=~"tally-api|tally-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} on {{ $labels.instance }} is not answering the metrics scrape"
+          runbook: docs/runbook.md#alerts-and-observability
+
+      - alert: TallyMetricsMissing
+        expr: absent(up{job="tally-api"}) or absent(up{job="tally-worker"})
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No tally-api or tally-worker scrape target exists; every other Tally alert is blind"
+          runbook: docs/runbook.md#alerts-and-observability
+
+      - alert: TallyHigh5xxRatio
+        expr: |
+          sum(rate(tally_http_requests_total{job="tally-api", status=~"5.."}[5m]))
+            / sum(rate(tally_http_requests_total{job="tally-api"}[5m])) > 0.005
+          and sum(rate(tally_http_requests_total{job="tally-api"}[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of API requests answer 5xx (budget 0.5%)"
+          runbook: docs/runbook.md#alerts-and-observability
+
+      - alert: TallyRoute5xx
+        expr: sum by (method, route) (increase(tally_http_requests_total{job="tally-api", status=~"5.."}[15m])) >= 5
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.method }} {{ $labels.route }} answered {{ $value | humanize }} 5xx in 15 min"
+          runbook: docs/runbook.md#alerts-and-observability
+
+  - name: tally-latency
+    rules:
+      # Lookups: every GET outside reports, budget p95 <= 1 s (NFR-03).
+      - alert: TallyLookupP95High
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(tally_http_request_duration_seconds_bucket{job="tally-api", method="GET", route!~"/api/v1/(saved-)?reports.*|unmatched"}[5m]))) > 1
+          and sum(rate(tally_http_request_duration_seconds_count{job="tally-api", method="GET"}[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Lookup p95 is {{ $value | humanizeDuration }} (budget 1 s)"
+          runbook: docs/runbook.md#alerts-and-observability
+
+      # Postings: the coordinator's own timing, budget p95 <= 2 s (NFR-03). Replays are excluded
+      # because they skip the transaction.
+      - alert: TallyPostingP95High
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(tally_posting_duration_seconds_bucket{job="tally-api", outcome=~"applied|rejected"}[5m]))) > 2
+          and sum(rate(tally_posting_duration_seconds_count{job="tally-api"}[5m])) > 0.01
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Posting p95 is {{ $value | humanizeDuration }} (budget 2 s)"
+          runbook: docs/runbook.md#alerts-and-observability
+
+      - alert: TallyPostingErrors
+        expr: sum by (scope) (increase(tally_posting_duration_seconds_count{job="tally-api", outcome="error"}[15m])) >= 3
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value | humanize }} postings of {{ $labels.scope }} failed with an internal error in 15 min"
+          runbook: docs/runbook.md#alerts-and-observability
+
+      # Reports: budget p95 <= 5 s (NFR-05); large exports run as jobs and are not timed here.
+      - alert: TallyReportP95High
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(tally_http_request_duration_seconds_bucket{job="tally-api", method="GET", route=~"/api/v1/reports.*"}[10m]))) > 5
+          and sum(rate(tally_http_request_duration_seconds_count{job="tally-api", route=~"/api/v1/reports.*"}[10m])) > 0.01
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Report p95 is {{ $value | humanizeDuration }} (budget 5 s)"
+          runbook: docs/runbook.md#alerts-and-observability
+
+  - name: tally-jobs
+    rules:
+      # The gauge is the age of the oldest pending event seen by the worker's last pass; it stops
+      # moving when the worker dies, which TallyTargetDown covers.
+      - alert: TallyOutboxLagging
+        expr: max(tally_outbox_lag_seconds{job="tally-worker"}) > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The oldest pending outbox event is {{ $value | humanizeDuration }} old"
+          runbook: docs/runbook.md#alerts-and-observability
+
+      - alert: TallyOutboxStuck
+        expr: max(tally_outbox_lag_seconds{job="tally-worker"}) > 1800
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Outbox events have waited {{ $value | humanizeDuration }}: jobs are stuck"
+          runbook: docs/runbook.md#alerts-and-observability
+
+      - alert: TallyOutboxDeadEvents
+        expr: sum by (topic) (increase(tally_outbox_events_total{job="tally-worker", outcome="dead"}[1h])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value | humanize }} {{ $labels.topic }} events exhausted their retries in the last hour"
+          runbook: docs/runbook.md#alerts-and-observability
+
+      - alert: TallyOutboxRetrying
+        expr: sum by (topic) (increase(tally_outbox_events_total{job="tally-worker", outcome="retry"}[15m])) >= 10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.topic }} handlers keep failing ({{ $value | humanize }} retries in 15 min)"
+          runbook: docs/runbook.md#alerts-and-observability
+
+  - name: tally-webhooks
+    rules:
+      # Payment provider callbacks. A 4xx here is a rejected signature or payload, so a run of them
+      # means a key rotation or an attack, not a client typo.
+      - alert: TallyPaymentWebhookFailing
+        expr: |
+          sum by (status) (increase(tally_http_requests_total{job="tally-api", route="/api/v1/webhooks/saas-payments/:provider", status!~"2.."}[30m])) >= 3
+        labels:
+          severity: warning
+        annotations:
+          summary: "SaaS payment webhooks answered {{ $labels.status }} {{ $value | humanize }} times in 30 min"
+          runbook: docs/runbook.md#alerts-and-observability

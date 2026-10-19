@@ -1,0 +1,130 @@
+# Production stack: one shared stack and database for every tenant (isolation is tenant_id + RLS).
+# Always deployed together with the homelab overlay, which adds the Traefik routing:
+#   docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.homelab.yml --env-file infra/.env up -d --build
+# or `make prod-up`. Variables are documented in infra/.env.example; see docs/runbook.md.
+# No service publishes a host port and there is no proxy here: TLS ends at Cloudflare and traffic
+# arrives through the Cloudflare Tunnel and the homelab Traefik.
+name: tally-prod
+
+x-app-env: &app-env
+  APP_ENV: ${APP_ENV:-production}
+  APP_TZ: ${APP_TZ:-Asia/Ho_Chi_Minh}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DOMAIN: ${DOMAIN:?set DOMAIN in infra/.env}
+  PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in infra/.env}
+  # tally_app only: the API and the worker never hold DDL rights.
+  DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in infra/.env}
+  SESSION_HASH_KEY: ${SESSION_HASH_KEY:?set SESSION_HASH_KEY in infra/.env}
+  CSRF_KEY: ${CSRF_KEY:?set CSRF_KEY in infra/.env}
+  APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY in infra/.env}
+  SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST in infra/.env}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM in infra/.env}
+  OBJECT_STORE_ENDPOINT: ${OBJECT_STORE_ENDPOINT:?set OBJECT_STORE_ENDPOINT in infra/.env}
+  OBJECT_STORE_REGION: ${OBJECT_STORE_REGION:-auto}
+  OBJECT_STORE_BUCKET: ${OBJECT_STORE_BUCKET:?set OBJECT_STORE_BUCKET in infra/.env}
+  OBJECT_STORE_ACCESS_KEY: ${OBJECT_STORE_ACCESS_KEY:?set OBJECT_STORE_ACCESS_KEY in infra/.env}
+  OBJECT_STORE_SECRET_KEY: ${OBJECT_STORE_SECRET_KEY:?set OBJECT_STORE_SECRET_KEY in infra/.env}
+  TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:?set TRUSTED_PROXY_CIDRS in infra/.env}
+  RESERVED_SLUGS: ${RESERVED_SLUGS:-}
+  PLATFORM_ADMIN_BOOTSTRAP_EMAIL: ${PLATFORM_ADMIN_BOOTSTRAP_EMAIL:-}
+  # Pinned off in production: migrations run only through `make prod-migrate`, after a backup.
+  MIGRATE_ON_START: "false"
+
+x-api-build: &api-build
+  context: ../apps/api
+  args:
+    VERSION: ${VERSION:-dev}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tally}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD in infra/.env}
+      # Read once by postgres/init/01-roles.sh when the data volume is empty.
+      TALLY_OWNER_PASSWORD: ${TALLY_OWNER_PASSWORD:?set TALLY_OWNER_PASSWORD in infra/.env}
+      TALLY_APP_PASSWORD: ${TALLY_APP_PASSWORD:?set TALLY_APP_PASSWORD in infra/.env}
+      TALLY_READONLY_PASSWORD: ${TALLY_READONLY_PASSWORD:?set TALLY_READONLY_PASSWORD in infra/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./postgres/roles.sql:/etc/tally/roles.sql:ro
+    networks:
+      default:
+        # DATABASE_URL and MIGRATE_DATABASE_URL use this name, never the generic `postgres`.
+        aliases: [tally-postgres]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: *api-build
+    image: tally-api:${VERSION:-dev}
+    restart: always
+    command: ["serve"]
+    environment:
+      <<: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Distroless image: no shell or curl, the binary checks itself.
+      test: ["CMD", "/tally", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  worker:
+    build: *api-build
+    image: tally-api:${VERSION:-dev}
+    restart: always
+    command: ["worker"]
+    environment:
+      <<: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../apps/web
+    image: tally-web:${VERSION:-dev}
+    restart: always
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  # One-shot schema migration as tally_owner. Run through `make prod-migrate`, which takes a backup
+  # first and passes it as --backup-file; never started by `up`.
+  migrate:
+    profiles: ["ops"]
+    build: *api-build
+    image: tally-api:${VERSION:-dev}
+    restart: "no"
+    entrypoint: ["/tally", "migrate"]
+    command: ["up"]
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      APP_TZ: ${APP_TZ:-Asia/Ho_Chi_Minh}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      MIGRATE_DATABASE_URL: ${MIGRATE_DATABASE_URL:?set MIGRATE_DATABASE_URL in infra/.env}
+    volumes:
+      - ./backups:/backups:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

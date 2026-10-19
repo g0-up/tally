@@ -1,0 +1,75 @@
+# Homelab overlay: the existing Traefik (external network `homelab`, behind the Cloudflare Tunnel)
+# routes every Tally host. Always merged AFTER the production file:
+#   docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.homelab.yml --env-file infra/.env up -d --build
+# or `make prod-up`. See docs/runbook.md, "Production on the homelab".
+#
+# Hosts served (one stack, one SPA bundle):
+#   https://${DOMAIN}            marketing / signup
+#   https://admin.${DOMAIN}      platform admin
+#   https://<slug>.${DOMAIN}     tenant workspaces
+# Requests under /api/ go to the api container with the original Host; everything else goes to nginx.
+# /internal/* and /metrics are never routed: the api router only matches /api/.
+#
+# Priorities: Traefik ranks routers by rule length unless a priority is set. Tally's wildcard routers get
+# explicit low priorities (api 3, web 2) so the exact Host routers of other stacks on the same zone
+# (e.g. tiendouong.sidecup.app) always win. Router and middleware names carry the `tally-` prefix because
+# the shared Traefik already holds routers of other stacks.
+
+# Security headers for both routers, declared identically on api and web so neither router
+# depends on the other container being up. Traefik only sees plain http (TLS ends at
+# Cloudflare), so HSTS has to be forced. connect-src includes the object store because the
+# browser uploads directly to presigned URLs. Scripts stay 'self' only. style-src needs
+# 'unsafe-inline' because the toaster (sonner) and the dialog scroll lock (react-remove-scroll
+# via Radix) inject <style> elements at runtime, one with computed content, so neither a hash
+# nor a per-request nonce (static headers) can cover them. Fonts come from Google Fonts.
+x-tally-headers: &tally-headers
+  traefik.http.middlewares.tally-headers.headers.stsSeconds: "31536000"
+  traefik.http.middlewares.tally-headers.headers.stsIncludeSubdomains: "true"
+  traefik.http.middlewares.tally-headers.headers.forceSTSHeader: "true"
+  traefik.http.middlewares.tally-headers.headers.contentTypeNosniff: "true"
+  traefik.http.middlewares.tally-headers.headers.frameDeny: "true"
+  traefik.http.middlewares.tally-headers.headers.referrerPolicy: strict-origin-when-cross-origin
+  traefik.http.middlewares.tally-headers.headers.permissionsPolicy: "camera=(), microphone=(), geolocation=()"
+  traefik.http.middlewares.tally-headers.headers.contentSecurityPolicy: "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: ${OBJECT_STORE_ENDPOINT}; connect-src 'self' ${OBJECT_STORE_ENDPOINT}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+  traefik.http.middlewares.tally-headers.headers.customResponseHeaders.Server: ""
+
+services:
+  postgres:
+    # Stays on the project network only; never reachable from `homelab`.
+    networks:
+      default:
+        aliases: [tally-postgres]
+
+  api:
+    networks:
+      - default
+      - homelab
+    labels:
+      <<: *tally-headers
+      traefik.enable: "true"
+      traefik.docker.network: homelab
+      traefik.http.routers.tally-api.rule: "(Host(`${DOMAIN}`) || HostRegexp(`^[a-z0-9-]+[.]${DOMAIN}$$`)) && PathPrefix(`/api/`)"
+      traefik.http.routers.tally-api.priority: "3"
+      traefik.http.routers.tally-api.entrypoints: web
+      traefik.http.routers.tally-api.service: tally-api
+      traefik.http.routers.tally-api.middlewares: tally-headers
+      traefik.http.services.tally-api.loadbalancer.server.port: "8080"
+
+  web:
+    networks:
+      - default
+      - homelab
+    labels:
+      <<: *tally-headers
+      traefik.enable: "true"
+      traefik.docker.network: homelab
+      traefik.http.routers.tally-web.rule: "(Host(`${DOMAIN}`) || HostRegexp(`^[a-z0-9-]+[.]${DOMAIN}$$`)) && !PathPrefix(`/api/`)"
+      traefik.http.routers.tally-web.priority: "2"
+      traefik.http.routers.tally-web.entrypoints: web
+      traefik.http.routers.tally-web.service: tally-web
+      traefik.http.routers.tally-web.middlewares: tally-headers
+      traefik.http.services.tally-web.loadbalancer.server.port: "8080"
+
+networks:
+  homelab:
+    external: true
