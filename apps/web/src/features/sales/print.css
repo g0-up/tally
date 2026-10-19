@@ -1,0 +1,46 @@
+/* Printed sales documents: an A5 sheet or an 80 mm receipt roll, outside the app shell. The
+ * toolbar is screen-only; the named pages pick the paper size the browser prints on. */
+@page a5 { size: A5; margin: 10mm; }
+@page roll { size: 80mm auto; margin: 3mm; }
+
+.print-page { min-height: 100vh; background: var(--surface-100); padding: 24px 16px 60px; }
+.print-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; max-width: 148mm; margin: 0 auto 16px; }
+.print-bar .sp { flex: 1; }
+.print-page > .callout, .print-page > .card { max-width: 148mm; margin: 0 auto; }
+
+.print-doc { background: var(--surface-0); color: var(--gray-800); margin: 0 auto; box-shadow: var(--shadow-card); font-size: 12px; line-height: 1.4; letter-spacing: 0; }
+.print-doc.a5 { page: a5; width: 148mm; min-height: 210mm; padding: 10mm; }
+.print-doc.roll { page: roll; width: 80mm; padding: 4mm 3mm; font-size: 11px; }
+.print-doc.roll .pd-opt { display: none; }
+
+.pd-seller { display: grid; gap: 1px; text-align: center; margin-bottom: 8px; }
+.pd-seller b { font-size: 14px; color: var(--navy-900); text-transform: uppercase; }
+.pd-title { font-family: var(--font-display); font-size: 18px; text-align: center; text-transform: uppercase; color: var(--navy-900); margin-top: 6px; }
+.roll .pd-title { font-size: 15px; }
+.pd-no, .pd-label { margin: 2px 0 0; text-align: center; }
+.pd-label { font-size: 11px; color: var(--gray-600); }
+
+.pd-party, .pd-totals { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; margin: 10px 0; }
+.pd-party dt, .pd-totals dt { color: var(--gray-600); }
+.pd-party dd, .pd-totals dd { margin: 0; color: var(--gray-800); }
+.pd-totals { margin-left: auto; max-width: 70mm; }
+.pd-totals dd { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pd-totals .pd-grand { font-weight: 700; font-size: 14px; color: var(--navy-900); border-top: 1px solid var(--gray-300); padding-top: 3px; }
+
+.pd-lines { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.pd-lines th { text-align: left; font-weight: 600; color: var(--navy-900); border-bottom: 1px solid var(--gray-800); padding: 3px 4px; }
+.pd-lines td { border-bottom: 1px dotted var(--gray-300); padding: 3px 4px; vertical-align: top; }
+.pd-lines .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pd-child td:nth-child(2) { padding-left: 14px; color: var(--gray-600); }
+.pd-sub { color: var(--gray-600); }
+.pd-block { display: block; font-size: 11px; }
+.pd-h { font-size: 13px; margin-top: 12px; color: var(--navy-900); }
+.pd-note { margin: 8px 0 0; }
+.pd-foot { margin-top: 12px; font-size: 10px; color: var(--muted-strong); text-align: center; }
+
+@media print {
+  .print-page { min-height: 0; background: none; padding: 0; }
+  .print-bar { display: none; }
+  .print-doc, .print-doc.a5, .print-doc.roll { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+  .pd-lines tr { break-inside: avoid; }
+}
