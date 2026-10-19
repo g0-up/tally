@@ -320,6 +320,126 @@ tr.cp-row td { padding-top: 0; background: var(--surface-0); }
 .tname { min-width: 340px; }
 .view .t td.acts .btn-sm { padding: 5px 10px; }
 
+/* ---------- onboarding: cửa hàng mới, chạy ngoài khung app (#onboarding) ---------- */
+#onb-root { display: none; }
+body.is-onb #onb-root { display: block; }
+body.is-onb .app { display: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.onb { min-height: 100vh; min-height: 100dvh; background: var(--surface-100); }
+.onb-top { background: var(--navy-700); color: var(--surface-0); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 12px 28px; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; }
+.onb-brand b { font-family: var(--font-display); font-size: 20px; letter-spacing: -.3px; color: var(--surface-0); }
+.onb-brand span { margin-left: 14px; font-size: 12px; letter-spacing: .5px; color: var(--surface-blue-100); }
+.onb-top .sp, .onb-demo .sp { flex: 1; }
+.onb-top .who { font-size: 13px; color: var(--surface-blue-100); }
+.onb-top .who b { color: var(--surface-0); font-weight: 600; }
+.onb-out { background: none; border: 1px solid rgba(255,255,255,.4); color: var(--surface-0); padding: 8px 14px; min-height: 36px; border-radius: var(--radius-xs); font-size: 13px; cursor: pointer; }
+.onb-out:hover { background: rgba(255,255,255,.08); }
+.onb-top :focus-visible { outline-color: var(--surface-0); }
+.onb-demo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 28px; background: var(--surface-50); border-bottom: 1px solid var(--gray-200); font-size: 13px; }
+.onb main.view { margin: 0 auto; max-width: 1240px; }
+.onb-prog { display: grid; gap: 6px; min-width: 260px; }
+.onb-prog .k { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--gray-600); }
+.onb-prog b { font-size: 22px; line-height: 1.2; font-weight: 600; letter-spacing: -.3px; color: var(--navy-900); font-variant-numeric: tabular-nums; }
+.onb-prog .meter { background: var(--gray-200); }
+.onb-prog b small { font-size: 14px; font-weight: 500; color: var(--gray-600); letter-spacing: 0; }
+.onb-ready { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; justify-content: space-between; margin-bottom: 20px; box-shadow: var(--shadow-card), inset 4px 0 0 var(--ok-ink); }
+.onb-ready h2 { font-family: var(--font-display); font-size: 20px; color: var(--navy-900); }
+.onb-ready p { margin: 4px 0 0; max-width: 72ch; }
+.onb-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 24px; align-items: start; }
+.onb-rail { position: sticky; top: 76px; background: var(--surface-0); box-shadow: var(--shadow-card); padding: 6px 0 10px; }
+.onb-rail-tg { display: none; width: 100%; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 12px 16px; background: var(--surface-0); border: 0; color: var(--gray-800); text-align: left; cursor: pointer; font-size: 14px; }
+.onb-rail-tg b { color: var(--navy-900); font-weight: 600; }
+.onb-chev { transition: transform .2s; color: var(--navy-700); }
+.onb-rail.open .onb-chev { transform: rotate(180deg); }
+.onb-ph { padding: 14px 18px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; font-weight: 600; color: var(--navy-900); }
+.onb-ph small { display: block; margin-top: 2px; font-size: 12px; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--gray-600); }
+.onb-steps { list-style: none; margin: 0; padding: 0; }
+.onb-step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: center; width: 100%; min-height: 52px; padding: 8px 18px; border: 0; background: none; text-align: left; cursor: pointer; color: var(--gray-800); }
+.onb-step:hover { background: var(--surface-blue-50); }
+.onb-step:focus-visible { outline-offset: -2px; }
+.onb-step[aria-current="step"] { background: var(--surface-blue-50); box-shadow: inset 3px 0 0 var(--navy-700); }
+.onb-step b { display: block; font-weight: 600; font-size: 14px; line-height: 1.3; color: var(--navy-900); }
+.onb-step small { display: block; font-size: 12px; color: var(--gray-600); }
+.onb-mk { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; border: 1.5px solid var(--gray-300); color: var(--gray-600); background: var(--surface-0); }
+.onb-step.done .onb-mk { background: var(--navy-700); border-color: var(--navy-700); color: var(--surface-0); }
+.onb-step.skip .onb-mk { border-style: dashed; background: var(--surface-100); }
+.onb-step.locked b { color: var(--gray-600); font-weight: 500; }
+.onb-step.locked .onb-mk { border-style: dashed; }
+.onb-step[aria-current="step"] .onb-mk { border-color: var(--navy-700); color: var(--navy-700); }
+.onb-step.done[aria-current="step"] .onb-mk { color: var(--surface-0); }
+.onb-card { min-width: 0; }
+.onb-sh { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 8px 16px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--gray-200); }
+.onb-sh .eyebrow { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--gray-600); }
+.onb-sh h2 { font-family: var(--font-display); font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -.3px; color: var(--navy-900); }
+.onb-sh h2:focus { outline: none; }
+.onb-sh p { margin: 6px 0 0; max-width: 68ch; }
+.onb-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.onb-body .sec-h { margin-top: 8px; }
+.onb-foot { display: flex; flex-wrap: nowrap; justify-content: space-between; align-items: center; gap: 10px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--gray-200); }
+.onb-fs { border: 0; padding: 0; margin: 0; min-width: 0; }
+.onb-fs legend { padding: 0; margin-bottom: 12px; font-size: 13px; text-transform: uppercase; letter-spacing: .8px; font-weight: 600; color: var(--navy-900); }
+.onb .f > label { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--gray-600); font-weight: 500; }
+.onb .f { align-content: start; }
+.onb .f.wide { grid-column: 1 / -1; }
+.onb .f > .hint, .onb .f > .err { text-transform: none; letter-spacing: 0; }
+.onb .req { font-style: normal; color: var(--bad-ink); }
+.onb .err { font-size: 12px; font-weight: 500; color: var(--bad-ink); }
+.onb [aria-invalid="true"] { border-color: var(--bad-ink) !important; box-shadow: inset 0 0 0 1px var(--bad-ink); }
+.onb input:disabled { background: var(--surface-100); color: var(--gray-600); }
+.onb .btn[disabled]:not([aria-busy]) { cursor: not-allowed; }
+.onb .check { align-items: center; min-height: 44px; cursor: pointer; }
+.onb .check input { width: 20px; height: 20px; flex: none; margin: 0; }
+.onb .chip { min-height: 40px; padding: 8px 14px; }
+.onb-cut { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 14px 20px; align-items: start; }
+.onb-seg { display: flex; flex-wrap: wrap; gap: 8px; }
+.onb-more summary { cursor: pointer; color: var(--navy-700); font-weight: 600; padding: 10px 0; }
+.onb-more[open] summary { margin-bottom: 8px; }
+.onb-lot { display: grid; gap: 6px; min-width: 150px; }
+.onb-empty { display: grid; gap: 4px; padding: 24px; text-align: center; border: 1px dashed var(--gray-300); color: var(--gray-600); }
+.onb-empty b { color: var(--navy-900); font-weight: 600; }
+.onb-sum { border: 1px solid var(--gray-200); background: var(--surface-50); padding: 16px 18px; }
+.onb-sum .kv div span { font-variant-numeric: tabular-nums; }
+.onb-ul, .onb-check { margin: 0; padding-left: 20px; display: grid; gap: 8px; color: var(--gray-800); }
+.onb-demo .bell { min-height: 36px; }
+.onb .tw { position: relative; }
+.onb-tbl td { vertical-align: top; }
+.onb-tbl .in { min-width: 96px; }
+.onb-tbl select.in { min-width: 120px; }
+.onb-tbl select.in.sku { min-width: 200px; }
+.onb-tbl .in.num { text-align: right; }
+.onb-tbl .err { display: block; margin-top: 4px; }
+.onb-tbl .in.num { min-width: 84px; }
+.onb-tbl select.in.sku { width: 100%; }
+@media (max-width: 860px) {
+  .onb-tbl.onb-stack thead { display: none; }
+  .onb-tbl.onb-stack, .onb-tbl.onb-stack tbody, .onb-tbl.onb-stack tr, .onb-tbl.onb-stack td { display: block; width: 100%; }
+  .onb-tbl.onb-stack tbody tr { position: relative; padding: 10px 0; border-top: 1px solid var(--gray-200); }
+  .onb-tbl.onb-stack tbody tr:first-child { border-top: 0; }
+  .onb-tbl.onb-stack td { border: 0; padding: 6px 14px; text-align: left; }
+  .onb-tbl.onb-stack td[data-l]::before { content: attr(data-l); display: block; margin-bottom: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--gray-600); font-weight: 500; }
+  .onb-tbl.onb-stack td.acts { position: absolute; top: 6px; right: 6px; width: auto; padding: 0; }
+  .onb-tbl.onb-stack tbody tr:has(td.acts .onb-x) td:first-child { padding-right: 60px; }
+  .onb-tbl.onb-stack .in, .onb-tbl.onb-stack select.in.sku { width: 100%; min-width: 0; text-align: left; }
+  .onb-tbl.onb-stack tfoot tr { display: flex; justify-content: space-between; gap: 12px; }
+  .onb-tbl.onb-stack tfoot td { width: auto; border-top: 1px solid var(--gray-300); padding: 10px 14px; }
+}
+.onb-x { min-width: 44px; min-height: 44px; padding: 0; font-size: 18px; line-height: 1; }
+@media (max-width: 860px) {
+  .onb-top { padding: 10px 16px; }
+  .onb-brand span { display: none; }
+  .onb-demo { padding: 8px 16px; }
+  .onb-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .onb-rail { position: static; padding: 0; }
+  .onb-rail-tg { display: flex; }
+  .onb-rail.open .onb-rail-tg { border-bottom: 1px solid var(--gray-200); }
+  .onb-rail:not(.open) .onb-groups { display: none; }
+  .onb-cut { grid-template-columns: minmax(0, 1fr); }
+  .onb-prog { min-width: 0; width: 100%; }
+  .onb .f input, .onb .f select, .onb .f textarea, .onb .in { font-size: 16px; }
+}
+@media (max-width: 520px) { .onb-top .who, .onb-demo .hide-s { display: none; } }
+.onb-foot .onb-nav { justify-content: flex-end; }
+
 </style>
 <div class="app">
   <aside class="side" aria-label="Điều hướng">
@@ -332,6 +452,7 @@ tr.cp-row td { padding-top: 0; background: var(--surface-0); }
     <main class="view" id="view"></main>
   </div>
 </div>
+<div id="onb-root"></div>
 <div id="drawer-root"></div>
 <div id="modal-root"></div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
@@ -1726,7 +1847,7 @@ const MENU = [
   { id: 'chien-dich', name: 'Chiến dịch & khách', subs: [['mua', 'Chiến dịch mùa vụ'], ['khach-hang', 'Khách hàng (CRM)']] },
   { id: 'bao-cao', name: 'Báo cáo', subs: [['nxt', 'Nhập–xuất–tồn'], ['doanh-thu', 'Bán hàng'], ['lai-gop', 'Lãi gộp'], ['tuoi-no', 'Tuổi nợ'], ['dong-tien', 'Dòng tiền'], ['gio', 'Giỏ quà']] },
   { id: 'danh-muc', name: 'Danh mục', subs: [['hang-hoa', 'Hàng hóa'], ['nha-cung-cap', 'Nhà cung cấp'], ['bang-gia', 'Bảng giá'], ['nhom-mix', 'Nhóm mix vị']] },
-  { id: 'thiet-lap', name: 'Thiết lập', subs: [['tai-khoan', 'Tài khoản & bảo mật'], ['thue-bao', 'Thuê bao'], ['nhat-ky', 'Nhật ký']] }
+  { id: 'thiet-lap', name: 'Thiết lập', subs: [['tai-khoan', 'Tài khoản & bảo mật'], ['khoi-tao', 'Khởi tạo cửa hàng'], ['thue-bao', 'Thuê bao'], ['nhat-ky', 'Nhật ký']] }
 ];
 const V = {}; // views: V['mod.sub'] = () => html
 let route = { mod: 'tong-quan', sub: 'dashboard' };
@@ -4064,6 +4185,413 @@ V['ban-hang.tra-hang'] = () => {
 };
 A.newReturnFor = id => { closeDrawer(); A.newReturn(); if (M) { M.draft.sdoc = id; M.draft.lines = returnLines(S.sdoc.find(s => s.id === id)); renderModal(); } };
 const _newEx = A.newExchange; A.newExchange = id => { closeDrawer(); _newEx(id); };
+
+/* ================= ONBOARDING: cửa hàng mới (#onboarding, chạy ngoài khung app) =================
+   Mô phỏng cửa hàng chưa có dữ liệu. Trạng thái nằm riêng ở S.onb, không đụng sổ của cửa hàng mẫu. */
+const ONB_PH = ['Cửa hàng', 'Số dư đầu kỳ', 'Chạy thử'];
+const ONB_STEPS = [
+  { k: 'store_profile', ph: 0, req: true, label: 'Thông tin cửa hàng', note: 'Tên và mã số thuế in trên hóa đơn. Ngày chốt quyết định số dư đầu kỳ của mọi bước sau.' },
+  { k: 'catalog_setup', ph: 0, req: false, label: 'Danh mục hàng hóa', note: 'Thêm các mặt hàng chính để nhập tồn đầu kỳ. Danh mục đầy đủ có thể làm sau trong Danh mục.' },
+  { k: 'opening_stock', ph: 1, req: true, label: 'Tồn kho đầu kỳ', note: 'Số lượng và giá vốn hàng còn trong kho tính đến hết ngày chốt.' },
+  { k: 'opening_debt', ph: 1, req: true, label: 'Công nợ đầu kỳ', note: 'Khoản khách còn nợ cửa hàng và cửa hàng còn nợ nhà cung cấp tại ngày chốt. Ghi từng khoản.' },
+  { k: 'opening_cash', ph: 1, req: true, label: 'Tiền đầu kỳ', note: 'Tiền thực có trong từng quỹ tại ngày chốt. Nhập 0 nếu quỹ chưa có tiền.' },
+  { k: 'confirm_opening_balances', ph: 1, req: true, label: 'Xác nhận và khóa số dư', note: 'Kiểm tra tổng số dư rồi khóa sổ. Sau bước này, POS và các màn bán hàng được mở.' },
+  { k: 'first_sale', ph: 2, req: false, label: 'Bán đơn đầu tiên', note: 'Bán thử một đơn để kiểm tra giá, tồn kho và hóa đơn. Bước này tự hoàn tất khi POS có hóa đơn đầu tiên.' }
+];
+const ONB_OPENING = ['opening_stock', 'opening_debt', 'opening_cash', 'confirm_opening_balances'];
+const ONB_NAME_MAX = 200, ONB_TAX = /^[0-9]{10}(-[0-9]{3})?$/;
+function onbSeed() {
+  const profile = { legal: '', display: '', tax: '', phone: '', addr: '', cutoff: '' };
+  return {
+    step: 'store_profile', status: Object.fromEntries(ONB_STEPS.map(s => [s.k, 'pending'])),
+    profile, pf: Object.assign({}, profile), items: [], parties: [],
+    stock: { lines: [onbLine()] }, stockPosted: [],
+    debtForm: onbDebtForm('AR'), debts: [],
+    funds: [{ id: 'TM', name: 'Tiền mặt tại cửa hàng', type: 'Tiền mặt', bal: null, val: '' }, { id: 'NH', name: 'Tài khoản ngân hàng', type: 'Ngân hàng', bal: null, val: '' }],
+    agree: false, confirmed: false, confirmedAt: ''
+  };
+}
+function onbLine() { return { sku: '', color: '', qty: '', cost: '', lot: '', exp: '' }; }
+function onbDebtForm(dir) { return { dir, party: '', amount: '', reason: 'Số dư đầu kỳ', due: '', note: '' }; }
+const onb = () => S.onb || (S.onb = onbSeed());
+UI.ob = { err: {}, rail: false };
+const obGet = path => path.split('.').reduce((o, k) => o == null ? o : o[k], onb());
+const obId = path => 'ob-' + path.replace(/\./g, '-');
+const obNum = v => { const s = String(v ?? '').replace(/[\s.]/g, '').replace(',', '.'); return s === '' ? NaN : Number(s); };
+const obItem = id => onb().items.find(x => x.id === id);
+const obParty = id => onb().parties.find(x => x.id === id);
+const obLineAmt = l => { const q = obNum(l.qty), c = obNum(l.cost); return isFinite(q) && isFinite(c) ? q * c : 0; };
+const obReqDone = o => ONB_STEPS.every(s => !s.req || o.status[s.k] === 'completed');
+const obBlockers = o => ['store_profile', 'opening_stock', 'opening_debt', 'opening_cash'].filter(k => o.status[k] !== 'completed');
+const obStep = k => ONB_STEPS.find(s => s.k === k);
+function obLock(o, k) {
+  if (ONB_OPENING.includes(k)) {
+    if (o.confirmed) return k === 'confirm_opening_balances' ? '' : 'Đã khóa sau xác nhận';
+    if (!o.profile.cutoff) return 'Cần ngày chốt ở bước 1';
+  }
+  if (k === 'first_sale' && !o.confirmed) return 'Mở sau khi xác nhận số dư';
+  return '';
+}
+const OB_CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>';
+const OB_CHEV = '<svg class="onb-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+function obStatusChip(o, s) {
+  const v = o.status[s.k];
+  if (v === 'completed') return '<span class="st ok">Đã xong</span>';
+  if (v === 'skipped') return '<span class="st mute">Đã bỏ qua</span>';
+  const lk = obLock(o, s.k);
+  return lk ? `<span class="st mute">${esc(lk)}</span>` : '<span class="st">Chưa làm</span>';
+}
+
+/* ---------- ô nhập: nhãn hiện, lỗi ngay dưới ô, aria-invalid + aria-describedby ---------- */
+function obCtl(path, o = {}) {
+  const id = obId(path), er = UI.ob.err[path];
+  const desc = [o.hint ? id + '-h' : '', er ? id + '-e' : ''].filter(Boolean).join(' ');
+  const a = `id="${id}" data-ob="${path}" ${o.rr ? 'data-obr' : ''} ${o.cls ? `class="${o.cls}"` : ''} ${er ? 'aria-invalid="true"' : ''} ${desc ? `aria-describedby="${desc}"` : ''} ${o.req ? 'aria-required="true"' : ''} ${o.label ? `aria-label="${esc(o.label)}"` : ''} ${o.attrs || ''}`;
+  const val = o.val ?? obGet(path) ?? '';
+  if (o.opts) return `<select ${a}>${o.opts.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(val) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  if (o.type === 'area') return `<textarea rows="2" ${a}>${esc(val)}</textarea>`;
+  const t = o.type === 'n' ? 'text" inputmode="numeric' : (o.type || 'text');
+  return `<input type="${t}" value="${esc(val)}" ${a}>`;
+}
+const obErr = path => { const er = UI.ob.err[path]; return `<span class="err" id="${obId(path)}-e" ${er ? '' : 'hidden'}>${er ? esc(er) : ''}</span>`; };
+function obF(path, label, o = {}) {
+  return `<div class="f${o.wide ? ' wide' : ''}"><label for="${obId(path)}">${esc(label)}${o.req ? ' <em class="req" aria-hidden="true">*</em>' : ''}</label>${obCtl(path, o)}${o.hint ? `<span class="hint" id="${obId(path)}-h">${o.hint}</span>` : ''}${obErr(path)}</div>`;
+}
+function obFail(errs) {
+  UI.ob.err = errs; renderOnb();
+  const k = Object.keys(errs)[0], el = k && document.getElementById(obId(k));
+  if (el) el.focus();
+  toast(`<b>Chưa lưu.</b> Còn ${Object.keys(errs).length} chỗ cần sửa, đã đưa con trỏ tới chỗ đầu tiên.`, 'err');
+}
+
+/* ---------- khung trang ---------- */
+function renderOnb() {
+  const o = onb(), cur = obStep(o.step) || ONB_STEPS[0];
+  const reqN = ONB_STEPS.filter(s => s.req).length, reqD = ONB_STEPS.filter(s => s.req && o.status[s.k] === 'completed').length, ready = reqD === reqN;
+  const prog = `<div class="onb-prog"><span class="k" id="onb-prog-k">Bước bắt buộc</span><b class="tab-n">${reqD}<small> / ${reqN} đã xong</small></b><div class="meter acc" role="progressbar" aria-labelledby="onb-prog-k" aria-valuemin="0" aria-valuemax="${reqN}" aria-valuenow="${reqD}" aria-valuetext="${reqD} trên ${reqN} bước bắt buộc đã xong"><i style="width:${Math.round(reqD / reqN * 100)}%"></i></div></div>`;
+  const af = document.activeElement, keep = af && af.id && af.closest && af.closest('#onb-root') ? af.id : '';
+  $('#onb-root').innerHTML = `<div class="onb">
+    <header class="onb-top">
+      <div class="onb-brand"><b>Tết Sales</b><span>Bán sỉ · giỏ quà · kho · công nợ</span></div><span class="sp"></span>
+      <span class="who">${o.profile.display ? esc(o.profile.display) + ' · ' : ''}Chủ cửa hàng <b>${esc(me().name)}</b></span>
+      <button type="button" class="onb-out" data-a="onbLogout">Đăng xuất</button>
+    </header>
+    <div class="onb-demo" role="region" aria-label="Công cụ bản mẫu"><span class="sandbox">Bản mẫu · cửa hàng mới</span><span class="hint hide-s">Mô phỏng cửa hàng chưa có dữ liệu, tách khỏi cửa hàng mẫu.</span><span class="sp"></span>
+      <button type="button" class="bell" data-a="onbSample">Điền mẫu bước này</button><button type="button" class="bell" data-a="onbReset">Đặt lại onboarding</button><button type="button" class="bell" data-a="onbExit">Về cửa hàng mẫu</button></div>
+    <main class="view" id="onb-main" tabindex="-1">
+      ${pageHead('Bắt đầu', 'Thiết lập cửa hàng', `Làm ${reqN} bước bắt buộc để mở bán. Bước tùy chọn có thể bỏ qua và làm sau.`, prog)}
+      ${ready ? `<section class="card onb-ready" aria-labelledby="onb-ready-h"><div><h2 id="onb-ready-h">Cửa hàng đã sẵn sàng bán</h2><p>Các bước bắt buộc đã xong và số dư đầu kỳ đã khóa đến hết ngày ${fd(o.profile.cutoff)}. Bán đơn đầu tiên ngay hoặc vào màn chính.</p></div><button type="button" class="btn btn-primary" data-a="onbEnter">Vào cửa hàng</button></section>` : ''}
+      <div class="onb-grid">${obRail(o, cur)}${obCard(o, cur, ready)}</div>
+    </main></div>`;
+  if (keep) { const el = document.getElementById(keep); if (el) el.focus(); }
+}
+function obRail(o, cur) {
+  const n = ONB_STEPS.indexOf(cur) + 1;
+  const groups = ONB_PH.map((ph, pi) => {
+    const sub = pi === 1 ? (o.profile.cutoff ? 'Tính đến hết ngày ' + fd(o.profile.cutoff) : 'Cần chọn ngày chốt trước') : pi === 2 ? 'Sau khi khóa số dư' : '';
+    return `<div class="onb-ph" id="onb-ph-${pi}">${esc(ph)}${sub ? `<small>${esc(sub)}</small>` : ''}</div><ol class="onb-steps" aria-labelledby="onb-ph-${pi}">${ONB_STEPS.filter(s => s.ph === pi).map(s => {
+      const i = ONB_STEPS.indexOf(s) + 1, v = o.status[s.k], lk = obLock(o, s.k);
+      const cls = v === 'completed' ? 'done' : v === 'skipped' ? 'skip' : lk ? 'locked' : '';
+      const small = v === 'completed' ? (lk ? 'Đã xong · ' + lk.toLowerCase() : 'Đã xong') : v === 'skipped' ? 'Đã bỏ qua' : lk || (s.req ? 'Bắt buộc' : 'Tùy chọn');
+      return `<li><button type="button" class="onb-step ${cls}" data-a="onbGo" data-id="${s.k}" ${s === cur ? 'aria-current="step"' : ''}><span class="onb-mk" aria-hidden="true">${v === 'completed' ? OB_CHECK : i}</span><span><span class="sr-only">Bước ${i}: </span><b>${esc(s.label)}</b><small>${esc(small)}</small></span></button></li>`;
+    }).join('')}</ol>`;
+  }).join('');
+  return `<nav class="onb-rail ${UI.ob.rail ? 'open' : ''}" aria-label="Các bước thiết lập">
+    <button type="button" class="onb-rail-tg" data-a="onbRail" aria-expanded="${UI.ob.rail}" aria-controls="onb-groups"><span>Bước <b class="tab-n">${n}/${ONB_STEPS.length}</b> · ${esc(cur.label)}</span>${OB_CHEV}</button>
+    <div class="onb-groups" id="onb-groups">${groups}</div></nav>`;
+}
+function obCard(o, s, ready) {
+  const i = ONB_STEPS.indexOf(s), prev = ONB_STEPS[i - 1], next = ONB_STEPS[i + 1];
+  const P = ready ? 'btn-navy' : 'btn-primary'; // một CTA gradient mỗi màn: khi đã sẵn sàng, CTA là "Vào cửa hàng"
+  let body;
+  try { body = OB_BODY[s.k](o, P); } catch (e) { console.error(e); body = `<div class="callout bad">Không hiển thị được bước này: ${esc(e.message)}</div>`; }
+  const skip = !s.req && o.status[s.k] === 'pending' ? `<button type="button" class="lnk" data-a="onbSkip" data-id="${s.k}">Bỏ qua bước này</button>` : '';
+  return `<section class="card onb-card" aria-labelledby="onb-h">
+    <div class="onb-sh"><div><p class="eyebrow">Bước ${i + 1}/${ONB_STEPS.length} · ${esc(ONB_PH[s.ph])}</p><h2 id="onb-h" tabindex="-1">${esc(s.label)}</h2><p>${esc(s.note)}</p></div>
+      <div class="btn-row">${s.req ? '<span class="tag">Bắt buộc</span>' : '<span class="tag alt">Tùy chọn</span>'}${obStatusChip(o, s)}</div></div>
+    <div class="onb-body">${body}</div>
+    <div class="onb-foot"><div>${prev ? `<button type="button" class="btn btn-line btn-sm" data-a="onbGo" data-id="${prev.k}">← Bước trước</button>` : ''}</div>
+      <div class="btn-row onb-nav">${skip}${next ? `<button type="button" class="btn btn-line btn-sm" data-a="onbGo" data-id="${next.k}">Bước tiếp →</button>` : ''}</div></div>
+  </section>`;
+}
+function obGate(o, k) {
+  if (o.profile.cutoff || o.confirmed) return '';
+  return `<div class="callout warn" role="note"><b>Cần ngày chốt số dư trước.</b> Chọn ngày chốt ở bước Thông tin cửa hàng, số dư bước này tính đến hết ngày đó. <button type="button" class="lnk" data-a="onbGo" data-id="store_profile">Đến Thông tin cửa hàng</button></div>`;
+}
+const obLocked = o => `<div class="callout ok" role="note"><b>Đã khóa sổ đến hết ngày ${fd(o.profile.cutoff)}.</b> Số dư đầu kỳ không sửa được nữa. Sai lệch sau ngày chốt được xử lý bằng chứng từ điều chỉnh.</div>`;
+const obEmpty = (t, d, acts = '') => `<div class="onb-empty"><b>${esc(t)}</b><span>${esc(d)}</span>${acts ? `<div class="btn-row" style="justify-content:center;margin-top:10px">${acts}</div>` : ''}</div>`;
+
+/* ---------- nội dung từng bước ---------- */
+const OB_BODY = {};
+OB_BODY.store_profile = (o, P) => {
+  const f = o.pf, done = o.status.store_profile === 'completed';
+  return `<fieldset class="onb-fs"><legend>Pháp lý và liên hệ</legend><div class="fg">
+      ${obF('pf.legal', 'Tên pháp lý', { req: true, attrs: `maxlength="${ONB_NAME_MAX}" autocomplete="organization"`, hint: 'Như trên giấy đăng ký kinh doanh.' })}
+      ${obF('pf.display', 'Tên hiển thị', { req: true, attrs: `maxlength="${ONB_NAME_MAX}"`, hint: 'Hiện trên hóa đơn và màn chính.' })}
+      ${obF('pf.tax', 'Mã số thuế', { attrs: 'inputmode="numeric" autocomplete="off"', hint: '10 số, hoặc 10 số-3 số với chi nhánh.' })}
+      ${obF('pf.phone', 'Số điện thoại', { type: 'tel', attrs: 'autocomplete="tel"' })}
+      ${obF('pf.addr', 'Địa chỉ', { wide: true, attrs: 'autocomplete="street-address"' })}
+    </div></fieldset>
+    <fieldset class="onb-fs"><legend>Ngày chốt số dư đầu kỳ</legend><div class="onb-cut">
+      ${obF('pf.cutoff', 'Ngày chốt', { req: true, type: 'date', attrs: `max="${TODAY}" ${o.confirmed ? 'disabled' : ''}`, hint: o.confirmed ? 'Đã khóa cùng số dư đầu kỳ.' : 'Không sau hôm nay (' + fd(TODAY) + ').' })}
+      <div class="callout" role="note">Tồn kho, công nợ và tiền ở các bước sau là số dư <b>đến hết ngày này</b>. Thường chọn ngày cuối tháng trước khi bắt đầu dùng phần mềm. Sau khi xác nhận số dư, ngày chốt không sửa được.</div>
+    </div></fieldset>
+    <div class="btn-row"><button type="button" class="btn ${P}" data-a="onbSaveProfile">${done ? 'Lưu thay đổi' : 'Lưu và tiếp tục'}</button></div>`;
+};
+OB_BODY.catalog_setup = (o, P) => {
+  const list = o.items.length ? table([
+    { h: 'Mã', f: x => `<span class="doc">${esc(x.id)}</span>` }, { h: 'Hàng hóa', f: x => esc(x.name) + (x.colors.length ? `<span class="sub">Màu: ${esc(x.colors.join(', '))}</span>` : '') },
+    { h: 'Đơn vị', f: x => esc(x.unit) }, { h: 'Theo lô', f: x => x.lot ? 'Có' : 'Không' }, { h: 'Giá bán', n: 1, f: x => money(x.price) }
+  ], o.items, { flat: true }) : obEmpty('Chưa có hàng hóa nào', 'Thêm vài mặt hàng chính bây giờ để nhập được tồn kho đầu kỳ.');
+  const done = o.status.catalog_setup === 'completed';
+  return `${list}<div class="btn-row">
+    <button type="button" class="btn ${o.items.length ? 'btn-line' : P}" data-a="onbItem" data-id="catalog">+ Thêm hàng hóa</button>
+    ${o.items.length && !done ? `<button type="button" class="btn ${P}" data-a="onbDone" data-id="catalog_setup">Xong, sang tồn kho</button>` : ''}
+    <button type="button" class="lnk" data-a="go" data-id="danh-muc.hang-hoa">Mở danh mục đầy đủ</button></div>`;
+};
+OB_BODY.opening_stock = (o, P) => {
+  const posted = o.stockPosted.length ? `<h3 class="sec-h">Đã ghi tồn đầu kỳ <small class="hint">${o.stockPosted.length} dòng</small></h3>` + table([
+    { h: 'Hàng', f: l => esc((obItem(l.sku) || {}).name || l.sku) }, { h: 'Màu', f: l => esc(l.color || '—') },
+    { h: 'Số lượng', n: 1, f: l => `<span class="tab-n">${l.qty}</span>` }, { h: 'Giá vốn', n: 1, f: l => money(l.cost) },
+    { h: 'Số lô · Hạn dùng', f: l => l.lot ? esc(l.lot) + ' · ' + fd(l.exp) : '—' }, { h: 'Thành tiền', n: 1, f: l => money(l.qty * l.cost) }
+  ], o.stockPosted, { flat: true, foot: [{ v: 'Tổng giá trị tồn đầu kỳ' }, '', '', '', '', { n: 1, v: money(sum(o.stockPosted, l => l.qty * l.cost)) }] }) : '';
+  if (o.confirmed) return obLocked(o) + posted;
+  const gate = obGate(o); if (gate) return gate;
+  if (!o.items.length) return obEmpty('Chưa có hàng hóa để nhập tồn', 'Tồn kho đầu kỳ cần hàng hóa trong danh mục. Thêm mặt hàng ngay tại đây hoặc ở bước Danh mục.', `<button type="button" class="btn ${P}" data-a="onbItem" data-id="stock">+ Thêm hàng hóa</button>${!o.stockPosted.length ? `<button type="button" class="btn btn-line" data-a="onbNone" data-id="opening_stock">Không có tồn kho đầu kỳ</button>` : ''}`) + posted;
+  const L = o.stock.lines;
+  const rows = L.map((l, i) => {
+    const it = obItem(l.sku), b = 'stock.lines.' + i + '.';
+    const color = it && it.colors.length ? obCtl(b + 'color', { cls: 'in', label: `Màu dòng ${i + 1}`, opts: [['', '— Chọn màu —']].concat(it.colors.map(c => [c, c])) }) + obErr(b + 'color') : '<span class="hint">—</span>';
+    const lot = it && it.lot ? `<div class="onb-lot">${obCtl(b + 'lot', { cls: 'in', label: `Số lô dòng ${i + 1}`, attrs: 'placeholder="Số lô"' })}${obErr(b + 'lot')}${obCtl(b + 'exp', { cls: 'in', type: 'date', label: `Hạn dùng dòng ${i + 1}` })}${obErr(b + 'exp')}</div>` : '<span class="hint">Không theo lô</span>';
+    return `<tr><td data-l="Hàng · Màu"><div class="onb-lot">${obCtl(b + 'sku', { cls: 'in sku', rr: true, label: `Hàng dòng ${i + 1}`, opts: [['', '— Chọn hàng —']].concat(o.items.map(x => [x.id, x.id + ' · ' + x.name])) })}${obErr(b + 'sku')}${it && it.colors.length ? color : ''}</div></td>
+      <td data-l="Số lượng">${obCtl(b + 'qty', { cls: 'in num', type: 'n', label: `Số lượng dòng ${i + 1}` })}${obErr(b + 'qty')}</td>
+      <td data-l="Giá vốn (₫)">${obCtl(b + 'cost', { cls: 'in num', type: 'n', label: `Giá vốn dòng ${i + 1}` })}${obErr(b + 'cost')}</td><td data-l="Số lô · Hạn dùng">${lot}</td>
+      <td class="num" data-l="Thành tiền" data-obamt="${i}">${money(obLineAmt(l))}</td>
+      <td class="acts">${L.length > 1 ? `<button type="button" class="btn btn-line onb-x" data-a="onbDelLine" data-id="${i}" aria-label="Xóa dòng ${i + 1}">×</button>` : ''}</td></tr>`;
+  }).join('');
+  return `<div class="tw flat"><table class="t onb-tbl onb-stack"><thead><tr><th>Hàng · Màu</th><th class="num">Số lượng</th><th class="num">Giá vốn (₫)</th><th>Số lô · Hạn dùng</th><th class="num">Thành tiền</th><th><span class="sr-only">Xóa dòng</span></th></tr></thead>
+    <tbody>${rows}</tbody><tfoot><tr><td colspan="4">Tổng giá trị dòng đang nhập</td><td class="num" data-obamt="all">${money(sum(L, obLineAmt))}</td><td></td></tr></tfoot></table></div>
+    <div class="btn-row"><button type="button" class="btn btn-line btn-sm" data-a="onbAddLine">+ Thêm dòng</button><button type="button" class="lnk" data-a="onbItem" data-id="stock">+ Hàng hóa mới</button></div>
+    <div class="btn-row"><button type="button" class="btn ${P}" data-a="onbPostStock">Ghi tồn kho đầu kỳ</button>${!o.stockPosted.length ? '<button type="button" class="btn btn-line" data-a="onbNone" data-id="opening_stock">Không có tồn kho đầu kỳ</button>' : ''}</div>
+    ${posted}`;
+};
+OB_BODY.opening_debt = (o, P) => {
+  const ar = o.debts.filter(d => d.dir === 'AR'), ap = o.debts.filter(d => d.dir === 'AP');
+  const posted = o.debts.length ? `<h3 class="sec-h">Đã ghi công nợ đầu kỳ <small class="hint">${o.debts.length} khoản</small></h3>` + table([
+    { h: 'Chiều', f: d => d.dir === 'AR' ? '<span class="tag">Khách nợ</span>' : '<span class="tag alt">Nợ NCC</span>' },
+    { h: 'Đối tác', f: d => esc((obParty(d.party) || {}).name || d.party) }, { h: 'Lý do', f: d => esc(d.reason) + (d.note ? `<span class="sub">${esc(d.note)}</span>` : '') },
+    { h: 'Hạn', f: d => fd(d.due) }, { h: 'Số tiền', n: 1, f: d => money(d.amount) }
+  ], o.debts, { flat: true }) + kv([['Khách nợ cửa hàng (phải thu)', money(sum(ar, d => d.amount))], ['Cửa hàng nợ NCC (phải trả)', money(sum(ap, d => d.amount))]]) : '';
+  if (o.confirmed) return obLocked(o) + posted;
+  const gate = obGate(o); if (gate) return gate;
+  const f = o.debtForm, isAR = f.dir === 'AR', who = isAR ? 'khách hàng' : 'nhà cung cấp';
+  const pool = o.parties.filter(p => p.kind === f.dir);
+  const partyF = pool.length ? obF('debtForm.party', isAR ? 'Khách hàng' : 'Nhà cung cấp', { req: true, opts: [['', `— Chọn ${who} —`]].concat(pool.map(p => [p.id, p.name])), hint: `<button type="button" class="lnk" data-a="onbParty">+ ${isAR ? 'Khách hàng' : 'Nhà cung cấp'} mới</button>` })
+    : `<div class="f"><span class="hint" style="text-transform:none">${isAR ? 'Khách hàng' : 'Nhà cung cấp'} <em class="req" aria-hidden="true">*</em></span><div class="callout">Chưa có ${who} nào. <button type="button" class="lnk" data-a="onbParty">+ Thêm ${who}</button></div>${obErr('debtForm.party')}</div>`;
+  return `<div class="onb-seg" role="group" aria-label="Chiều công nợ">
+      <button type="button" class="chip" aria-pressed="${isAR}" data-a="onbDir" data-id="AR">Khách hàng nợ cửa hàng</button>
+      <button type="button" class="chip" aria-pressed="${!isAR}" data-a="onbDir" data-id="AP">Cửa hàng nợ nhà cung cấp</button></div>
+    <div class="fg">${partyF}
+      ${obF('debtForm.amount', 'Số tiền nợ (₫)', { req: true, type: 'n' })}
+      ${obF('debtForm.reason', 'Lý do', { attrs: 'maxlength="200"' })}
+      ${obF('debtForm.due', 'Hạn thanh toán', { type: 'date', hint: 'Để trống nếu chưa hẹn.' })}
+      ${obF('debtForm.note', 'Ghi chú', { wide: true, type: 'area' })}</div>
+    <div class="btn-row"><button type="button" class="btn ${P}" data-a="onbPostDebt">Ghi công nợ đầu kỳ</button>${!o.debts.length ? '<button type="button" class="btn btn-line" data-a="onbNone" data-id="opening_debt">Không có công nợ đầu kỳ</button>' : ''}</div>
+    ${posted}`;
+};
+OB_BODY.opening_cash = (o, P) => {
+  if (o.confirmed) return obLocked(o) + table([{ h: 'Quỹ', f: x => esc(x.name) + `<span class="sub">${esc(x.type)}</span>` }, { h: 'Số dư đầu kỳ', n: 1, f: x => money(x.bal) }], o.funds, { flat: true, foot: [{ v: 'Tổng tiền các quỹ' }, { n: 1, v: money(sum(o.funds, x => x.bal)) }] });
+  const gate = obGate(o); if (gate) return gate;
+  const rows = o.funds.map((x, i) => `<tr><td><label for="${obId('funds.' + i + '.val')}"><b style="color:var(--navy-900);font-weight:600">${esc(x.name)}</b></label><span class="sub">${esc(x.type)}</span></td>
+    <td class="num" data-l="Đã lưu">${x.bal == null ? '<span class="hint">Chưa lưu</span>' : money(x.bal)}</td>
+    <td data-l="Số dư đầu kỳ (₫)">${obCtl('funds.' + i + '.val', { cls: 'in num', type: 'n', attrs: 'placeholder="0"' })}${obErr('funds.' + i + '.val')}</td></tr>`).join('');
+  return `<div class="tw flat"><table class="t onb-tbl onb-stack"><thead><tr><th>Quỹ</th><th class="num">Đã lưu</th><th class="num">Số dư đầu kỳ (₫)</th></tr></thead><tbody>${rows}</tbody>
+    <tfoot><tr><td colspan="2">Tổng tiền các quỹ</td><td class="num" data-obcash>${money(sum(o.funds, x => obNum(x.val) || 0))}</td></tr></tfoot></table></div>
+    <div class="btn-row"><button type="button" class="btn ${P}" data-a="onbSaveCash">Lưu số dư các quỹ</button><span class="hint">Lưu tất cả quỹ một lần. Ô để trống được tính là 0 ₫.</span></div>`;
+};
+OB_BODY.confirm_opening_balances = (o, P) => {
+  if (!o.confirmed) { const gate = obGate(o); if (gate) return gate; }
+  const ar = sum(o.debts.filter(d => d.dir === 'AR'), d => d.amount), ap = sum(o.debts.filter(d => d.dir === 'AP'), d => d.amount);
+  const by = {}; o.stockPosted.forEach(l => { const k = l.sku + '|' + (l.color || ''); by[k] = by[k] || { sku: l.sku, color: l.color, qty: 0, val: 0 }; by[k].qty += l.qty; by[k].val += l.qty * l.cost; });
+  const totals = `<div class="onb-sum">${kv([['Ngày chốt', fd(o.profile.cutoff)], ['Giá trị tồn kho', money(sum(o.stockPosted, l => l.qty * l.cost))], ['Khách nợ (phải thu)', money(ar)], ['Nợ nhà cung cấp (phải trả)', money(ap)]].concat(o.funds.map(x => [x.name, x.bal == null ? '<span class="hint">Chưa lưu</span>' : money(x.bal)]), [['Tổng tiền các quỹ', money(sum(o.funds, x => x.bal || 0))]]))}</div>`;
+  const stock = `<h3 class="sec-h">Tồn kho theo màu</h3>` + table([{ h: 'Hàng', f: r => esc((obItem(r.sku) || {}).name || r.sku) }, { h: 'Màu', f: r => esc(r.color || '—') }, { h: 'Số lượng', n: 1, f: r => `<span class="tab-n">${r.qty}</span>` }, { h: 'Giá trị', n: 1, f: r => money(r.val) }], Object.values(by), { flat: true, empty: 'Không có tồn kho đầu kỳ.' });
+  if (o.confirmed) return `<div class="callout ok" role="note"><b>Đã xác nhận lúc ${esc(o.confirmedAt)}.</b> Sổ đã khóa đến hết ngày ${fd(o.profile.cutoff)}. POS và các màn bán hàng đã mở.</div>${totals}${stock}`;
+  const bl = obBlockers(o);
+  return `${totals}${stock}
+    ${bl.length ? `<div class="callout warn" role="note"><b>Còn ${bl.length} bước bắt buộc chưa xong:</b><ul class="onb-ul" style="margin-top:6px">${bl.map(k => `<li><button type="button" class="lnk" data-a="onbGo" data-id="${k}">${esc(obStep(k).label)}</button></li>`).join('')}</ul></div>` : ''}
+    <div class="callout" role="note"><b>Khi xác nhận:</b><ul class="onb-ul" style="margin-top:6px"><li>Tồn kho, công nợ, tiền đầu kỳ và ngày chốt bị khóa, không sửa được.</li><li>Sổ khóa đến hết ngày ${fd(o.profile.cutoff)}. Sai lệch sau đó xử lý bằng chứng từ điều chỉnh.</li><li>POS và các màn bán hàng được mở.</li></ul></div>
+    <label class="check"><input type="checkbox" id="ob-agree" data-ob="agree" data-obr ${o.agree ? 'checked' : ''}> Tôi đã kiểm tra các số dư trên và đồng ý khóa sổ đến hết ngày chốt.</label>
+    <div class="btn-row"><button type="button" class="btn btn-danger" data-a="onbConfirm" ${!o.agree || bl.length ? 'disabled aria-describedby="ob-confirm-h"' : ''}>Xác nhận số dư đầu kỳ</button>
+      <span class="hint" id="ob-confirm-h">${bl.length ? 'Hoàn tất các bước còn thiếu trước.' : !o.agree ? 'Đánh dấu ô đồng ý để xác nhận.' : 'Cần nhập lại mật khẩu khi xác nhận.'}</span></div>`;
+};
+OB_BODY.first_sale = (o, P) => {
+  if (o.status.first_sale === 'completed') return `<div class="callout ok" role="note"><b>Đã có hóa đơn bán đầu tiên.</b> Cửa hàng đang hoạt động bình thường.</div>`;
+  if (!o.confirmed) return `<div class="callout" role="note"><b>POS mở sau khi xác nhận số dư đầu kỳ.</b> Bán hàng trước khi khóa sổ sẽ làm lệch tồn kho và tiền đầu kỳ. <button type="button" class="lnk" data-a="onbGo" data-id="confirm_opening_balances">Đến bước Xác nhận</button></div>`;
+  return `<ol class="onb-check"><li>Mở POS, quét hoặc tìm một mặt hàng đã nhập tồn.</li><li>Thu tiền vào quỹ và in hóa đơn.</li><li>Quay lại đây: bước này tự đánh dấu xong.</li></ol>
+    <div class="btn-row"><button type="button" class="btn ${P}" data-a="go" data-id="ban-hang.pos">Mở POS bán hàng</button></div>`;
+};
+
+/* ---------- ràng buộc ô nhập: ghi vào nháp, không vẽ lại khi gõ ---------- */
+document.addEventListener('input', e => {
+  const el = e.target; if (!el.dataset || !el.dataset.ob || !S.onb) return;
+  setPath(S.onb, el.dataset.ob, el.type === 'checkbox' ? el.checked : el.value);
+  const p = el.dataset.ob;
+  if (UI.ob.err[p]) { delete UI.ob.err[p]; el.removeAttribute('aria-invalid'); const m = document.getElementById(el.id + '-e'); if (m) { m.hidden = true; m.textContent = ''; } }
+  const m = p.match(/^stock\.lines\.(\d+)\.(qty|cost)$/);
+  if (m) { const c = $(`[data-obamt="${m[1]}"]`), t = $('[data-obamt="all"]'); if (c) c.innerHTML = money(obLineAmt(S.onb.stock.lines[+m[1]])); if (t) t.innerHTML = money(sum(S.onb.stock.lines, obLineAmt)); }
+  if (/^funds\.\d+\.val$/.test(p)) { const t = $('[data-obcash]'); if (t) t.innerHTML = money(sum(S.onb.funds, x => obNum(x.val) || 0)); }
+});
+document.addEventListener('change', e => {
+  const el = e.target; if (!el.dataset || !el.dataset.ob || !S.onb) return;
+  setPath(S.onb, el.dataset.ob, el.type === 'checkbox' ? el.checked : el.value);
+  const m = el.dataset.ob.match(/^stock\.lines\.(\d+)\.sku$/); if (m) Object.assign(S.onb.stock.lines[+m[1]], { color: '', lot: '', exp: '' });
+  save(); if (el.dataset.obr !== undefined) renderOnb();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && UI.ob.rail && !M && document.body.classList.contains('is-onb')) { UI.ob.rail = false; renderOnb(); const t = $('.onb-rail-tg'); if (t) t.focus(); } });
+
+/* ---------- hành động ---------- */
+function onbGoTo(k) {
+  const o = onb(); o.step = k; UI.ob.err = {}; UI.ob.rail = false; save(); renderOnb();
+  const h = $('#onb-h'); if (h) { h.focus({ preventScroll: true }); const top = h.closest('.onb-card').getBoundingClientRect().top; if (top < 70 || top > innerHeight * .6) window.scrollTo(0, Math.max(0, scrollY + top - 80)); }
+}
+const obNext = k => { const i = ONB_STEPS.findIndex(s => s.k === k); return (ONB_STEPS[i + 1] || ONB_STEPS[i]).k; };
+A.onbGo = k => onbGoTo(k);
+A.onbRail = () => { UI.ob.rail = !UI.ob.rail; renderOnb(); const t = $('.onb-rail-tg'); if (t) t.focus(); };
+A.onbSkip = k => { onb().status[k] = 'skipped'; save(); toast(`Đã bỏ qua <b>${esc(obStep(k).label)}</b>. Có thể làm lại bất cứ lúc nào.`); onbGoTo(obNext(k)); };
+A.onbDone = k => { onb().status[k] = 'completed'; save(); toast(`Đã xong <b>${esc(obStep(k).label)}</b>.`); onbGoTo(obNext(k)); };
+A.onbNone = k => {
+  const lbl = k === 'opening_stock' ? 'không có tồn kho đầu kỳ' : 'không có công nợ đầu kỳ';
+  openModal({ title: 'Xác nhận ' + lbl + '?', sub: 'Số dư đầu kỳ của mục này sẽ là 0 khi khóa sổ. Trước khi xác nhận vẫn có thể ghi thêm.', body: () => `<div class="callout">Đánh dấu bước <b>${esc(obStep(k).label)}</b> là đã xong với số dư 0.</div>`, submitLabel: 'Đúng, ' + lbl,
+    submit: (d, b) => post(b, () => { onb().status[k] = 'completed'; onb().step = obNext(k); }, `Đã ghi nhận ${lbl}.`, () => onbGoTo(onb().step)) });
+};
+A.onbSaveProfile = () => {
+  const o = onb(), f = o.pf, er = {}, t = s => String(s || '').trim();
+  if (!t(f.legal)) er['pf.legal'] = 'Nhập tên pháp lý.'; else if (t(f.legal).length > ONB_NAME_MAX) er['pf.legal'] = `Tối đa ${ONB_NAME_MAX} ký tự.`;
+  if (!t(f.display)) er['pf.display'] = 'Nhập tên hiển thị.'; else if (t(f.display).length > ONB_NAME_MAX) er['pf.display'] = `Tối đa ${ONB_NAME_MAX} ký tự.`;
+  if (t(f.tax) && !ONB_TAX.test(t(f.tax))) er['pf.tax'] = 'Mã số thuế gồm 10 số, hoặc 10 số-3 số (ví dụ 0312345678-001).';
+  if (!o.confirmed) { if (!f.cutoff) er['pf.cutoff'] = 'Chọn ngày chốt số dư đầu kỳ.'; else if (f.cutoff > TODAY) er['pf.cutoff'] = 'Ngày chốt không được sau hôm nay (' + fd(TODAY) + ').'; }
+  if (Object.keys(er).length) return obFail(er);
+  const first = o.status.store_profile !== 'completed';
+  o.profile = { legal: t(f.legal), display: t(f.display), tax: t(f.tax), phone: t(f.phone), addr: t(f.addr), cutoff: o.confirmed ? o.profile.cutoff : f.cutoff };
+  o.pf = Object.assign({}, o.profile); o.status.store_profile = 'completed'; UI.ob.err = {}; save();
+  toast(first ? `Đã lưu thông tin cửa hàng. Số dư đầu kỳ tính đến hết ngày <b>${fd(o.profile.cutoff)}</b>.` : 'Đã lưu thay đổi.');
+  if (first) onbGoTo(obNext('store_profile')); else renderOnb();
+};
+A.onbItem = ctx => openModal({
+  title: 'Thêm hàng hóa', sub: 'Thông tin tối thiểu để nhập tồn. Bổ sung mã vạch, bảng giá sau trong Danh mục.',
+  draft: { name: '', unit: 'Hộp', price: 0, colors: '', lot: false },
+  body: d => `<div class="fg">${F('Tên hàng *', inp('name', d.name, 'text', `maxlength="${ONB_NAME_MAX}" autofocus`))}${F('Đơn vị tính *', inp('unit', d.unit))}${F('Giá bán (₫)', inp('price', d.price || '', 'n'))}${F('Màu (nếu có)', inp('colors', d.colors), 'Cách nhau bằng dấu phẩy, ví dụ: Đỏ, Vàng.')}</div>
+    <label class="check" style="margin-top:12px"><input type="checkbox" data-b="lot" ${d.lot ? 'checked' : ''}> Quản lý theo số lô và hạn dùng</label>`,
+  submitLabel: 'Thêm hàng hóa',
+  submit: (d, b) => post(b, () => {
+    const o = onb(), name = String(d.name).trim();
+    if (!name) fail('Nhập tên hàng.'); if (name.length > ONB_NAME_MAX) fail(`Tên hàng tối đa ${ONB_NAME_MAX} ký tự.`);
+    if (!String(d.unit).trim()) fail('Nhập đơn vị tính.');
+    if (o.items.some(x => x.name.toLowerCase() === name.toLowerCase())) fail('Đã có hàng hóa cùng tên.');
+    const it = { id: 'HH' + String(o.items.length + 1).padStart(3, '0'), name, unit: String(d.unit).trim(), price: Math.max(0, +d.price || 0), colors: String(d.colors || '').split(',').map(s => s.trim()).filter(Boolean), lot: !!d.lot };
+    o.items.push(it);
+    if (ctx === 'stock') { const L = o.stock.lines, l = L.find(x => !x.sku) || (L.push(onbLine()), L[L.length - 1]); l.sku = it.id; }
+    return it;
+  }, it => `Đã thêm <b>${esc(it.name)}</b>.`)
+});
+A.onbAddLine = () => { onb().stock.lines.push(onbLine()); save(); renderOnb(); const L = onb().stock.lines, el = document.getElementById(obId('stock.lines.' + (L.length - 1) + '.sku')); if (el) el.focus(); };
+A.onbDelLine = i => { const o = onb(); o.stock.lines.splice(+i, 1); UI.ob.err = {}; save(); renderOnb(); toast(`Đã xóa dòng ${+i + 1}.`); };
+A.onbPostStock = (id, b) => {
+  const o = onb(), er = {};
+  const L = o.stock.lines.map((l, i) => ({ l, i })).filter(({ l }) => l.sku || String(l.qty).trim() || String(l.cost).trim());
+  if (!L.length) return obFail({ 'stock.lines.0.sku': 'Chọn hàng cho ít nhất một dòng.' });
+  L.forEach(({ l, i }) => {
+    const p = 'stock.lines.' + i + '.', it = obItem(l.sku), q = obNum(l.qty), c = obNum(l.cost);
+    if (!it) er[p + 'sku'] = 'Chọn hàng.';
+    if (it && it.colors.length && !l.color) er[p + 'color'] = 'Chọn màu.';
+    if (!(q > 0)) er[p + 'qty'] = 'Số lượng phải lớn hơn 0.';
+    if (!(c >= 0)) er[p + 'cost'] = 'Nhập giá vốn (0 nếu hàng tặng).';
+    if (it && it.lot) { if (!String(l.lot).trim()) er[p + 'lot'] = 'Nhập số lô.'; if (!l.exp) er[p + 'exp'] = 'Chọn hạn dùng.'; }
+  });
+  if (Object.keys(er).length) return obFail(er);
+  post(b, () => {
+    L.forEach(({ l }) => o.stockPosted.push({ sku: l.sku, color: l.color, qty: obNum(l.qty), cost: obNum(l.cost), lot: String(l.lot).trim(), exp: l.exp }));
+    o.stock.lines = [onbLine()]; o.status.opening_stock = 'completed'; UI.ob.err = {};
+    return L.length;
+  }, n => `Đã ghi <b>${n} dòng</b> tồn kho đầu kỳ. Có thể ghi thêm trước khi khóa sổ.`);
+};
+A.onbDir = dir => { const o = onb(); if (o.debtForm.dir === dir) return; o.debtForm = Object.assign(onbDebtForm(dir), { amount: o.debtForm.amount, due: o.debtForm.due, note: o.debtForm.note }); UI.ob.err = {}; save(); renderOnb(); };
+function obAddParty(kind, name, phone) { const o = onb(), p = { id: (kind === 'AR' ? 'KH' : 'NCC') + String(o.parties.filter(x => x.kind === kind).length + 1).padStart(3, '0'), name, phone, kind }; o.parties.push(p); return p; }
+A.onbParty = () => {
+  const o = onb(), dir = o.debtForm.dir, w = dir === 'AR' ? 'khách hàng' : 'nhà cung cấp';
+  openModal({ title: 'Thêm ' + w, draft: { name: '', phone: '' },
+    body: d => `<div class="fg">${F('Tên ' + w + ' *', inp('name', d.name, 'text', `maxlength="${ONB_NAME_MAX}" autofocus`))}${F('Số điện thoại', inp('phone', d.phone, 'tel'))}</div>`,
+    submitLabel: 'Thêm ' + w,
+    submit: (d, b) => post(b, () => {
+      const name = String(d.name).trim(); if (!name) fail('Nhập tên ' + w + '.');
+      const p = obAddParty(dir, name, String(d.phone).trim()); o.debtForm.party = p.id; delete UI.ob.err['debtForm.party']; return p;
+    }, p => `Đã thêm <b>${esc(p.name)}</b> và chọn cho khoản nợ.`) });
+};
+A.onbPostDebt = (id, b) => {
+  const o = onb(), f = o.debtForm, er = {}, amt = obNum(f.amount);
+  if (!obParty(f.party)) er['debtForm.party'] = f.dir === 'AR' ? 'Chọn khách hàng.' : 'Chọn nhà cung cấp.';
+  if (!(amt > 0)) er['debtForm.amount'] = 'Số tiền nợ phải lớn hơn 0.';
+  if (Object.keys(er).length) return obFail(er);
+  post(b, () => {
+    o.debts.push({ dir: f.dir, party: f.party, amount: amt, reason: String(f.reason).trim() || 'Số dư đầu kỳ', due: f.due, note: String(f.note).trim() });
+    o.debtForm = onbDebtForm(f.dir); o.status.opening_debt = 'completed'; UI.ob.err = {};
+  }, `Đã ghi công nợ đầu kỳ <b>${vnd(amt)}</b>. Ghi tiếp khoản khác hoặc sang bước sau.`);
+};
+A.onbSaveCash = (id, b) => {
+  const o = onb(), er = {};
+  o.funds.forEach((x, i) => { const s = String(x.val).trim(), n = obNum(s); if (s && !(n >= 0)) er['funds.' + i + '.val'] = 'Nhập số tiền từ 0 trở lên.'; });
+  if (Object.keys(er).length) return obFail(er);
+  post(b, () => { o.funds.forEach(x => { x.bal = obNum(x.val) || 0; }); o.status.opening_cash = 'completed'; UI.ob.err = {}; },
+    `Đã lưu số dư ${o.funds.length} quỹ.`, () => onbGoTo('confirm_opening_balances'));
+};
+A.onbConfirm = () => {
+  const o = onb(); if (!o.agree || obBlockers(o).length) return;
+  openModal({ title: 'Nhập lại mật khẩu để khóa sổ', sub: `Xác nhận số dư đầu kỳ đến hết ngày ${fd(o.profile.cutoff)}. Không hoàn tác được.`, draft: { pw: '' },
+    body: d => F('Mật khẩu', inp('pw', '', 'password', 'autocomplete="current-password" autofocus'), 'Bản mẫu chấp nhận mật khẩu bất kỳ.'),
+    submitLabel: 'Khóa sổ và xác nhận',
+    submit: (d, b) => post(b, () => {
+      if (!d.pw) fail('Nhập mật khẩu.');
+      Object.assign(o, { confirmed: true, confirmedAt: fd(TODAY) + ' ' + new Date().toTimeString().slice(0, 5) });
+      o.status.confirm_opening_balances = 'completed'; o.step = 'first_sale';
+    }, 'Đã khóa số dư đầu kỳ. POS đã mở.', () => onbGoTo('first_sale')) });
+};
+A.onbEnter = () => { go('tong-quan', 'dashboard'); toast('Bản mẫu: màn chính đang dùng dữ liệu của cửa hàng mẫu.'); };
+A.onbLogout = () => { go('tong-quan', 'dashboard'); toast('Bản mẫu: Đăng xuất sẽ về màn đăng nhập. Tiến độ thiết lập vẫn được giữ.'); };
+A.onbExit = () => go('thiet-lap', 'khoi-tao');
+A.onbReset = () => openModal({ title: 'Đặt lại onboarding?', sub: 'Xóa toàn bộ dữ liệu thiết lập của cửa hàng mới trong bản mẫu. Cửa hàng mẫu không bị ảnh hưởng.', body: () => '<div class="callout warn">Các bước sẽ về trạng thái chưa làm.</div>', submitLabel: 'Đặt lại',
+  submit: (d, b) => post(b, () => { S.onb = onbSeed(); UI.ob = { err: {}, rail: false }; }, 'Đã đặt lại onboarding.', () => onbGoTo('store_profile')) });
+A.onbSample = () => {
+  const o = onb(), k = o.step;
+  const items = () => { if (o.items.length) return; o.items.push({ id: 'HH001', name: 'Hộp quà Tết An Khang', unit: 'Hộp', price: 450000, colors: ['Đỏ', 'Vàng'], lot: false }, { id: 'HH002', name: 'Mứt dừa non 500g', unit: 'Hộp', price: 85000, colors: [], lot: true }, { id: 'HH003', name: 'Hạt điều rang muối 500g', unit: 'Hũ', price: 180000, colors: [], lot: true }); };
+  if (k === 'store_profile') Object.assign(o.pf, { legal: 'Công ty TNHH Bánh kẹo Hòa Phát', display: 'Bánh kẹo Tết Hòa Phát', tax: '0312345678', phone: '0909 123 456', addr: '125 Hải Thượng Lãn Ông, Phường 10, Quận 5, TP.HCM' }, o.confirmed ? {} : { cutoff: '2026-09-30' });
+  else if (k === 'catalog_setup') items();
+  else if (obLock(o, k) && k !== 'first_sale') return toast('Bước này đang khóa: ' + esc(obLock(o, k)) + '.', 'err');
+  else if (k === 'opening_stock') { items(); o.stock.lines = [{ sku: 'HH001', color: 'Đỏ', qty: '120', cost: '310000', lot: '', exp: '' }, { sku: 'HH001', color: 'Vàng', qty: '80', cost: '310000', lot: '', exp: '' }, { sku: 'HH002', color: '', qty: '300', cost: '52000', lot: 'MD-0925', exp: '2027-03-31' }]; }
+  else if (k === 'opening_debt') { const dir = o.debtForm.dir, isAR = dir === 'AR', p = o.parties.find(x => x.kind === dir) || (isAR ? obAddParty(dir, 'Đại lý Minh Châu', '0918 222 333') : obAddParty(dir, 'Công ty CP Thực phẩm Sài Gòn', '028 3812 4567')); o.debtForm = Object.assign(onbDebtForm(dir), { party: p.id, amount: isAR ? '18500000' : '42000000', due: '2026-10-31' }); }
+  else if (k === 'opening_cash') { o.funds[0].val = '15000000'; o.funds[1].val = '82500000'; }
+  else if (k === 'confirm_opening_balances') o.agree = true;
+  else if (k === 'first_sale') { if (!o.confirmed) return toast('Bước này mở sau khi xác nhận số dư.', 'err'); o.status.first_sale = 'completed'; save(); renderOnb(); return toast('Giả lập: POS đã có hóa đơn đầu tiên.'); }
+  UI.ob.err = {}; save(); renderOnb(); toast('Đã điền dữ liệu mẫu. Kiểm tra rồi bấm nút chính để lưu.');
+};
+
+/* ---------- lối vào trong app: Thiết lập › Khởi tạo cửa hàng ---------- */
+V['thiet-lap.khoi-tao'] = () => {
+  const o = onb(), reqN = ONB_STEPS.filter(s => s.req).length, reqD = ONB_STEPS.filter(s => s.req && o.status[s.k] === 'completed').length;
+  return pageHead('Thiết lập', 'Khởi tạo cửa hàng', 'Màn onboarding cho chủ cửa hàng mới. Ở bản thật, app tự chuyển tới màn này khi còn bước bắt buộc chưa xong; chỉ Danh mục được mở trong lúc đó.', '<a class="btn btn-primary" href="#onboarding">Mở màn onboarding</a>')
+    + `<div class="card"><div class="card-h"><h2>Tiến độ cửa hàng mới (bản mẫu)</h2><small>${reqD}/${reqN} bước bắt buộc</small></div>
+      ${table([{ h: 'Bước', f: s => `${ONB_STEPS.indexOf(s) + 1}. ${esc(s.label)}` }, { h: 'Loại', f: s => s.req ? '<span class="tag">Bắt buộc</span>' : '<span class="tag alt">Tùy chọn</span>' }, { h: 'Trạng thái', f: s => obStatusChip(o, s) }], ONB_STEPS, { flat: true })}
+      <div class="btn-row" style="margin-top:14px">${btn('Đặt lại onboarding', 'onbReset', '', 'btn-line btn-sm')}</div></div>`;
+};
+
+/* route #onboarding vẽ ngoài khung app (không sidebar, không thanh tiện ích) */
+const renderApp = render;
+render = function () {
+  const on = location.hash === '#onboarding', was = document.body.classList.contains('is-onb');
+  document.body.classList.toggle('is-onb', on);
+  if (!on) { $('#onb-root').innerHTML = ''; return renderApp(); }
+  renderOnb();
+  if (!was) { const m = $('#onb-main'); if (m) m.focus({ preventScroll: true }); }
+};
 
 load();
 window.addEventListener('hashchange', () => { closeDrawer(); closeModal(); render(); window.scrollTo(0, 0); });
