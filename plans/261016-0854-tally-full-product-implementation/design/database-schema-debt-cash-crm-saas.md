@@ -33,7 +33,8 @@ CREATE TABLE obligation_schedules (                   -- + multi-installment ter
   installment_no int NOT NULL CHECK (installment_no > 0),
   due_date date NOT NULL, amount numeric(19,4) NOT NULL CHECK (amount > 0),
   UNIQUE (tenant_id, obligation_id, installment_no),
-  FOREIGN KEY (tenant_id, obligation_id) REFERENCES obligations (tenant_id, id)
+  FOREIGN KEY (tenant_id, obligation_id) REFERENCES obligations (tenant_id, id),
+  UNIQUE (tenant_id, id)
 );
 -- Aging (DEBT-03) uses schedule due dates of the unpaid part, settled oldest-installment-first; as-of reports replay settlements ≤ as-of date
 
@@ -75,7 +76,8 @@ CREATE TABLE credit_notes (                           -- giảm trừ: returns, 
   created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL, version int NOT NULL DEFAULT 1,
   UNIQUE (tenant_id, id), UNIQUE (tenant_id, source_type, source_id),
   CHECK (allocated_amount <= amount),
-  FOREIGN KEY (tenant_id, party_id) REFERENCES parties (tenant_id, id)
+  FOREIGN KEY (tenant_id, party_id) REFERENCES parties (tenant_id, id),
+  FOREIGN KEY (tenant_id, reason_id) REFERENCES reasons (tenant_id, id)
 );
 -- Unallocated credit after open debt is reduced = "khoản cần hoàn" (refund_due obligation in the opposite direction)
 
@@ -108,7 +110,8 @@ CREATE TABLE debt_offsets (                           -- + BT (DEBT-10): explici
   UNIQUE (tenant_id, id), UNIQUE (tenant_id, doc_no), UNIQUE (tenant_id, idempotency_key),
   FOREIGN KEY (tenant_id, receivable_obligation_id) REFERENCES obligations (tenant_id, id),
   FOREIGN KEY (tenant_id, payable_obligation_id) REFERENCES obligations (tenant_id, id),
-  FOREIGN KEY (tenant_id, attachment_id) REFERENCES attachments (tenant_id, id)
+  FOREIGN KEY (tenant_id, attachment_id) REFERENCES attachments (tenant_id, id),
+  FOREIGN KEY (tenant_id, party_id) REFERENCES parties (tenant_id, id)
 );
 
 CREATE TABLE obligation_settlements (                 -- append-only; reversal = negative row with reversal_of
@@ -149,7 +152,8 @@ CREATE TABLE statement_versions (                     -- append-only: sent numbe
   snapshot jsonb NOT NULL,                            -- transactions as of generation
   sent_at timestamptz, created_by uuid NOT NULL, created_at timestamptz NOT NULL,
   UNIQUE (tenant_id, statement_id, version_no),
-  FOREIGN KEY (tenant_id, statement_id) REFERENCES statements (tenant_id, id)
+  FOREIGN KEY (tenant_id, statement_id) REFERENCES statements (tenant_id, id),
+  UNIQUE (tenant_id, id)
 );
 REVOKE UPDATE, DELETE ON statement_versions FROM tally_app;
 
@@ -214,7 +218,7 @@ CREATE INDEX ix_cash_entries__fund_date ON cash_entries (tenant_id, fund_account
 REVOKE UPDATE, DELETE ON cash_entries FROM tally_app;
 ```
 
-POS change (tiền thừa, CASH-04) is not stored as an entry: the payment records the net amount; tendered/change go into the sales document snapshot. Opening balance is a `cash_entries` row with `category = 'opening'`, never revenue.
+POS change (tiền thừa, CASH-04) is not stored as an entry: the payment records the net amount; tendered/change go into the sales document snapshot. The fund opening balance is the `fund_accounts.opening_balance` column (editable only while the fund has no entries, else `409 fund_has_entries`), never a `cash_entries` row and never revenue; `balance = opening_balance + Σ cash_entries` is what `tally ledger verify` checks.
 
 ## 3. Campaign & CRM (SEA-01..03, CRM-01..03, PRD §7.7)
 
@@ -231,8 +235,15 @@ CREATE TABLE campaigns (
   UNIQUE (tenant_id, id), UNIQUE (tenant_id, name_key),
   CHECK (ends_on >= starts_on)
 );
+-- campaign_id of tables created before campaigns gets its FK here (fk_<table>__campaign_id)
 ALTER TABLE price_lists ADD FOREIGN KEY (tenant_id, campaign_id) REFERENCES campaigns (tenant_id, id);
 ALTER TABLE promotions ADD FOREIGN KEY (tenant_id, campaign_id) REFERENCES campaigns (tenant_id, id);
+ALTER TABLE sales_document_lines ADD FOREIGN KEY (tenant_id, campaign_id) REFERENCES campaigns (tenant_id, id);
+ALTER TABLE quotes ADD FOREIGN KEY (tenant_id, campaign_id) REFERENCES campaigns (tenant_id, id);
+ALTER TABLE invoices ADD FOREIGN KEY (tenant_id, campaign_id) REFERENCES campaigns (tenant_id, id);
+ALTER TABLE sales_documents ADD FOREIGN KEY (tenant_id, campaign_id) REFERENCES campaigns (tenant_id, id);
+ALTER TABLE assembly_orders ADD FOREIGN KEY (tenant_id, campaign_id) REFERENCES campaigns (tenant_id, id);
+ALTER TABLE obligations ADD FOREIGN KEY (tenant_id, campaign_id) REFERENCES campaigns (tenant_id, id);
 
 CREATE TABLE campaign_attributions (                  -- one primary per financial line; tags for filtering only
   id uuid PRIMARY KEY, tenant_id uuid NOT NULL, campaign_id uuid NOT NULL,
@@ -398,6 +409,14 @@ CREATE TABLE plans (                                  -- global seed by migratio
   limits jsonb NOT NULL DEFAULT '{}',                 -- {"skus":20000,"storage_mb":2048}
   active bool NOT NULL DEFAULT true, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
 );
+-- Seed (000025_saas_platform), fixed ids 00000000-0000-7000-8000-00000000000N, price 0 everywhere
+-- until pricing is decided (OPEN-09; admin-editable), limits {"skus":20000,"storage_mb":2048} unless noted:
+--   1 trial        'Dùng thử'   trial      none   {pos,kits,campaign,crm,reports_advanced}
+--   2 store        'Cửa hàng'   year_round year   {pos}
+--   3 wholesale    'Bán sỉ'     year_round year   {pos,campaign,crm,reports_advanced}
+--   4 gift_basket  'Giỏ quà'    year_round year   {pos,kits,campaign,crm,reports_advanced}
+--   5 seasonal     'Theo mùa'   seasonal   season {pos,kits,campaign,crm,reports_advanced}
+--   6 addon_ai_qa  'Hỏi đáp AI' addon      month  {ai_qa}, limits {}
 
 CREATE TABLE subscriptions (
   id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenants (id), plan_id uuid NOT NULL REFERENCES plans (id),
@@ -414,9 +433,13 @@ CREATE TABLE entitlements (                           -- server-side module/limi
   id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenants (id),
   key text NOT NULL, value jsonb NOT NULL,            -- true / number limit
   source_subscription_id uuid REFERENCES subscriptions (id),
+  source_plan_id uuid REFERENCES plans (id),          -- the add-on plan that granted the row; null for the base plan
   valid_from date NOT NULL, valid_to date,
   created_at timestamptz NOT NULL,
-  UNIQUE (tenant_id, key, valid_from)
+  CONSTRAINT ck_entitlements__single_source CHECK (source_subscription_id IS NULL OR source_plan_id IS NULL),
+  -- plan and add-on rows for one module may start the same day; each keeps its own period
+  CONSTRAINT ux_entitlements__key_valid_from_source
+    UNIQUE NULLS NOT DISTINCT (tenant_id, key, valid_from, source_subscription_id, source_plan_id)
 );
 
 CREATE TABLE saas_invoices (                          -- service billing, separate from store finance
@@ -472,6 +495,7 @@ CREATE TABLE feature_flag_changes (                   -- append-only
   id uuid PRIMARY KEY, key text NOT NULL, tenant_id uuid,
   enabled bool NOT NULL, admin_id uuid NOT NULL REFERENCES platform_admins (id), created_at timestamptz NOT NULL
 );
+REVOKE UPDATE, DELETE ON feature_flag_changes FROM tally_app;
 
 CREATE TABLE tenant_usage_daily (                     -- SAAS-06 usage, no sales content
   tenant_id uuid NOT NULL REFERENCES tenants (id), usage_date date NOT NULL,

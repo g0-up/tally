@@ -1,6 +1,6 @@
 ---
 title: "Phase 01: Monorepo, Docker & Infra"
-status: todo
+status: done
 priority: P1
 effort: 3d
 dependsOn: []
@@ -44,7 +44,7 @@ infra/docker-compose.yml        postgres:16-alpine(5432, init roles) · mailpit(
 infra/docker-compose.prod.yml   postgres · api(tally serve) · worker(tally worker) · web(nginx) — no proxy, no published ports
 infra/docker-compose.homelab.yml  production overlay: external network "homelab" on api/web, postgres alias tally-postgres, Traefik labels (routers tally-api p=3, tally-web p=2, middleware tally-headers)
 
-Cloudflare edge (sidecup.app, *.sidecup.app) ──tunnel──▶ cloudflared-sidecup ──http──▶ Traefik :80 ──▶ api:8080 (/api/*, Host preserved) | web:80 (rest)
+Cloudflare edge (sidecup.app, *.sidecup.app) ──tunnel──▶ cloudflared-sidecup ──http──▶ Traefik :80 ──▶ api:8080 (/api/*, Host preserved) | web:8080 (rest)
 ```
 
 Environment variables (all listed in `infra/.env.example` with placeholder values): `DOMAIN, APP_ENV, APP_TZ=Asia/Ho_Chi_Minh, LOG_LEVEL, POSTGRES_DB, POSTGRES_SUPERUSER_PASSWORD, TALLY_OWNER_PASSWORD, TALLY_APP_PASSWORD, TALLY_READONLY_PASSWORD, DATABASE_URL, MIGRATE_DATABASE_URL, SESSION_HASH_KEY, CSRF_KEY, APP_ENCRYPTION_KEY, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, MAIL_FROM, OBJECT_STORE_ENDPOINT, OBJECT_STORE_REGION, OBJECT_STORE_BUCKET, OBJECT_STORE_ACCESS_KEY, OBJECT_STORE_SECRET_KEY, PUBLIC_BASE_URL, TRUSTED_PROXY_CIDRS, RESERVED_SLUGS, MIGRATE_ON_START, PLATFORM_ADMIN_BOOTSTRAP_EMAIL`. `PUBLIC_BASE_URL` is the apex (production `DOMAIN=sidecup.app`, `PUBLIC_BASE_URL=https://sidecup.app`); tenant and admin hosts are derived from it. `TRUSTED_PROXY_CIDRS` is the `homelab` network subnet (`docker network inspect homelab`). `RESERVED_SLUGS` example value: `tiendouong,tiendouong-api` (hostnames Sidecup already uses on the zone).
@@ -102,17 +102,17 @@ Append-only revokes happen per table inside migrations (phase 03).
 
 ## Todo
 
-- [ ] Go module + cobra root + `serve`/`healthcheck`
-- [ ] Web scaffold with full dependency set and strict TS
-- [ ] Dev compose (postgres, mailpit, minio, minio-init)
-- [ ] Role init scripts (no functions/DO)
-- [ ] Prod compose (postgres, api, worker, web, ops migrate; no proxy, no ports)
-- [ ] Homelab overlay: `homelab` network, `tally-postgres` alias, low-priority Traefik routers, header middleware
-- [ ] Root Makefile incl. check-ports, db-backup, db-restore, prod-migrate
-- [ ] API/Web Dockerfiles, nginx.conf
-- [ ] golangci-lint + eslint configs, depguard rule for domain imports
-- [ ] CI workflow
-- [ ] `.env.example`, `.gitignore`, runbook
+- [x] Go module + cobra root + `serve`/`healthcheck`
+- [x] Web scaffold with full dependency set and strict TS
+- [x] Dev compose (postgres, mailpit, minio, minio-init)
+- [x] Role init scripts (no functions/DO)
+- [x] Prod compose (postgres, api, worker, web, ops migrate; no proxy, no ports)
+- [x] Homelab overlay: `homelab` network, `tally-postgres` alias, low-priority Traefik routers, header middleware
+- [x] Root Makefile incl. check-ports, db-backup, db-restore, prod-migrate
+- [x] API/Web Dockerfiles, nginx.conf
+- [x] golangci-lint + eslint configs, depguard rule for domain imports
+- [x] CI workflow
+- [x] `.env.example`, `.gitignore`, runbook
 
 ## Success criteria & verification
 

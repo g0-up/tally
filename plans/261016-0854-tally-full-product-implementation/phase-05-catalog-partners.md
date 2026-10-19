@@ -1,6 +1,6 @@
 ---
 title: "Phase 05: Catalog & Partners"
-status: todo
+status: done
 priority: P1
 effort: 7d
 dependsOn: [phase-04-identity-organization]
@@ -95,18 +95,18 @@ Routes: `/colors`, `/units`, `/tax-rates`, `/attributes`(+`/options`), `/attribu
 
 ## Todo
 
-- [ ] Lookups + seeders (colors, units, tax rates)
-- [ ] Attributes/options/sets + registry validators + specs
-- [ ] Categories tree
-- [ ] Products + images
-- [ ] Variant axes + matrix preview/generate
-- [ ] SKU units/barcodes + specs
-- [ ] Mix groups + policy + verbatim messages
-- [ ] Unified search + 20k SKU benchmark
-- [ ] Partners (customers, suppliers, groups, contacts, addresses, dedupe)
-- [ ] Reasons
-- [ ] Quick-create product
-- [ ] Provisioner wiring + OpenAPI + isolation tests
+- [x] Lookups + seeders (colors, units, tax rates). Evidence: `catalog/lookups.go`, `catalog/seed.go`, `TestSeedersAreIdempotentAndTheSandboxResets`.
+- [x] Attributes/options/sets + registry validators + specs. Evidence: `catalog/attributes.go`, `attribute_service.go`, `edit_rules.go`, `TestAttributeEditRulesOnceUsed` (409 `attribute_in_use`).
+- [x] Categories tree. Evidence: `catalog/categories.go`, `TestCategoriesFormATreeOfAtMostFourLevels`.
+- [x] Products + images. Evidence: `catalog/products.go`; the image path (pending scan → 422, clean → linked) is covered over HTTP in `app/catalog_partner_integration_test.go`.
+- [x] Variant axes + matrix preview/generate. Evidence: `catalog/variants.go`, `variant_service.go`, `TestVariantPreviewEqualsGenerationAndRegenerationIsIdempotent` (2×3×2 → 12) and the HTTP test.
+- [x] SKU units/barcodes + specs. Evidence: `catalog/skus.go`, `TestSkuUnitsBarcodesAndDeleteRules`.
+- [x] Mix groups + policy + verbatim messages. Evidence: `catalog/mix.go`, `mix_groups.go`, `errors.go`, `TestMixGroupsAndQuickCreate`.
+- [x] Unified search + 20k SKU benchmark. Evidence: `catalog/search.go`, `TestSearchFindsAccentInsensitiveAndExactBarcodeFirst`, `BenchmarkSearch` p95 66–94 ms (gate 1 s) in `plans/reports/fullstack-developer-261017-0148-search-benchmark-p95.md`.
+- [x] Partners (customers, suppliers, groups, contacts, addresses, dedupe). Evidence: `internal/partner`, its integration tests; a stopped supplier leaves `GET /search?type=supplier` (HTTP test).
+- [x] Reasons. Evidence: `org/reasons*.go`, `org/reasons_integration_test.go`.
+- [x] Quick-create product. Evidence: `catalog/quick_create.go`, `TestMixGroupsAndQuickCreate`; sale price goes through the no-op `PriceWriter` until pricing wires it.
+- [x] Provisioner wiring + OpenAPI + isolation tests. Evidence: `app/domains.go`, `api/openapi.yaml` (`TestOpenAPIContract`), `TestCatalogAndPartnersOverHTTP` (every id-bearing operation of the spec answers 404 across tenants).
 
 ## Success criteria & verification
 

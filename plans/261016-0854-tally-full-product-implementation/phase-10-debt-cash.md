@@ -1,6 +1,6 @@
 ---
 title: "Phase 10: Debt & Cash"
-status: todo
+status: done
 priority: P1
 effort: 6d
 dependsOn: [phase-05-catalog-partners]
@@ -102,17 +102,17 @@ Routes (`/api/v1`): `GET /debts/parties?direction=&overdue=` (summary), `GET /de
 
 ## Todo
 
-- [ ] Cash funds/methods/entries + seeder
-- [ ] Obligations + factory + schedules + recorders
-- [ ] Payments + verification + allocations + settlements
-- [ ] Credit notes + refund due + refunds
-- [ ] Debt adjustments (opening, write-off) + offsets
-- [ ] Payment reversal with successor check
-- [ ] Credit limit policy
-- [ ] Statements + versions
-- [ ] Collection notes + reminders
-- [ ] Ledger/aging/forecast queries
-- [ ] Verifier + tests + OpenAPI
+- [x] Cash funds/methods/entries + seeder
+- [x] Obligations + factory + schedules + recorders
+- [x] Payments + verification + allocations + settlements
+- [x] Credit notes + refund due + refunds
+- [x] Debt adjustments (opening, write-off) + offsets
+- [x] Payment reversal with successor check
+- [x] Credit limit policy
+- [x] Statements + versions
+- [x] Collection notes + reminders
+- [x] Ledger/aging/forecast queries
+- [x] Verifier + tests + OpenAPI
 
 ## Success criteria & verification
 

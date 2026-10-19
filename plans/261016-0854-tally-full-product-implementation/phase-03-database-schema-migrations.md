@@ -1,6 +1,6 @@
 ---
 title: "Phase 03: Database Schema & Migrations"
-status: todo
+status: done
 priority: P1
 effort: 6d
 dependsOn: [phase-02-api-platform-foundation]
@@ -64,7 +64,7 @@ Translate every DDL block of the five schema files into golang-migrate up/down p
 | 000020 | `debt_core` | obligations, schedules, payments, credit_notes, debt_adjustments, debt_offsets, obligation_settlements |
 | 000021 | `debt_statements` | statements, statement_versions, collection_notes |
 | 000022 | `cash` | fund_accounts, payment_methods, payments FKs, cash_entries |
-| 000023 | `campaign_crm` | campaigns (+ ALTER price_lists/promotions FK), attributions, checklist, customer_activities, care tasks, consents, loyalty |
+| 000023 | `campaign_crm` | campaigns (+ ALTER FK `campaign_id` on price_lists, promotions, quotes, invoices, sales_documents, sales_document_lines, assembly_orders, obligations), attributions, checklist, customer_activities, care tasks, consents, loyalty |
 | 000024 | `notifications_reporting` | notifications, saved_reports, export_jobs, cost_recalculation_runs, onboarding_steps, analytics_queries |
 | 000025 | `saas_platform` | plans (+ global seed rows), subscriptions, entitlements, saas_invoices, saas_payment_events, support_*, feature_flags(+changes), tenant_usage_daily, account_closure_requests, product_feedback, incidents, partners, tenant_referrals |
 | 000026 | `privileges_assertions` | idempotent `GRANT`/`REVOKE` re-assertion for all tables (append-only list), `GRANT SELECT` to `tally_readonly` |
@@ -91,7 +91,7 @@ Every migration file starts with `SET search_path = tally;` and contains, per te
 
 1. Write `migrations_lint_test.go` first (red), with fixture strings proving each forbidden pattern is caught and each allowed pattern (policy `current_setting`, regex CHECK, partial unique index, `NULLS NOT DISTINCT`, `jsonb_path_ops` GIN on a column) passes.
 2. Write migrations 000001–000004; run lint + reversibility; write isolation test harness that discovers tenant tables from `information_schema.columns WHERE column_name = 'tenant_id'`.
-3. Write 000005–000009 (catalog, pricing); confirm `UNIQUE NULLS NOT DISTINCT` and partial uniques (`ux_price_lists__base_kind`, default sku units) exist.
+3. Write 000005–000009 (catalog, pricing); confirm `UNIQUE NULLS NOT DISTINCT` and partial uniques (`ux_price_lists__base`, default sku units) exist.
 4. Write 000010–000014 (inventory, procurement) incl. `REVOKE UPDATE, DELETE ON stock_moves, cogs_adjustments …`, `CHECK (base_qty = qty * unit_factor_snap)` on every snapshot line, `ux_stock_moves__one_reversal`.
 5. Write 000015–000019 (sales, kits) incl. `invoice_versions`, `lot_genealogy` revokes, `ux_shifts__one_open`.
 6. Write 000020–000024 (debt, cash, campaign/CRM, notifications/reporting) incl. deferred FKs to campaigns.
@@ -102,19 +102,24 @@ Every migration file starts with `SET search_path = tally;` and contains, per te
 
 ## Todo
 
-- [ ] Lint test with positive/negative fixtures
-- [ ] 000001–000004 platform/org/control/partners
-- [ ] 000005–000009 catalog/pricing
-- [ ] 000010–000014 inventory/procurement
-- [ ] 000015–000019 sales/kits
-- [ ] 000020–000024 debt/cash/campaign/CRM/notifications/reporting
-- [ ] 000025 SaaS platform + plans seed (literal values)
-- [ ] 000026 privileges assertions
-- [ ] pg_catalog guard test
-- [ ] Reversibility test
-- [ ] Per-table isolation test (auto-discovered)
-- [ ] `tally migrate` subcommands on embedded FS
-- [ ] `docs/database.md` + `make db-docs`
+- [x] Lint test with positive/negative fixtures
+- [x] 000001–000004 platform/org/control/partners
+- [x] 000005–000009 catalog/pricing
+- [x] 000010–000014 inventory/procurement
+- [x] 000015–000019 sales/kits
+- [x] 000020–000024 debt/cash/campaign/CRM/notifications/reporting
+- [x] 000025 SaaS platform + plans seed (literal values)
+- [x] 000026 privileges assertions
+- [x] pg_catalog guard test
+- [x] Reversibility test
+- [x] Per-table isolation test (auto-discovered)
+- [x] `tally migrate` subcommands on embedded FS
+- [x] `docs/database.md` + `make db-docs`
+- [x] Explicit convention names on every constraint and index (`pk_`/`fk_`/`ux_`/`ck_`/`ix_`, ≤63 bytes, unique) — lint `TestLintChecksFileStructure` fixtures + catalog `TestConstraintAndIndexNamesFollowConvention`
+- [x] Tenant indexes lead with `tenant_id` (idempotency expiry, outbox pending re-keyed; two documented exceptions) — `TestTenantIndexesLeadWithTenantID`
+- [x] Missing composite FKs: document `warehouse_id`, `campaign_id` (5 deferred ALTERs), `debt_offsets.party_id`, `credit_notes.reason_id`; `ux_<t>__id` on price_list_items, price_changes, promotion_items, obligation_schedules, statement_versions — `TestDocumentsReferenceTheirWarehouseCampaignAndParty`, reversibility test
+- [x] `tally migrate up` backup guard: waived only for explicit `APP_ENV=development|test`; requires non-empty `PGDMP` dump ≤1h — `TestCheckBackup`, `TestBackupRequired`, `TestMigrateCommandsAgainstDatabase`
+- [x] Dev DB rebuilt after backup (`infra/backups/tally-20261016235424.dump`): `migrate down --all` → `make migrate-up` → version 26
 
 ## Success criteria & verification
 

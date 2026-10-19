@@ -1,6 +1,6 @@
 ---
 title: "Phase 15: Web catalog & procurement"
-status: todo
+status: in-progress
 priority: P1
 effort: 7d
 dependsOn: [phase-14-web-foundation-design-system, phase-05-catalog-partners, phase-06-pricing, phase-08-procurement]
@@ -26,6 +26,8 @@ Delivers the eight routes of Danh mục and Nhập hàng with prototype-identica
 - Min price is server-owned (prototype demo used cost × 1.08). The dialog shows the server's `min_price` and warns; it never computes it.
 - Supplier rules ("Ngừng" blocked by open POs, "Xóa" blocked by documents) are server errors; the UI shows them as error toasts and also pre-disables using `can_stop` / `can_delete` flags from the list DTO.
 - Price lists are read-only in the prototype (no modals). Keep it read-only; editing is out of this phase (see Concerns in report).
+- Document photos on receipts and supplier documents (PUR-05) use the shared attachment flow (`POST /attachments` with `owner_type` `receipt` or `supplier_document` → presigned PUT → `:complete`; limits 10 MB, jpeg/png/webp/pdf). Receipt and supplier-document detail responses already list clean attachments; the screens add the upload control and the download link (`GET /attachments/{id}/url`).
+- Supplier-document matching compares the invoice with its receipts plus DG only; purchase returns are matched through their credit notes, so the UI shows returned value separately. An XT settled as replacement credits the payable now; the replacement goods arrive on a new PN at the original price.
 - Mix-group validation messages are verbatim server error messages mapped by `code`; the client repeats only the cheap checks (required fields, integers) for instant feedback using identical wording.
 
 ## Requirements
@@ -148,18 +150,41 @@ Modify: `src/app/menu.ts` (swap placeholders for real pages), `src/test/msw/hand
 
 ## Todo
 
-- [ ] Query keys + adapters for catalog, partners, pricing, procurement
-- [ ] Products page + newSKU + attribute registry
-- [ ] Suppliers page + supModal + supQuick + supDel + stop/reopen
-- [ ] Price lists read-only page
-- [ ] Mix groups page + mixModal + confirm dialogs
-- [ ] `EditPriceDialog`, `PriceHistoryTable` (exported)
-- [ ] `buy` LineItemsEditor preset
-- [ ] Orders page + newPO + drawer + poAdvance + poClose
-- [ ] Purchasing products page + newQuickProd
-- [ ] Receipts page + newRCV + rcvInvoice + drawer
-- [ ] Supplier returns page + newPRT
+- [x] Query keys + adapters for catalog, partners, pricing, procurement
+- [x] Products page + newSKU + attribute registry
+- [x] Suppliers page + supModal + supQuick + supDel + stop/reopen
+- [x] Price lists read-only page
+- [x] Mix groups page + mixModal + confirm dialogs
+- [x] `EditPriceDialog`, `PriceHistoryTable` (exported)
+- [x] `buy` LineItemsEditor preset
+- [x] Orders page + newPO + drawer + poAdvance + poClose
+- [x] Purchasing products page + newQuickProd
+- [x] Receipts page + newRCV + rcvInvoice + drawer
+- [x] Supplier returns page + newPRT
 - [ ] Doc-no registry entries; unit + e2e tests
+
+Evidence (2026-10-18): unit tests in `apps/web/src/features/{catalog,partners,pricing,procurement}/**`;
+`corepack pnpm typecheck`, `lint` and `test` green in `apps/web` (43 files, 309 tests, run together
+with phase 16). Playwright `e2e/catalog.spec.ts` and `e2e/procurement.spec.ts` are written but not run:
+they need the local stack and `E2E_OWNER_PASSWORD`. The production bundle step was not run in this
+session. Report: `plans/reports/fullstack-developer-261018-web-catalog-procurement.md`.
+
+Review fixes (2026-10-18, after `plans/reports/code-reviewer-261018-0927-web-catalog-procurement-sales-review.md`):
+`POST /purchase-orders`, `/supplier-documents` and `/skus/{id}/sale-price` take no Idempotency-Key, so
+"Lưu & chốt đơn" and receipt posting remember the stored document and each finished follow-up step
+(`runFollowUps` in `shared/hooks/use-commit.ts`); a failed follow-up says "Đã ghi … nhưng chưa …" and a
+retry continues from that step without posting the document twice (`new-receipt-dialog.test.tsx`).
+
+Idempotency (2026-10-18): the three POSTs above now take an optional Idempotency-Key and the web sends
+one per intent (`shared/hooks/create-once.ts`, report `plans/reports/fullstack-developer-261018-1620-web-idempotency-keys.md`). Edits made after a lost
+create answer cannot be applied to a purchase order or a matched supplier invoice (no update API); the web
+says so with the document number.
+
+Open:
+- Receiving over the 5% tolerance is blocked on the client; the spec expects the exception dialog.
+  Needs a product decision and a server exception kind.
+- ~~The `PC` opener belongs to the cash screens (phase 18).~~ Closed 2026-10-19: PT/PC open from `GET /payments/{id}` through the doc-no registry (report `plans/reports/fullstack-developer-261019-0242-web-adopt-api-gaps.md`).
+- A shared `shared/ui/line-items` base was not extracted; the buy and sell presets are self-contained.
 
 ## Success criteria & verification
 

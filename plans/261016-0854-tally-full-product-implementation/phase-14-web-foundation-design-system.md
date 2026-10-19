@@ -1,6 +1,6 @@
 ---
 title: "Phase 14: Web foundation & design system"
-status: todo
+status: done
 priority: P1
 effort: 8d
 dependsOn: [phase-02-api-platform-foundation, phase-04-identity-organization]
@@ -174,22 +174,22 @@ Modify: `apps/web/package.json` (deps, `gen:api`, `test`, `typecheck`, `lint`, `
 
 ## Todo
 
-- [ ] Dependencies, scripts, browserslist, Playwright projects
-- [ ] `tokens.css` + Tailwind `@theme` + fonts + reduced motion + focus-visible
-- [ ] No-raw-color lint rule wired into `pnpm -C apps/web lint`
-- [ ] `http.ts`, `ApiError`, CSRF, idempotency, If-Match, 401/409/412 branches
-- [ ] `useIdempotentMutation`, `useCommit`, `useConfirmException`, `ExceptionConfirmDialog`, `ReauthDialog`
-- [ ] Formatters (`vnd` with NBSP ₫, `fd` dd/mm/yyyy, `qMix`), decimal, Asia/Saigon dates, textnorm
-- [ ] Status tone map (typed, deduped)
-- [ ] Shared UI kit (§3 catalogue) incl. DataTable caption + oneStore columns
-- [ ] Color controls on Radix RadioGroup
-- [ ] Combobox with all five pools' adapter interface
-- [ ] CommitDialog, DetailDrawer, Toaster (error toasts persistent)
-- [ ] AppShell, Sidebar accordion, UtilBar, AuthLayout, AdminShell, OnboardingLayout
-- [ ] Router: 40 routes, group redirects, MOVED + legacy hash redirects, fallbacks
-- [ ] Guards: RequireAuth, OnboardingGate, RequireEntitlement, RequireRecentAuth, RequireAdminAuth
-- [ ] Auth pages + onboarding shell
-- [ ] MSW harness, prototype visual harness, shell/auth e2e
+- [x] Dependencies, scripts, browserslist, Playwright projects
+- [x] `tokens.css` + Tailwind `@theme` + fonts + reduced motion + focus-visible
+- [x] No-raw-color lint rule wired into `pnpm -C apps/web lint`
+- [x] `http.ts`, `ApiError`, CSRF, idempotency, If-Match, 401/409/412 branches
+- [x] `useIdempotentMutation`, `useCommit`, `useConfirmException`, `ExceptionConfirmDialog`, `ReauthDialog`
+- [x] Formatters (`vnd` with NBSP ₫, `fd` dd/mm/yyyy, `qMix`), decimal, Asia/Saigon dates, textnorm
+- [x] Status tone map (typed, deduped)
+- [x] Shared UI kit (§3 catalogue) incl. DataTable caption + oneStore columns
+- [x] Color controls on Radix RadioGroup
+- [x] Combobox with all five pools' adapter interface
+- [x] CommitDialog, DetailDrawer, Toaster (error toasts persistent)
+- [x] AppShell, Sidebar accordion, UtilBar, AuthLayout, AdminShell, OnboardingLayout
+- [x] Router: 40 routes, group redirects, MOVED + legacy hash redirects, fallbacks
+- [x] Guards: RequireAuth, OnboardingGate, RequireEntitlement, RequireRecentAuth, RequireAdminAuth
+- [x] Auth pages + onboarding shell — onboarding shell (`/onboarding` Stepper + `OnboardingChecklist`); auth screens in `src/features/auth/pages/` on the real routes: tenant `/login`, `/mfa` (TOTP + recovery code), `/verify` (explicit button; asks for a first password when the account has none), `/forgot-password`, `/reset-password`; root `/signup` (slug follows the store name until edited, live `slug-check` with free/invalid/reserved/taken + suggestion, success shows the store URL) and `/find-store` (neutral answer); admin `/admin/login` (password then TOTP). Logout control added to the util bar. Login takes email only (the API has no phone sign-in). Admin sign-in uses an assumed contract (UI + MSW only): the admin auth API and `/api/admin/v1/me` do not exist yet. Evidence: unit tests per page in `src/features/auth/**` (`pnpm test` 214/214).
+- [x] MSW harness, prototype visual harness, shell/auth e2e — `authHandlers` in `src/test/msw/handlers.ts`; `e2e/auth.spec.ts` against the running API + mailpit (login, wrong password, `next`, logout, session ended on the server → `/login?next=`, client validation, `/mfa` without challenge, `/admin` + `/signup` 404 on a store host, root-host 404 for `/login`, sign-up with taken/reserved/invalid/free slug, verify from the mailed link then sign-in on the new store host, forgot/reset with a single-use link, TOTP turned on via the API then the second sign-in step); `auth.setup.ts` saves the owner session and `shell.spec.ts` also walks every screen with the real API. Run with `make dev` and `E2E_OWNER_PASSWORD` set: chromium, firefox, mobile-390, root-chromium, visual all green (44 passed). webkit needs host libraries (`sudo pnpm exec playwright install-deps`); admin-chromium has no journey until the admin auth API exists. Each root run leaves an `e2e-*` store in the dev database.
 
 ## Success criteria & verification
 

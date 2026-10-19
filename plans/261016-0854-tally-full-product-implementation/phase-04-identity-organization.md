@@ -1,6 +1,6 @@
 ---
 title: "Phase 04: Identity & Organization"
-status: todo
+status: done
 priority: P1
 effort: 5d
 dependsOn: [phase-03-database-schema-migrations]
@@ -35,7 +35,7 @@ Deliver sign-up, contact verification, login/logout, password reset, MFA (TOTP +
 | ORG-02 | Tenant profile: legal/display name, address, tax code optional, currency VND, timezone default Asia/Ho_Chi_Minh, date format dd/MM/yyyy |
 | ORG-03 | Exactly one store and one warehouse created by provisioner; no API to add more |
 | ORG-05 | `docseq.Issuer` prefixes from ubiquitous-language §5; numbering unique per tenant |
-| ORG-06 | Demo tenant (`is_sandbox=true`, slug `<parent-slug>-demo` when `sandbox_of` is set, `demo` for the standalone dev seed) created with sample data via `tally seed demo`; label returned in `/me`; reset endpoint re-provisions; reporting excludes sandbox tenants from platform analytics |
+| ORG-06 | Demo tenant (`is_sandbox=true`, slug `<parent-slug>-demo` when `sandbox_of` is set, `demo` for the standalone dev seed) created with sample data via `tally seed demo`; label returned in `/me`; reset provisions a new sandbox tenant that takes over the slug, moves the owner account and sessions to it and keeps the old tenant as `replaced` (nothing deleted, its pending outbox events closed); re-auth required and at most one reset per 10 minutes per sandbox (429 `sandbox_reset_too_soon` with `Retry-After`); account changes (login, tokens, password, MFA, re-auth, session revokes) open through one helper that locks the tenant row before any account row, so a request racing a reset answers 409 `sandbox_replaced` and spends no token or MFA code, while logout revokes the session by id wherever the reset moved it and a reset that loses a deadlock retries once, then answers 409 `sandbox_busy`; reporting excludes sandbox tenants from platform analytics |
 | ORG-07 | Ownership transfer: current owner re-auths, enters new email; new owner accepts via token; in one platform transaction the old user becomes `disabled` before the new user is activated (keeps `ux_users__one_active_owner`), old sessions revoked; documents keep `posted_by` ids; a new-owner email that already has an account in any store is rejected with `422 email_in_use` (the asker is a re-authenticated owner, the check is rate limited) |
 | SEC-01 | Every request checks session ↔ tenant ↔ host tenant; tenant id only from session |
 | SEC-03 | `POST /exception-confirmations` (kind, payload hash, note) returns id; posting commands verify kind + payload hash match and single use |
@@ -86,26 +86,27 @@ Routes (`/api/v1`) — root host only: `POST /auth/signup`, `GET /signup/slug-ch
 3. Login flow (tenant host): throttle check → find user by `email_key` **and** host tenant (no match → verify a dummy argon2id hash, return generic `invalid_credentials`) → verify hash → MFA challenge if enrolled (`mfa_required` response with short-lived challenge token) → create session → set cookies; logout revokes.
 4. Password reset + verification + ownership transfer tokens (single use: `used_at` set in same tx; reuse → `token_invalid`).
 5. SessionResolver + TenantHostResolver + Tenant middleware (host guard from phase 02); Re-auth middleware `RequireRecentAuth(5*time.Minute)` used by sensitive routes across later phases.
-6. Org services: settings (version-checked PATCH), period locks (append-only events; current lock = latest event), exception confirmations (payload hash = SHA-256 of canonical command payload, single use, expires 30 min), audit query, attachments (presign → complete with size/type check via `HEAD` → signed GET).
+6. Org services: settings (version-checked PATCH), period locks (append-only events; current lock = latest event), exception confirmations (payload hash = SHA-256 of canonical command payload, single use, expires 30 min), audit query, attachments (presign → complete with size/type check via `HEAD` and a streamed SHA-256 check → signed GET).
 7. Provisioner skeleton + `tally tenant create --name --slug --owner-email` (`--slug` optional, defaults to the suggestion; prints the one-time `https://<slug>.DOMAIN/verify?…` link in dev only).
 8. Demo tenant: `tally seed demo` creates a sandbox tenant with realistic Tết catalog sample (taken from prototype sample data, labelled sandbox); `POST /tenant/sandbox/reset` for sandbox only.
 9. Tests: auth unit + integration (throttle, token single-use, session revoke takes effect on next request, MFA; slug policy table incl. built-in reserved and `RESERVED_SLUGS` entries, `xn--`, `--`, `-demo`, length 2/31, Vietnamese names; owner of A logging in on host B gets the same response as a wrong password; store lookup answers 202 for unknown emails and sends no mail; sign-up with an existing email returns the success response, creates no tenant and sends `account_exists`; ownership transfer to an email used in another store → `422 email_in_use`), isolation (session of tenant A requesting B's attachment id → 404), period-lock guard blocks backdated posting via a fake posting command.
 
 ## Todo
 
-- [ ] authn primitives (argon2id, opaque tokens, TOTP, recovery codes)
-- [ ] identity repos + AuthService + MFA + sessions + re-auth
-- [ ] slug policy + suggestion + slug-check + store lookup; host-scoped login; host-only cookies
-- [ ] ownership transfer
-- [ ] SessionResolver/Tenant middleware wired
-- [ ] org settings, store/warehouse read, doc prefixes
-- [ ] period locks + guard integration
-- [ ] exception confirmations (hash-bound, single use)
-- [ ] audit query endpoint
-- [ ] attachments presign/complete/signed GET
-- [ ] TenantProvisioner + CLI `tenant create`
-- [ ] demo/sandbox tenant + reset
-- [ ] OpenAPI + contract test updated
+- [x] authn primitives (argon2id, opaque tokens, TOTP, recovery codes)
+- [x] identity repos + AuthService + MFA + sessions + re-auth
+- [x] slug policy + suggestion + slug-check + store lookup; host-scoped login; host-only cookies
+- [x] ownership transfer
+- [x] SessionResolver/Tenant middleware wired
+- [x] org settings, store/warehouse read, doc prefixes
+- [x] period locks + guard integration
+- [x] exception confirmations (hash-bound, single use)
+- [x] audit query endpoint
+- [x] attachments presign/complete/signed GET
+- [x] TenantProvisioner + CLI `tenant create`
+- [x] demo/sandbox tenant + reset by replacement with a new tenant (the Tết sample catalog of `seed demo` is a hand-off to phase 05: the catalog seeders join `org.Seeders`)
+- [x] OpenAPI + contract test updated
+- [x] security hardening: TOTP replay guard, full period reopen (`locked_through: null`), sandbox reset never deletes or unlocks (the new tenant starts unlocked), attachment checksum, exception payload hash matches the web canonical JSON, error contract documented and checked
 
 ## Success criteria & verification
 
@@ -125,7 +126,7 @@ Routes (`/api/v1`) — root host only: `POST /auth/signup`, `GET /signup/slug-ch
 
 ## Security
 
-- argon2id, TOTP secrets encrypted at rest, recovery codes hashed, tokens hashed, cookies host-only `__Host-` HttpOnly/Secure/SameSite, CSRF double submit, rate limits, generic auth errors, re-auth for sensitive actions, audit for every auth event (`login_succeeded`, `login_failed`, `mfa_enabled`, `session_revoked`, `owner_transferred`).
+- argon2id, TOTP secrets encrypted at rest, recovery codes hashed, tokens hashed, cookies host-only `__Host-` HttpOnly/Secure/SameSite, CSRF double submit, rate limits, generic auth errors, re-auth for sensitive actions, audit for every auth event, named `entity.verb` (`session.create`, `user.reject_login`, `user.enable_mfa`, `user.disable_mfa`, `session.revoke`, `tenant.request_owner_transfer`, `tenant.transfer_owner`); accepted TOTP steps are stored so a code cannot be replayed; attachments are checked against their declared SHA-256 on completion.
 
 ## Rollback
 

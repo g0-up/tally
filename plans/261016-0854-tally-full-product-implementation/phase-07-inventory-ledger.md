@@ -1,6 +1,6 @@
 ---
 title: "Phase 07: Inventory Ledger"
-status: todo
+status: done
 priority: P1
 effort: 7d
 dependsOn: [phase-05-catalog-partners]
@@ -102,18 +102,18 @@ CLI: `tally ledger verify [--tenant] [--sku]` (non-zero exit on mismatch), `tall
 
 ## Todo
 
-- [ ] Lots/moves/balances repos + lockers
-- [ ] StockLedger + negative-stock guard
-- [ ] MovingAverageCosting
-- [ ] LotPickers + expiry guard
-- [ ] Reservations + concurrency test
-- [ ] Stock adjustments (incl. opening, disposal, quarantine) + reversal
-- [ ] Stock counts (blind, cutoff variance, exception)
-- [ ] Expiry roller + stock signals
-- [ ] Stock list / stock card / lot trace queries
-- [ ] Recost preview/confirm/apply
-- [ ] LedgerVerifier + CLI + property test
-- [ ] Ports wired into catalog/search; OpenAPI
+- [x] Lots/moves/balances repos + lockers
+- [x] StockLedger + negative-stock guard
+- [x] MovingAverageCosting
+- [x] LotPickers + expiry guard
+- [x] Reservations + concurrency test
+- [x] Stock adjustments (incl. opening, disposal, quarantine) + reversal
+- [x] Stock counts (blind, cutoff variance, exception)
+- [x] Expiry roller + stock signals
+- [x] Stock list / stock card / lot trace queries
+- [x] Recost preview/confirm/apply
+- [x] LedgerVerifier + CLI + property test
+- [x] Ports wired into catalog/search; OpenAPI
 
 ## Success criteria & verification
 
@@ -121,7 +121,7 @@ CLI: `tally ledger verify [--tenant] [--sku]` (non-zero exit on mismatch), `tall
 - Oversell test: concurrent reserve/issue never makes `on_hand < 0` or Σ reserved > sellable at reserve time (AT-03).
 - Issue of "đỏ" when only "xanh" exists → `409 insufficient_stock` listing per-color availability; no substitution.
 - Stock card totals: opening + in − out = closing and equals `sku_stock.on_hand` for the same date range ending today; badge "Đã khớp sổ và tồn" true.
-- Expired lot issue blocked; disposal without confirmation → `422 exception_required{stock_disposal}`.
+- Expired lot issue blocked; disposal without confirmation → `409 exception_required{stock_disposal}`.
 - `tally ledger verify` exit 0 on demo tenant.
 
 ## Risks

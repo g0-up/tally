@@ -1,7 +1,7 @@
 ---
 title: "Tally full product implementation (PRD 1.1)"
 description: "Go + PostgreSQL API and React web for single-owner Vietnamese retail/wholesale/gift-basket stores: catalog with colors and mix packs, pricing, ledgers for stock/debt/cash, procurement, sales/POS (offline), kits, campaigns, reports, SaaS control; Docker infra after Sidecup."
-status: pending
+status: in-progress
 priority: P1
 effort: 139d
 branch: master
@@ -48,27 +48,27 @@ Sources: [brainstorm DB design](../reports/brainstorm-261016-1528-catalog-databa
 
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|------------|--------|
-| 1 | [Phase 01: Monorepo, Docker & Infra](./phase-01-monorepo-docker-infra.md) | 3d | — | Pending |
-| 2 | [Phase 02: API Platform Foundation](./phase-02-api-platform-foundation.md) | 5d | 01 | Pending |
-| 3 | [Phase 03: Database Schema & Migrations](./phase-03-database-schema-migrations.md) | 6d | 02 | Pending |
-| 4 | [Phase 04: Identity & Organization](./phase-04-identity-organization.md) | 5d | 03 | Pending |
-| 5 | [Phase 05: Catalog & Partners](./phase-05-catalog-partners.md) | 7d | 04 | Pending |
-| 6 | [Phase 06: Pricing & Promotions](./phase-06-pricing.md) | 5d | 05 | Pending |
-| 7 | [Phase 07: Inventory Ledger](./phase-07-inventory-ledger.md) | 7d | 05 | Pending |
-| 8 | [Phase 08: Procurement (Nhập hàng)](./phase-08-procurement.md) | 6d | 06, 07, 10 | Pending |
-| 9 | [Phase 09: Sales, POS, Returns & Exchanges](./phase-09-sales-pos.md) | 9d | 06, 07, 10 | Pending |
-| 10 | [Phase 10: Debt & Cash](./phase-10-debt-cash.md) | 6d | 05 | Pending |
-| 11 | [Phase 11: Kits, Combos & Assembly](./phase-11-kits-assembly.md) | 5d | 09 | Pending |
-| 12 | [Phase 12: Campaign, CRM, Notifications & Reporting](./phase-12-campaign-crm-notifications-reporting.md) | 8d | 08, 09, 10, 11 | Pending |
-| 13 | [Phase 13: SaaS Control, Support & Settings](./phase-13-saas-control-settings.md) | 7d | 12 | Pending |
-| 14 | [Phase 14: Web foundation & design system](./phase-14-web-foundation-design-system.md) | 8d | 02, 04 | Pending |
-| 15 | [Phase 15: Web catalog & procurement](./phase-15-web-catalog-procurement.md) | 7d | 14, 05, 06, 08 | Pending |
-| 16 | [Phase 16: Web sales & POS (online)](./phase-16-web-sales-pos.md) | 9d | 14, 09, 10 | Pending |
-| 17 | [Phase 17: Web inventory & gift baskets](./phase-17-web-inventory-kits.md) | 7d | 14, 07, 11 | Pending |
-| 18 | [Phase 18: Web overview, debt, campaigns, reports, settings, onboarding & admin](./phase-18-web-debt-campaign-reports-settings.md) | 10d | 14, 10, 12, 13 | Pending |
-| 19 | [Phase 19: POS offline & PWA](./phase-19-pos-offline-pwa.md) | 6d | 16 | Pending |
-| 20 | [Phase 20: UI/UX review & accessibility](./phase-20-ui-ux-review-accessibility.md) | 5d | 15, 16, 17, 18, 19 | Pending |
-| 21 | [Phase 21: Acceptance, Load, Security & Release](./phase-21-acceptance-load-security-release.md) | 8d | 13, 19, 20 | Pending |
+| 1 | [Phase 01: Monorepo, Docker & Infra](./phase-01-monorepo-docker-infra.md) | 3d | — | Done |
+| 2 | [Phase 02: API Platform Foundation](./phase-02-api-platform-foundation.md) | 5d | 01 | Done |
+| 3 | [Phase 03: Database Schema & Migrations](./phase-03-database-schema-migrations.md) | 6d | 02 | Done |
+| 4 | [Phase 04: Identity & Organization](./phase-04-identity-organization.md) | 5d | 03 | Done |
+| 5 | [Phase 05: Catalog & Partners](./phase-05-catalog-partners.md) | 7d | 04 | Done |
+| 6 | [Phase 06: Pricing & Promotions](./phase-06-pricing.md) | 5d | 05 | Done |
+| 7 | [Phase 07: Inventory Ledger](./phase-07-inventory-ledger.md) | 7d | 05 | Done |
+| 8 | [Phase 08: Procurement (Nhập hàng)](./phase-08-procurement.md) | 6d | 06, 07, 10 | Done |
+| 9 | [Phase 09: Sales, POS, Returns & Exchanges](./phase-09-sales-pos.md) | 9d | 06, 07, 10 | Done |
+| 10 | [Phase 10: Debt & Cash](./phase-10-debt-cash.md) | 6d | 05 | Done |
+| 11 | [Phase 11: Kits, Combos & Assembly](./phase-11-kits-assembly.md) | 5d | 09 | Done |
+| 12 | [Phase 12: Campaign, CRM, Notifications & Reporting](./phase-12-campaign-crm-notifications-reporting.md) | 8d | 08, 09, 10, 11 | Done |
+| 13 | [Phase 13: SaaS Control, Support & Settings](./phase-13-saas-control-settings.md) | 7d | 12 | Done |
+| 14 | [Phase 14: Web foundation & design system](./phase-14-web-foundation-design-system.md) | 8d | 02, 04 | Done |
+| 15 | [Phase 15: Web catalog & procurement](./phase-15-web-catalog-procurement.md) | 7d | 14, 05, 06, 08 | In progress |
+| 16 | [Phase 16: Web sales & POS (online)](./phase-16-web-sales-pos.md) | 9d | 14, 09, 10 | In progress |
+| 17 | [Phase 17: Web inventory & gift baskets](./phase-17-web-inventory-kits.md) | 7d | 14, 07, 11 | In progress |
+| 18 | [Phase 18: Web overview, debt, campaigns, reports, settings, onboarding & admin](./phase-18-web-debt-campaign-reports-settings.md) | 10d | 14, 10, 12, 13 | In progress |
+| 19 | [Phase 19: POS offline & PWA](./phase-19-pos-offline-pwa.md) | 6d | 16 | In progress |
+| 20 | [Phase 20: UI/UX review & accessibility](./phase-20-ui-ux-review-accessibility.md) | 5d | 15, 16, 17, 18, 19 | In progress |
+| 21 | [Phase 21: Acceptance, Load, Security & Release](./phase-21-acceptance-load-security-release.md) | 8d | 13, 19, 20 | In progress |
 
 Execution order: `01 → 02 → 03 → 04 → 05 → {06, 07, 10} → {08, 09} → 11 → 12 → 13`. Web starts after 04 (`14`), then each web phase as soon as its backend phases are done (`15` after 08, `16` after 09/10, `17` after 11, `18` after 13), `19` after 16, `20` after all web phases, `21` last. Critical path ≈ 84d (01-02-03-04-05-10-09-11-12-13-18-20-21); total effort 139d. Debt/cash core (10) runs before procurement and sales so their postings create real obligations and payments.
 
@@ -124,6 +124,7 @@ Execution order: `01 → 02 → 03 → 04 → 05 → {06, 07, 10} → {08, 09} �
 | Printing (DATA-04) | API returns immutable print payloads; web renders HTML print templates (browser print/PDF) | phases 09, 12, 16 |
 | Expired quantity | Worker rolls lots to expired at tenant midnight (no DB jobs) | phase 07 |
 | Migrations in prod | `MIGRATE_ON_START=false`; `make prod-migrate` = backup → migrate | phase 01 |
+| Sandbox reset (ORG-06) | Owner-confirmed: a reset provisions a **new** sandbox tenant (new id, takes over `<parent>-demo`) and deactivates the old one; append-only ledgers are never deleted, no purge role, no `ON DELETE CASCADE` on ledger FKs | phases 04, 13 |
 | Debt reminders | No third-party sending; copyable text + email only with consent | phases 10, 12 |
 | SaaS billing | Manual bank-transfer adapter + generic signed webhook port; plan prices admin-editable (OPEN-09) | phase 13 |
 | AI Q&A and product analytics | Off by default; gated by settings + entitlement; read-only tools; logged | phases 12, 13 |

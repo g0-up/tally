@@ -1,6 +1,6 @@
 ---
 title: "Phase 20: UI/UX review & accessibility"
-status: todo
+status: in-progress
 priority: P1
 effort: 5d
 dependsOn: [phase-15-web-catalog-procurement, phase-16-web-sales-pos, phase-17-web-inventory-kits, phase-18-web-debt-campaign-reports-settings, phase-19-pos-offline-pwa]
@@ -25,6 +25,15 @@ A gate phase: no new features. It reviews every built screen against the prototy
 - Additions beyond the prototype (auth, onboarding, admin, print, settings cards, offline states, exception drawer) have no baseline; they get a design review plus their own committed Playwright snapshots after approval.
 - Most gaps were addressed at build time in phases 14–19; this phase verifies each one with an explicit test so regressions fail CI.
 - Accessibility automation catches roughly a third of issues; keyboard journeys and screen-reader passes are manual and recorded.
+
+## Owner decisions (2026-10-19)
+
+Taken after the module reviews `plans/reports/ui-ux-designer-261019-1837-ui-review-group-a.md` and `plans/reports/ui-ux-designer-261019-1839-ui-review-group-b.md`:
+
+- Contrast: failing pairs get new darker tokens added after the prototype marker in `tokens.css` (white on orange and crimson buttons, input border, placeholder, focus ring on dark headers); prototype values stay, before/after recorded in the report.
+- Confirmations: "Khóa sổ" (date, reason, impact, like reopen), "Gửi lời mời chuyển quyền" (recipient and effect), supplier "Ngừng", closing a receipt with unsaved lines; the MFA recovery-code dialog cannot be dismissed until "Tôi đã lưu mã" is ticked and offers copy and .txt download.
+- Sidebar groups: the group name is a link; a separate chevron button expands or collapses its children.
+- Touch targets: ≥ 24×24 px everywhere; ≥ 44 px hit area at viewport width ≤ 860 px.
 
 ## Requirements
 
@@ -112,16 +121,17 @@ Modify: `apps/web/playwright.config.ts` (projects, viewports, snapshot settings)
 
 ## Todo
 
-- [ ] Parity states list (40 routes + dialogs/drawers)
-- [ ] Parity spec + masks + CI job
-- [ ] axe spec (all states + additions) + CI job
-- [ ] Keyboard, focus, touch-target specs
-- [ ] UI/UX review per module + reports
-- [ ] Gap matrix: every row verified by a test
-- [ ] Contrast + WCAG 2.2 AA specifics
-- [ ] Screen-reader pass recorded
-- [ ] Browser/device/peripheral matrix recorded
-- [ ] Thresholds set as required CI checks
+- [ ] Parity states list (40 routes + dialogs/drawers) (`parity-states.ts` written: 61 states = 40 routes + 5 dialogs + 16 additions; drawers and 10 admin pages not covered; not run)
+- [ ] Parity spec + masks + CI job (spec and masks written, typecheck and `--list` ok; nightly `e2e-nightly` job written, never run; prototype captures never generated)
+- [ ] axe spec (all states + additions) + CI job (spec written, not run; same nightly job)
+- [ ] Keyboard, focus, touch-target specs (written; keyboard covers 3 of 9 journeys; none run)
+- [x] UI/UX review per module + reports
+  - Evidence: `plans/reports/ui-ux-designer-261019-1837-ui-review-group-a.md`, `plans/reports/ui-ux-designer-261019-1839-ui-review-group-b.md`; fixes in `plans/reports/fullstack-developer-261019-0014-ui-a11y-fixes-group-a.md` and `plans/reports/fullstack-developer-261019-0649-ui-a11y-fixes-group-b.md`. High and medium findings fixed with unit tests; web typecheck, lint and vitest (156 files, 1109 tests) green on 2026-10-19. Low leftovers deferred with reasons in the fix reports.
+- [ ] Gap matrix: every row verified by a test (unit test per row, vitest green; rows whose verification is e2e or axe not run; row 16 awaits owner confirmation)
+- [ ] Contrast + WCAG 2.2 AA specifics (contrast tokens before/after asserted in `tokens.test.ts`, green; 3.3.7 and 3.3.8 pass in review; 2.4.11 and 2.5.8 need axe/e2e runs, not run)
+- [ ] Screen-reader pass recorded (not run; runbook `docs/operations/device-browser-matrix.md` written)
+- [ ] Browser/device/peripheral matrix recorded (runbook written; matrix not run)
+- [ ] Thresholds set as required CI checks (no e2e job has run, so nothing to lock yet)
 
 ## Success criteria & verification
 

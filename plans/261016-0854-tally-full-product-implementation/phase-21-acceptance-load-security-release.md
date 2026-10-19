@@ -1,6 +1,6 @@
 ---
 title: "Phase 21: Acceptance, Load, Security & Release"
-status: todo
+status: in-progress
 priority: P1
 effort: 8d
 dependsOn: [phase-13-saas-control-settings, phase-19-pos-offline-pwa, phase-20-ui-ux-review-accessibility]
@@ -108,20 +108,23 @@ AT mapping to stages (PRD §16): A → AT-09, AT-10, AT-15; B → AT-01, AT-02, 
 
 ## Todo
 
-- [ ] Reference dataset generator + verify
-- [ ] k6 lookup/posting/reports/devices scenarios + thresholds
-- [ ] Tuning loop + soak test
-- [ ] Search gate decision (+ tokens only if needed)
-- [ ] AT-01..18 Playwright/API specs with evidence
-- [ ] Chaos and offline replay tests
-- [ ] Cross-tenant isolation suite
-- [ ] WAL archiving + restore drill with measured RPO/RTO
-- [ ] Security scans + manual review + fixes
-- [ ] Alerts and SLO dashboard
-- [ ] Upgrade rehearsal
-- [ ] Browser/device/printer matrix
-- [ ] User guide, support checklist, runbook, acceptance matrix
-- [ ] Pilot release + sign-off
+- [x] Reference dataset generator + verify
+  - Evidence: `tally seed load` with integration tests `TestSeedLoadCommand`, `TestSeedLoadIsDeterministic`, `TestSeedLoadThroughput`; reviewed in `plans/reports/code-reviewer-261019-0915-phase21-go-review.md`; full Go gate green on the latest code (2026-10-19, lead: gofmt, vet incl. `-tags integration`, golangci-lint 0 issues, `go test -race ./...`, integration for every package). Full 20k SKU / 1M move dataset not generated yet (about 95 moves/s, roughly 3 h).
+- [ ] k6 lookup/posting/reports/devices scenarios + thresholds (5 scripts + `thresholds.json` written, `k6 inspect` ok; never run against a stack)
+- [ ] Tuning loop + soak test (not run)
+- [ ] Search gate decision (+ tokens only if needed) (earlier benchmark p95 202 ms at service level on dev, no token table needed; not re-run after the benchmark's fail-assert change)
+- [ ] AT-01..18 Playwright/API specs with evidence (18 specs written, `--list` ok; none run; AT-15 depends on the restore drill)
+- [ ] Chaos and offline replay tests (fault hook + `TestPostingThatFailsBeforeCommitIsAllOrNothing` green in the full Go gate on 2026-10-19; AT-11 e2e and offline replay not run)
+- [x] Cross-tenant isolation suite
+  - Evidence: `TestTenantIsolationAcrossEveryRoute` (370 operations, 394 calls; 220/220 calls with tenant B ids return 404), `TestAdminAPIRefusesTenantSessionsAndHosts`, `TestHostBoundaries`, login timing, worker and service-role tests; run by the reviewer (`plans/reports/code-reviewer-261019-0915-phase21-go-review.md`) and green again in the full Go gate on the latest code (2026-10-19, lead). Browser host-only cookie check in AT-09 not run.
+- [ ] WAL archiving + restore drill with measured RPO/RTO (wal-g sidecar + `restore-drill.sh` written, shellcheck and compose config ok; drill not re-run after the non-root change; images not built)
+- [ ] Security scans + manual review + fixes (govulncheck 0 affecting, gosec, pnpm audit, gitleaks clean and manual API checklist done earlier; full scan incl. Trivy on images not re-run after latest changes; open weak points: CSP `unsafe-inline` styles, no HSTS preload, per-instance rate limiter, webhook signature without timestamp)
+- [ ] Alerts and SLO dashboard (13 alert rules, promtool tests pass; no Prometheus/Alertmanager deployed, no uptime probe or SLO dashboard)
+- [ ] Upgrade rehearsal (runbook section written, not run)
+- [ ] Browser/device/printer matrix (certified peripherals table empty; not run)
+- [x] User guide, support checklist, runbook, acceptance matrix
+  - Evidence: `plans/reports/docs-manager-261019-0640-phase21-release-user-docs.md`: 11 user-guide pages, support checklist, acceptance matrix, release checklist; 217 links checked, 0 errors; CLI commands and UI labels checked against source. Owner inputs still pending: support hours, plan pricing, certified device list.
+- [ ] Pilot release + sign-off (not started)
 
 ## Success criteria & verification
 
@@ -143,6 +146,7 @@ AT mapping to stages (PRD §16): A → AT-09, AT-10, AT-15; B → AT-01, AT-02, 
 | WAL archiving misconfigured | Alert on archive age, drill before go-live, monthly re-drill |
 | Pilot data reveals unmodelled flows | Feed back into OPEN list; no silent schema changes; new migration + plan update |
 | Scope creep at release | Release gate only checks PRD 1.1 scope; removed modules stay removed |
+| Tenant host cache is purged only in-process (tenant create, sandbox reset): with several API replicas, another replica keeps routing a moved slug to the old tenant | Stay single-replica in 1.1, or add a short cache TTL / cross-replica purge broadcast before scaling out; load test covers a reset under two replicas |
 
 ## Security
 

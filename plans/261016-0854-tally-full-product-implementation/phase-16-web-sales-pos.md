@@ -1,6 +1,6 @@
 ---
 title: "Phase 16: Web sales & POS (online)"
-status: todo
+status: in-progress
 priority: P1
 effort: 9d
 dependsOn: [phase-14-web-foundation-design-system, phase-09-sales-pos, phase-10-debt-cash]
@@ -25,7 +25,7 @@ Builds the four Bán hàng routes against the real API: POS with saved carts (on
 - Exceptions are never pre-blocked client-side: confirm/checkout returns `409 exception_required` (`credit_limit`, `below_min_price`) and `useConfirmException` opens "Xác nhận ngoại lệ cho {id}" with "Tôi xác nhận vẫn bán". The soModal override checkbox "Tôi xác nhận vẫn bán…" is the same flow inlined when the dry-run preview already reports a breach.
 - Colored SKUs need a chosen color before confirm/sell; only colors with sellable stock are offered; a single remaining color auto-picks (server invariant `ColorRequirementSpec`). Picking a color that matches another line merges lines with toast "Đã gộp vào dòng X Màu." / "Đã gộp vào dòng X cùng màu.".
 - Combos (KIT-03) have no stock; tile shows "· ghép từ thành phần", component color rows, "cố định theo combo" for single-color components, avail = min over components (server value).
-- Mix-pack line "Thùng mix vị": mix-group select + `MixFlavorGrid` of "vị · còn N dây" qty inputs; price = server mix price; sum of flavor parts must equal one pack.
+- Mix-pack line "Thùng mix vị": mix-group select + `MixFlavorGrid` of "vị · còn N dây" qty inputs; price = server mix price; the flavor parts may not exceed packs × parts per pack (a short pack is allowed and priced by the parts chosen, PRD §7.10).
 - Shift: CASH-06 says the shift opens implicitly on the first POS sale; the server opens it (`shifts` "opened implicitly by first POS sale of the day"). The UI never shows open/close controls; the callout "Chưa có ca bán hàng đang mở. [Mở ca]" is kept only as a fallback when the API reports `shift_unavailable`. UI spec gap #16 recommends explicit shifts — recorded as a decision to revisit, not built.
 - POS checkout is one command: `POST /pos/carts/{id}:checkout` (or `POST /pos/checkout` for an unsaved cart) with `Idempotency-Key`; response carries `HD-` sale doc number, change and the locked cart `GH-`.
 - Success toasts render only after the 2xx (gap #17). The POS cart uses controlled inputs so blur never swallows the "Thanh toán · F9" click (gap #15, PRD §9.3).
@@ -154,16 +154,38 @@ Modify: `src/app/menu.ts`, `src/app/router.tsx` (print route outside AppShell, i
 
 ## Todo
 
-- [ ] Query keys + adapters (sales, pos)
-- [ ] `sell` / `quote` presets incl. color merge and mix-pack row
-- [ ] Quotes: page, drawer, quoteModal, reject, transitions, convert
-- [ ] Invoices: page, soModal, drawer, soConfirm via exception flow, soTopUp, soDeposit, soCancel, soDel
-- [ ] Stock-out dialog + drawer
-- [ ] Returns, exchanges, refund, sale-doc drawer
-- [ ] Print page
-- [ ] POS page: scan, tiles, cart, customer, payments, change, credit, hotkeys, saved carts, delete cart
-- [ ] Shift fallback state
+- [x] Query keys + adapters (sales, pos)
+- [x] `sell` / `quote` presets incl. color merge and mix-pack row
+- [x] Quotes: page, drawer, quoteModal, reject, transitions, convert
+- [x] Invoices: page, soModal, drawer, soConfirm via exception flow, soTopUp, soDeposit, soCancel, soDel
+- [x] Stock-out dialog + drawer
+- [x] Returns, exchanges, refund, sale-doc drawer
+- [x] Print page
+- [x] POS page: scan, tiles, cart, customer, payments, change, credit, hotkeys, saved carts, delete cart
+- [x] Shift fallback state
 - [ ] Unit + e2e tests
+
+Evidence (2026-10-18): unit tests in `apps/web/src/features/{sales,pos}/**`; `corepack pnpm typecheck`,
+`lint` and `test` green in `apps/web` (43 files, 309 tests). Playwright `e2e/pos.spec.ts`,
+`invoices.spec.ts`, `quotes.spec.ts` and `returns.spec.ts` are written but not run: they need the local
+stack and `E2E_OWNER_PASSWORD`. Report: `plans/reports/fullstack-developer-261018-web-sales-pos.md`.
+
+Review fixes (2026-10-18, after `plans/reports/code-reviewer-261018-0927-web-catalog-procurement-sales-review.md`):
+- Stock-out sends the reserved base quantity when the full line is delivered, so line units rounded to
+  4 decimals never exceed the reservation (`stock-out-lines.ts`).
+- The invoice paid step keys on the new total and never replaces a newer invoice version.
+- A quote created by "Lưu & gửi" is not created again when sending fails.
+- An unchanged discounted line keeps its saved discount amount.
+- The customer picker reads every page.
+- A POS cart sold by an earlier attempt replays the checkout with the same key.
+
+Kept as is: the soModal "Tôi xác nhận vẫn bán" box blocks submit until ticked when the preview already
+reports a breach. This is required by the unit-test criterion below, while Key insights says exceptions
+are never pre-blocked; the server still decides every exception through `:check`.
+
+Open:
+- ~~`GET /invoices` has no payment status, so the list reads it per row.~~ Closed 2026-10-19: the list reads `paid_amount` and no invoice detail (report `plans/reports/fullstack-developer-261019-0242-web-adopt-api-gaps.md`).
+- ~~`POST /invoices` and `/quotes` take no Idempotency-Key.~~ Closed 2026-10-18: both take an optional key; the web keeps the sent body while the outcome is unknown, replays it under the same key and applies later edits through PATCH/PUT (report `plans/reports/fullstack-developer-261018-1620-web-idempotency-keys.md`). `PATCH /invoices/{id}`, `PUT /invoices/{id}/lines` and `PATCH /quotes/{id}` take If-Match instead of a key, so the web re-reads the document after a lost edit answer; `quotes/{id}:send` and `kits/{id}:publish` send one key per intent since 2026-10-19.
 
 ## Success criteria & verification
 

@@ -1,6 +1,6 @@
 ---
 title: "Phase 12: Campaign, CRM, Notifications & Reporting"
-status: todo
+status: done
 priority: P1
 effort: 8d
 dependsOn: [phase-08-procurement, phase-09-sales-pos, phase-10-debt-cash, phase-11-kits-assembly]
@@ -30,6 +30,7 @@ Implement the read-heavy and side-effect domains that sit on top of the posting 
 - Revenue = net revenue from `sales_documents` (BH/HD) minus returns/credit notes, tax separate; invoice (SO) totals are never revenue (RPT-03, §7.1). Gross margin labels state "chưa trừ chi phí vận hành" (OPEN-13) and distinguish provisional vs final when a recost run is pending.
 - RPT-01 dashboard excludes walk-in customers (`parties.is_walk_in`) and opening balances (`debt_adjustments.kind = 'opening'`, cash entry `opening`) from debt movement; it has no "Cần xử lý" card; each card links to its detail route.
 - RPT-02 NXT is per SKU (colors not split, OPEN-20): opening + Σ in − Σ out = closing, reproducible as-of.
+- Reversed procurement documents follow the ledger reversal convention (in 1.1 only a PN is reversed through the API; the other document tables that carry `reversal_of` read the same way). The reversal row copies the original's amounts with the same positive sign and points at it through `reversal_of`, and the original turns `reversed`. Document reports sum `status = 'posted' AND reversal_of IS NULL`, so a reversed pair drops out entirely. Never sum the reversal rows as negatives. As-of figures come from the ledgers (`stock_moves`, `obligation_settlements`, `cogs_adjustments`), where the reversal moves carry their own sign and date.
 - Notifications: producers register in `notification.ProducerRegistry` (OCP). Upsert by `dedupe_key` (`ON CONFLICT (tenant_id, dedupe_key) DO UPDATE SET updated_at`), resolve when the condition clears. Kinds produced in 1.1: `receivable_overdue`, `payable_due_soon`, `lot_expiring`, `lot_expired` (with color), `below_min_stock`, `surplus_stock`, `pos_sync_exception`, `statement_disputed`, `subscription_status`, `export_ready`. Never "Cần giao", "Tiền thu hộ chưa về", "Sao kê chưa ghép".
 - Re-order (CRM-02) creates a draft invoice using current prices, units and pack sizes from `pricing.PriceResolver`; the owner confirms; history is never copied blindly.
 - Loyalty (CRM-03) is off by default; earn on `sale.posted`, reverse on `sales_return.posted` with `reversal_of`; debt is never converted to points.
@@ -145,20 +146,41 @@ Routes (`/api/v1`): `GET/POST /campaigns`, `GET/PATCH /campaigns/{id}`, `POST /c
 
 ## Todo
 
-- [ ] Campaigns + checklists + close
-- [ ] Attribution writer + re-attribution
-- [ ] Demand tracking
-- [ ] CRM timeline + consents + care tasks + re-order drafts
-- [ ] Loyalty ledger
-- [ ] Notification registry, producers, consumers, sweeper
-- [ ] Reporting foundation (Period, registry)
-- [ ] RPT-01 dashboard
-- [ ] RPT-02..08 queries + index review
-- [ ] Saved reports + async CSV export
-- [ ] RPT-10 suggestions + cash forecast
-- [ ] RPT-11 AI Q&A (gated)
-- [ ] Print payloads (DATA-04)
-- [ ] Tests + OpenAPI
+- [x] Campaigns + checklists + close
+- [x] Attribution writer + re-attribution
+- [x] Demand tracking
+- [x] CRM timeline + consents + care tasks + re-order drafts
+- [x] Loyalty ledger (earn, reverse on return, manual adjust, balance, redeem at checkout as an order discount)
+- [x] Notification registry, producers, consumers, sweeper
+- [x] Reporting foundation (Period, registry)
+- [x] RPT-01 dashboard
+- [x] RPT-02..08 queries + index review (migrations 000045/000046; load run on 200 001 moves, full NFR-04 p95 re-measured in phase 21)
+- [x] Saved reports + async CSV export
+- [x] RPT-10 suggestions + cash forecast
+- [x] RPT-11 AI Q&A (gated)
+- [x] Print payloads (DATA-04)
+- [x] Tests + OpenAPI
+
+Evidence (2026-10-18, backend `apps/api`): gofmt is clean; `go vet` passes with and without the `integration` tag; `golangci-lint run --build-tags integration ./...` reports 0 issues; `go test -race ./...` and `go test -tags integration -count=1 ./...` are green, including the OpenAPI contract test. `pnpm gen:api` was regenerated and the web typecheck is clean. Integration coverage lives in `internal/app/campaign_reporting_integration_test.go` and `internal/app/campaign_care_integration_test.go`. It covers attribution counted once, dashboard exclusions, NXT identity, revenue from deliveries rather than SO totals, the provisional margin label, notification dedupe and system resolve, consent gating, loyalty reverse, export cancel and expiry with 410, AI disabled with 403 `feature_disabled`, and report/export tenant isolation. The 200 000-row export and the p95 measurement were scaled down to a small dataset and were not run at load size.
+
+Review fixes (2026-10-18, after `plans/reports/code-reviewer-261018-1200-campaign-crm-reporting-review.md`;
+detail in `plans/reports/fullstack-developer-261018-1300-phase12-review-fixes.md`): exports run in one
+REPEATABLE READ READ ONLY transaction with totals computed once; the 000043 down migration is
+reversible with new values present; loyalty settles returns and reversals whichever outbox event
+arrives first and undoes points cumulatively; AI Q&A has a 45 s overall deadline and a 20 s per-call
+timeout (504 `ai_timeout`); `POST /loyalty/adjustments` requires an Idempotency-Key and
+`PUT /loyalty/program` requires If-Match; notifications follow the existing debt topics,
+`pos_sync.exception` and lot expiry on `stock.changed`; checkout accepts optional `loyalty_points`
+redeemed in the same posting and refunded on return or reversal. Load run (`TALLY_REPORT_LOAD=1`,
+20 001 SKUs, 200 001 moves): NXT first page with totals 186–614 ms, later pages 6–10 ms, export of
+20k rows 1.09 s. Re-verified by the lead on 2026-10-18: gofmt clean, `go vet` with and without
+`integration`, `golangci-lint` 0 issues, `go test -race ./...` and `go test -tags integration -count=1 ./...`
+green; `pnpm gen:api` regenerated and web typecheck clean.
+
+Deviations: notifications consume the existing debt topics instead of `obligation.due_changed`
+(nothing publishes it; time-based due changes stay with the hourly sweep). Not fixed: per-tenant
+head-of-line blocking in the export/sweep runner (operational, with worker scaling) and
+re-attribution of primary rows that have returns (needs a product decision).
 
 ## Success criteria & verification
 

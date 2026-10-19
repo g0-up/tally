@@ -1,6 +1,6 @@
 ---
 title: "Phase 17: Web inventory & gift baskets"
-status: todo
+status: in-progress
 priority: P1
 effort: 7d
 dependsOn: [phase-14-web-foundation-design-system, phase-07-inventory-ledger, phase-11-kits-assembly]
@@ -63,7 +63,7 @@ API (phase 07/11 OpenAPI authoritative):
 | UI action | Request |
 |---|---|
 | Stock list | `GET /stock?q=&category_id=&color_id=&colored_only=&below_min=&cursor=` (parent rows + color subrows, price range) · `GET /stock/{skuId}` |
-| Color price | `POST /skus/{id}/sale-price` (`kind`, `color_id`, `source: stock`) · "Bỏ giá riêng" = `DELETE /price-lists/{id}/items/{itemId}` (falls back to the any-color price) |
+| Color price | `POST /skus/{id}/sale-price` (`kind`, `color_id`, `source: stock`) · "Bỏ giá riêng" = the same `POST` with `price: null` (OpenAPI contract; falls back to the any-color price) |
 | Reservations | `GET /reservations?status=active` · `POST /reservations/{id}:release` |
 | Counts | `GET/POST /stock-counts` · `GET /stock-counts/{id}` · `PUT /stock-counts/{id}/lines` · `POST /stock-counts/{id}:finish|recount|post` |
 | Lots | `GET /lots?state=all|expiring|expired|quarantine&expiring_within=90` · `GET /lots/{id}/trace` · `POST /stock-adjustments` (kind `quarantine_release` or `disposal`, with `exception_confirmation_id`) |
@@ -83,7 +83,7 @@ API (phase 07/11 OpenAPI authoritative):
 - Cols Hàng (`ExpandableRow`, aria "Xem chi tiết/Thu gọn màu của X", inline color-qty pills) / Tồn thực / Có thể bán (sub "giữ N · cách ly N") / Giá bán (sub "sỉ X"; "giá chung mọi màu" or "N màu giá riêng" + min–max) / Giá trị tồn / acts "Sửa giá" + "Thẻ kho" (→ `/inventory/stock-card?sku=`).
 - Color subrows: ColorChip + name, qty, price sub "giá riêng" / "theo giá chung", "Sửa giá".
 - Footer "N mặt hàng · N có màu"; hint "Combo ghép tại quầy không có tồn riêng…".
-- colorPrice modal: title "Giá bán {màu} · X"; Giá lẻ / Giá sỉ / Ghi chú; checkbox "Bỏ giá riêng, dùng giá chung…" makes the price inputs `readOnly` with a visible note that the common price applies (gap #11: prototype used `disabled`, which drops tab order and contrast) and saving sends DELETE; impact; submit "Lưu giá màu".
+- colorPrice modal: title "Giá bán {màu} · X"; Giá lẻ / Giá sỉ / Ghi chú; checkbox "Bỏ giá riêng, dùng giá chung…" makes the price inputs `readOnly` with a visible note that the common price applies (gap #11: prototype used `disabled`, which drops tab order and contrast) and saving sends `price: null`; impact; submit "Lưu giá màu".
 
 ### `/inventory/reservations` — Giữ hàng (2804)
 
@@ -171,23 +171,46 @@ Modify: `src/app/router.tsx` (10 routes), `src/features/catalog/pages/products-p
 
 ## Todo
 
-- [ ] Query keys + adapters (inventory, kits)
-- [ ] Stock page + color subrows + colorPrice + EditPriceDialog
-- [ ] Reservations + release
-- [ ] Counts (blind) + post with exception confirmation
-- [ ] Lots + quarantine/disposal flows
-- [ ] Adjustments dialog
-- [ ] Stock card with qMix and reconciliation badge
-- [ ] Recipes: cards, KitDialog, preview, versions, combo edit, delete
-- [ ] Assembly: create, reserve, complete, drawer
-- [ ] Progress + genealogy
-- [ ] Disassembly
-- [ ] Unit + e2e tests
+- [x] Query keys + adapters (inventory, kits)
+- [x] Stock page + color subrows + colorPrice + EditPriceDialog
+- [x] Reservations + release
+- [x] Counts (blind) + post with exception confirmation
+- [x] Lots + quarantine/disposal flows
+- [x] Adjustments dialog
+- [x] Stock card with qMix and reconciliation badge
+- [x] Recipes: cards, KitDialog, preview, versions, combo edit, delete
+- [x] Assembly: create, reserve, complete, drawer
+- [x] Progress + genealogy
+- [x] Disassembly
+- [ ] Unit + e2e tests (unit done; e2e written, not run)
+
+Evidence (2026-10-18): unit tests in `apps/web/src/features/{inventory,kits}/**`; in `apps/web`,
+`corepack pnpm typecheck`, `lint` and `test` green (76 files, 492 tests, run together with phases 15,
+16 and 19). Playwright `e2e/inventory.spec.ts` and `e2e/gift-baskets.spec.ts` are written but not run:
+they need the local stack and `E2E_OWNER_PASSWORD`. Report:
+`plans/reports/fullstack-developer-261018-0927-web-inventory-kits.md`.
+
+Review fixes (2026-10-18, after `plans/reports/code-reviewer-261018-1110-web-inventory-kits-review.md`):
+- An assembly order asks for the color of every component whose recipe leaves the color open and sends
+  `colors`; completing an older order can also pick colors.
+- A selling kit with a newer draft recipe shows the selling version plus a callout to preview, edit or
+  publish the draft.
+- Multi-step saves remember each finished step, so a retry sends the user's latest edits and never
+  posts a document twice.
+- Each row action has its own Idempotency-Key.
+- The color price dialog sends a wholesale price only when one is entered.
+- Inventory and kit error codes are translated.
+- A mix component whose group was deactivated is shown with a warning and blocks saving.
+- Color filters run on the server, row details load on view, and documents opened by `?doc=` are found by `q`.
+
+Open (API gaps):
+- ~~`POST /kits` and `/assembly-orders` take no Idempotency-Key.~~ Closed 2026-10-18: the server takes an optional key and the web sends one per intent through `shared/hooks/create-once.ts` (report `plans/reports/fullstack-developer-261018-1620-web-idempotency-keys.md`, review `plans/reports/code-reviewer-261018-1700-web-idempotency-keys-review.md`). Edits made after a lost create answer cannot be applied to assembly orders or to a kit's kind, code or base unit; the web says so with the document number.
+- ~~Count and adjustment lists carry no line summary and no `doc_no` filter; `/disassemblies` has no `q`; stock cannot filter "no color"; `KitRequest` has no wholesale price or minimum stock; reservation release takes no reason.~~ Closed 2026-10-19: the web reads the list summaries, filters by `doc_no` and `uncolored=true`, searches disassemblies by `q`, sends `wholesale_price`/`min_stock` and a release reason (report `plans/reports/fullstack-developer-261019-0242-web-adopt-api-gaps.md`).
 
 ## Success criteria & verification
 
 - `pnpm -C apps/web typecheck && pnpm -C apps/web lint && pnpm -C apps/web test` green.
-- Unit: `stock-table.test.tsx` (expand/collapse aria, "giữ N · cách ly N"), `color-price-dialog.test.tsx` (checkbox makes inputs readOnly, keeps them focusable, sends DELETE), `count-drawer.test.tsx` ("Ẩn khi đếm mù" when `system_qty` absent), `lot-table.test.tsx` (acts per status), `kit-dialog.test.tsx` (warn callouts from economics, mix-pack component), `assembly-complete-dialog.test.tsx` (max = remaining).
+- Unit: `stock-table.test.tsx` (expand/collapse aria, "giữ N · cách ly N"), `color-price-dialog.test.tsx` (checkbox makes inputs readOnly, keeps them focusable, sends `price: null`), `count-drawer.test.tsx` ("Ẩn khi đếm mù" when `system_qty` absent), `lot-table.test.tsx` (acts per status), `kit-dialog.test.tsx` (warn callouts from economics, mix-pack component), `assembly-complete-dialog.test.tsx` (max = remaining).
 - Playwright `inventory.spec.ts`: blind count → post variance with exception confirmation → stock card shows the count move and "Đã khớp sổ và tồn"; expired lot disposal; quarantine release; decrease adjustment shows Doanh thu "Không phát sinh". `gift-baskets.spec.ts`: create kit → publish → assembly with shortage shown → reserve → partial completion → finished lot appears in progress trace → disassembly with damaged packaging.
 - Visual parity vs views 3910, 2804, 2816, 2830, 2840, 3671, 2845, 2975, 2989, 2997 and kitModal/asmDone/drawCount at 1440 and 390.
 

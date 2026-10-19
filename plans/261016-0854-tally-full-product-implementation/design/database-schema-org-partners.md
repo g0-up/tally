@@ -9,13 +9,14 @@ Migrations: `000001_platform_identity`, `000002_org_core`, `000003_org_control`,
 ```sql
 CREATE TABLE tenants (
   id uuid PRIMARY KEY,
-  slug text NOT NULL UNIQUE                           -- store subdomain <slug>.DOMAIN, immutable (architecture §7.2)
+  slug text NOT NULL UNIQUE                           -- store subdomain <slug>.DOMAIN, immutable (architecture §7.2); a sandbox reset renames the replaced sandbox to reset-<id hex> and hands the address to the new one
     CHECK (slug ~ '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$' AND slug !~ '--'),
   legal_name text NOT NULL, display_name text NOT NULL,
   tax_code text, address text, phone text,
   currency char(3) NOT NULL DEFAULT 'VND',
   timezone text NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
-  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','read_only','closing','closed')),
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','read_only','closing','closed','replaced')),
+    CHECK (status <> 'replaced' OR is_sandbox),       -- replaced: a sandbox superseded by a reset (ORG-06), kept read by nobody
   is_sandbox bool NOT NULL DEFAULT false,             -- ORG-06 demo store, excluded from real reports
   sandbox_of uuid REFERENCES tenants (id),            -- demo tenant linked to the real one
   opening_cutoff_date date,                           -- DEBT-02 / onboarding cutoff
@@ -69,11 +70,13 @@ CREATE TABLE auth_tokens (                            -- single-use, expiring (O
   expires_at timestamptz NOT NULL, used_at timestamptz, created_at timestamptz NOT NULL,
   FOREIGN KEY (tenant_id, user_id) REFERENCES users (tenant_id, id)
 );
+CREATE INDEX ix_auth_tokens__user ON auth_tokens (tenant_id, user_id);   -- account moves (sandbox reset) and FK checks
 
 CREATE TABLE mfa_totp_secrets (
   user_id uuid PRIMARY KEY REFERENCES users (id),
   secret_ciphertext bytea NOT NULL,                   -- AES-GCM with APP_ENCRYPTION_KEY
-  confirmed_at timestamptz, created_at timestamptz NOT NULL
+  confirmed_at timestamptz, created_at timestamptz NOT NULL,
+  last_used_step bigint CHECK (last_used_step >= 0)  -- last accepted TOTP time step; a step <= it is refused (replay)
 );
 
 CREATE TABLE mfa_recovery_codes (
@@ -158,7 +161,7 @@ CREATE TABLE idempotency_keys (
   created_at timestamptz NOT NULL, expires_at timestamptz NOT NULL,
   PRIMARY KEY (tenant_id, scope, key)
 );
-CREATE INDEX ix_idempotency_keys__expiry ON idempotency_keys (expires_at);
+CREATE INDEX ix_idempotency_keys__expiry ON idempotency_keys (tenant_id, expires_at);   -- purge runs per tenant
 
 CREATE TABLE audit_events (                           -- append-only (SEC-04)
   id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenants (id),
@@ -178,12 +181,14 @@ CREATE INDEX ix_audit_events__entity ON audit_events (tenant_id, entity_type, en
 CREATE TABLE period_locks (                           -- append-only event log (SEC-05)
   id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenants (id),
   action text NOT NULL CHECK (action IN ('lock','reopen')),
-  locked_through date NOT NULL,                       -- effective lock date after this event
+  locked_through date,                                -- effective lock date after this event; NULL = fully reopened
   reason text,                                        -- required for reopen (Go)
   actor_id uuid NOT NULL, created_at timestamptz NOT NULL,
-  CHECK (action = 'lock' OR reason IS NOT NULL)
+  CHECK (action = 'lock' OR reason IS NOT NULL),
+  CONSTRAINT ck_period_locks__lock_date CHECK (action = 'reopen' OR locked_through IS NOT NULL)
 );
 CREATE INDEX ix_period_locks__latest ON period_locks (tenant_id, created_at DESC);
+REVOKE UPDATE, DELETE ON period_locks FROM tally_app;
 
 CREATE TABLE exception_confirmations (                -- append-only (SEC-03, PRC-04, DEBT-06)
   id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenants (id),
@@ -193,9 +198,18 @@ CREATE TABLE exception_confirmations (                -- append-only (SEC-03, PR
   doc_version int NOT NULL,                           -- invalid once the document version changes (§7.8)
   impact jsonb NOT NULL,                              -- what the owner saw: amounts, limits, prices
   confirmed_by uuid NOT NULL, confirmed_at timestamptz NOT NULL,
+  payload_hash bytea NOT NULL,                        -- SHA-256 of the canonical JSON of the confirmed command (000027)
+  note text,
   UNIQUE (tenant_id, id)
 );
 CREATE INDEX ix_exception_confirmations__doc ON exception_confirmations (tenant_id, doc_type, doc_id);
+
+CREATE TABLE exception_confirmation_uses (            -- append-only; the primary key makes a second use fail (000027)
+  tenant_id uuid NOT NULL, confirmation_id uuid NOT NULL,
+  used_by_doc_type text NOT NULL, used_by_doc_id uuid NOT NULL, used_at timestamptz NOT NULL,
+  PRIMARY KEY (tenant_id, confirmation_id),
+  FOREIGN KEY (tenant_id, confirmation_id) REFERENCES exception_confirmations (tenant_id, id)
+);
 
 CREATE TABLE attachments (                            -- DATA-05
   id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenants (id),
@@ -219,7 +233,7 @@ CREATE TABLE outbox_events (                          -- transactional outbox fo
   created_at timestamptz NOT NULL, available_at timestamptz NOT NULL,
   attempts int NOT NULL DEFAULT 0, last_error text, processed_at timestamptz
 );
-CREATE INDEX ix_outbox_events__pending ON outbox_events (available_at) WHERE processed_at IS NULL;
+CREATE INDEX ix_outbox_events__pending ON outbox_events (tenant_id, available_at) WHERE processed_at IS NULL;   -- dispatched per tenant
 
 CREATE TABLE reasons (                                -- CAT-07
   id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenants (id),

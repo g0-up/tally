@@ -1,6 +1,6 @@
 ---
 title: "Phase 06: Pricing & Promotions"
-status: todo
+status: done
 priority: P1
 effort: 5d
 dependsOn: [phase-05-catalog-partners]
@@ -88,15 +88,15 @@ Routes (`/api/v1`): `GET/POST /price-lists`, `GET/PATCH/DELETE /price-lists/{id}
 
 ## Todo
 
-- [ ] money Allocate/RoundVND + property tests
-- [ ] Price lists/items repo + service + routes
-- [ ] PriceWriter + price history (PRC-07/08)
-- [ ] PriceResolver chain + ResolveMany
-- [ ] Promotions + engine + code validation + usage recording
-- [ ] DocumentCalculator + rounding strategies + golden tests
-- [ ] MinPriceGuard + exception confirmation consumption
-- [ ] Seeder wired into provisioner; search price_hint
-- [ ] OpenAPI + isolation tests
+- [x] money Allocate/RoundVND + property tests. Evidence: `money/allocate_test.go` (`TestPropertyAllocateKeepsTotal`, `TestPropertyRoundVNDKeepTotal`).
+- [x] Price lists/items repo + service + routes. Evidence: `TestPricingOverHTTP` (If-Match 428/412, items upsert/delete, `409 base_price_list_exists`).
+- [x] PriceWriter + price history (PRC-07/08). Evidence: `TestTiersUnitsAndColors` (Bỏ giá riêng old → NULL with the color, apply_all_colors), `TestSalePriceNeedsTheBaseList`; catalog quick-create writes through the `catalogPrices` adapter in `app/domains.go`.
+- [x] PriceResolver chain + ResolveMany. Evidence: `TestResolverChainPrecedence`, `TestSameLevelListsByPriorityThenNewest`, `TestSeasonEndsAtLocalMidnight`, matcher unit tests; `BenchmarkResolveManyFiftyLines` ≈ 10–11 ms/op, `TestResolveManyFiftyLinesIsFast` (median < 20 ms outside `-race`).
+- [x] Promotions + engine + code validation + usage recording. Evidence: `promotion_test.go`, `TestPromotionCodesAndUsageLimit` (usage limit, idempotent `RecordUsage`, code reasons).
+- [x] DocumentCalculator + rounding strategies + golden tests. Evidence: `calculator_test.go` goldens, `TestPropertyRandomDocumentsReconcile` (1 000 documents, both modes).
+- [x] MinPriceGuard + exception confirmation consumption. Evidence: `TestMinPriceNeedsTheOwnersConfirmation` (the error renders `409 exception_required`, the platform's status for that kind, not 422).
+- [x] Seeder wired into provisioner; search price_hint. Evidence: `TestSeederAndSandboxReset`, `TestPriceHintsUseTheRetailGeneralPrice`, `TestPricingOverHTTP` (base lists of a new store, `price_hint` in search).
+- [x] OpenAPI + isolation tests. Evidence: `TestOpenAPIContract`, `TestPricingTenantIsolation`, `TestPricingOverHTTP` (every documented pricing id route answers 404 to another store).
 
 ## Success criteria & verification
 
@@ -105,7 +105,7 @@ Routes (`/api/v1`): `GET/POST /price-lists`, `GET/PATCH/DELETE /price-lists/{id}
 - Selling 2 thùng (factor 24) hits the `min_qty = 48` tier; selling 47 lẻ does not.
 - Color "đỏ" without its own row resolves the general price and `price_source.color_id` is null; after "Bỏ giá riêng" the history shows old → NULL with the color.
 - Sum of rounded line amounts equals document total for 1 000 random documents in both rounding modes.
-- Line under `min_price` without confirmation → `422 exception_required`; with a matching confirmation → saved and confirmation marked used.
+- Line under `min_price` without confirmation → `409 exception_required` (the platform status for an owner-confirmable exception); with a matching confirmation → saved and confirmation marked used.
 
 ## Risks
 

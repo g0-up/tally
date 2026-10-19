@@ -48,7 +48,7 @@ tally/
 | `api` | `tally serve` | HTTP API under `/api/v1`, platform admin under `/api/admin/v1`, health `/healthz`, `/readyz` |
 | `worker` | `tally worker` | outbox dispatcher, notification sweeps, expiry roll-forward, export jobs, SaaS lifecycle, idempotency purge |
 | `web` | nginx static | one SPA + PWA bundle on every host; route tree chosen by host kind (§7.1): tenant app on `<slug>.DOMAIN`, sign-up/store lookup on apex, platform admin on `admin.DOMAIN` |
-| edge (outside this repo) | Cloudflare Tunnel `cloudflared-sidecup` + homelab Traefik v3 | TLS at Cloudflare; Traefik routes `/api/*` → api:8080, rest → web:80 by `Host`, adds security headers (§7.6) |
+| edge (outside this repo) | Cloudflare Tunnel `cloudflared-sidecup` + homelab Traefik v3 | TLS at Cloudflare; Traefik routes `/api/*` → api:8080, rest → web:8080 by `Host`, adds security headers (§7.6) |
 | `postgres` | postgres:16-alpine | only data store; not published on prod |
 | `minio` (dev) / S3-compatible (prod, e.g. R2) | — | attachments, images, exports |
 | `mailpit` (dev) / SMTP (prod) | — | password reset, MFA, export-ready mail |
@@ -90,7 +90,7 @@ Dependency rule: `http → service → model`; `service → ports`; `repo implem
 | `idempotency` | `Guard.Run(ctx, q, scope, key, hash, fn)` |
 | `audit` | `Recorder.Record(ctx, q, Event)` writing `audit_events` (before/after jsonb, reason) |
 | `outbox` | `Publisher.Publish(ctx, q, Event)` in-tx; `Dispatcher` used by worker with `FOR UPDATE SKIP LOCKED` |
-| `objectstore` | `Store` interface (`Put`, `PresignGet`, `Delete`); `s3` adapter (minio-go) for MinIO/R2 |
+| `objectstore` | `Store` interface (`Put`, `PresignPut`, `PresignGet`, `Stat`, `Open`, `Copy`, `Delete`); `s3` adapter (minio-go) for MinIO/R2 |
 | `mailer` | `Mailer` interface; SMTP adapter; template rendering |
 | `authn` | argon2id hashing, opaque session tokens (SHA-256 stored), TOTP, recovery codes |
 | `logging` | `slog` JSON handler, redaction of secrets/PII |
@@ -123,7 +123,7 @@ Dependency rule: `http → service → model`; `service → ports`; `repo implem
 |---|---|---|
 | Repository + `db.Querier` | every `repo.go` | services depend on interfaces (DIP); tests use fakes; same repo works inside any tx |
 | Unit of Work | `db.WithTenantTx` around a service call; `posting.Coordinator` | one transaction per command, RLS context set once |
-| Template Method / Command | `posting.Coordinator.Post(ctx, cmd PostingCommand)`: period lock → idempotency → doc number → lock rows (global order) → `cmd.Apply(tx)` → projections → audit → outbox → commit | each document type implements `PostingCommand` (`Validate`, `Apply`, `Reverse`); new documents add a type, not branches (OCP) |
+| Template Method / Command | `posting.Coordinator.Post(ctx, cmd PostingCommand)`: replay of a completed request → entitlement → period lock → idempotency claim → doc number → lock rows (global order) → `cmd.Apply(tx)` → projections → audit → outbox → commit | each document type implements `PostingCommand` (`Validate`, `Apply`, `Reverse`); new documents add a type, not branches (OCP) |
 | Chain of Responsibility + Strategy | `pricing.PriceResolver` = ordered `PriceListSource` chain (customer list → customer-group list → active season/campaign list → base retail/wholesale list), then `ListRowMatcher` inside the first matching list (exact color beats any-color, exact unit beats base × factor, highest tier `min_qty` ≤ base qty); `PromotionEngine` applies discounts afterwards; manual price is an explicit user override | order fixed by catalog-pricing §5.1 and PRD §7.3; add a source without touching others (OCP) |
 | Strategy | `inventory.CostingMethod` (`MovingAverageCosting`), `inventory.LotPicker` (`ExactColorLot`, `FefoLot`), `debt.AllocationStrategy` (`OldestDueFirst`, `Manual`, `Earmarked`) | swappable policies isolated from services |
 | Specification | `catalog.EditRules` (`CanChangeUnitFactor`, `CanRemoveAxis`, `CanChangeAttributeType`) using `catalog.UsageReader` | brainstorm §4.4 rules testable alone |
@@ -141,11 +141,13 @@ Interface segregation: ports are small and consumer-owned, e.g. `sales` declares
 
 ```
 HTTP POST /api/v1/invoices/{id}/stock-outs  (Idempotency-Key, If-Match on the invoice)
-  → middleware: host context → session → tenant (+ host guard, §7.3) → entitlement (not read_only) → csrf
+  → middleware (TenantPostingAPI): host context → session → tenant (+ host guard, §7.3) → csrf → support read-only
   → sales.Handler → posting.Coordinator.Post(ctx, sales.PostStockOut{…})
       WithTenantTx:
-        periodlock.Check(business_date)
-        idempotency.Guard (scope "stock_out.post")
+        idempotency.Guard.Replay (scope "stock_out.post")  completed, same request → stored response, stop
+        EntitlementGuard.CanPost                            read_only → 403 subscription_read_only
+        periodlock.Check(business_date)                     locked → 423 period_locked
+        idempotency.Guard.Begin (claim the key row; a same-key request still in flight waits on it, then replays)
         docseq.Issuer.Next("BH")
         lock sku_stock rows ascending → lots ascending → reservations
         cmd.Apply: inventory.StockLedger.Issue(...)   (stock_moves out, lot_balances, sku_stock, COGS by moving average)
@@ -156,6 +158,8 @@ HTTP POST /api/v1/invoices/{id}/stock-outs  (Idempotency-Key, If-Match on the in
       commit → response stored in idempotency_keys
 ```
 
+A retry of a request that already committed must learn that the posting exists, whatever changed since: the stored response is replayed **before** the entitlement and period-lock guards, so a POS whose response was lost still gets `201` after the owner locked the period or the subscription turned read-only, and never posts the sale twice. A new key always passes the guards before it claims its row. Posting and payment endpoints therefore register on `App.TenantPostingAPI()`, the tenant chain without the entitlement middleware (the coordinator's `EntitlementGuard` enforces it after the replay check); every other mutation stays on `TenantAPI()` behind the middleware.
+
 Reversal (`Đảo`) uses the same coordinator with `cmd.Reverse`, writing mirror rows with `reversal_of`; it never updates posted rows.
 
 ### 3.6 HTTP API conventions
@@ -164,9 +168,9 @@ Reversal (`Đảo`) uses the same coordinator with `cmd.Reverse`, writing mirror
 - Resources plural kebab-case: `/skus`, `/price-lists/{id}/items`, `/stock-counts/{id}/lines`, `/sales-returns`.
 - Commands use the custom-method suffix: `POST /invoices/{id}:confirm`, `/stock-outs/{id}:reverse`, `/pos/carts/{id}:checkout`; collection-level commands `POST /exchanges:preview`, `/allocations:suggest`. Creating a posted document is a plain `POST` on its collection (`POST /receipts`, `POST /invoices/{id}/stock-outs`). Gin treats `:` as a parameter marker, so each resource registers `POST /invoices/*target` once and `httpx.CommandRouter` splits `{id}:{verb}` and dispatches to the registered handler for that verb (unknown verb → `404`); OpenAPI still documents each `{id}:verb` path.
 - List: cursor pagination `?cursor=&limit=` (max 200), filters as query params, response `{data, next_cursor}`.
-- Concurrency: response `ETag: "<version>"`; mutations require `If-Match`; mismatch → `412 precondition_failed`.
-- Idempotency: every posting/payment endpoint requires `Idempotency-Key`; replay returns the stored body with `Idempotent-Replay: true`.
-- Errors: `{"error": {"code": "credit_limit_exceeded", "message": "…", "fields": {…}, "exception_kind": "credit_limit_exceeded"}}`; `ExceptionRequired` (409) lets the UI open the owner-confirmation dialog and retry with `exception_confirmation_id`.
+- Concurrency: response `ETag: "<version>"`; mutations require `If-Match`; mismatch → `412 precondition_failed`, missing header → `428 precondition_required`.
+- Idempotency: every posting/payment endpoint requires `Idempotency-Key`; replay returns the stored body with `Idempotent-Replay: true`, even when a guard (period lock, read-only subscription) would now refuse a new request (§3.5).
+- Errors: `{"error": {"code": "credit_limit_exceeded", "message": "…", "fields": {…}, "exception_kind": "credit_limit_exceeded"}}`; `ExceptionRequired` (409) lets the UI open the owner-confirmation dialog and retry with `exception_confirmation_id`. Fixed status/code pairs the web client branches on: 401 `unauthenticated`; 403 `csrf_failed` (refresh via `GET /host-context`, retry once), 403 `reauth_required` (prompt `POST /auth/reauth`, retry), 403 `invalid_password`, 403 `forbidden` (the session may not do this, e.g. a support session on an owner-only account route); 409 `exception_required`; 412/428 as above; 422 `validation_failed` + `fields`; 423 `period_locked`; 429 `rate_limited` + `Retry-After` (per-address request limits and the failed-login lock alike). The OpenAPI `info.description` carries the same list, and a contract test checks re-authenticated routes list 403 and `If-Match` routes list 412 and 428.
 - Auth: opaque host-only session cookie `__Host-tally_session` (HttpOnly, Secure, SameSite=Lax; `tally_session` in dev), CSRF token header `X-CSRF-Token`; the session tenant must match the request host (§7.3); platform admin uses a separate cookie and route group, served only on `admin.DOMAIN`, with mandatory TOTP. Hosts, cookies and URL building: §7.
 - OpenAPI 3.1 file `apps/api/api/openapi.yaml` is the contract; `pnpm gen:api` generates TS types into `apps/web/src/shared/api/schema.d.ts` (openapi-typescript). A contract test in Go checks every registered gin route exists in the spec.
 
@@ -251,11 +255,11 @@ Secrets come from `infra/.env` (never committed); the tunnel token stays with th
 
 ## 6. Security baseline
 
-- Passwords argon2id; login rate limit per IP+email (`login_attempts`); account lockout window; TOTP MFA required for owner (optional others) and platform admins.
-- Sessions opaque, hashed at rest, idle 12 h / absolute 30 d; revoke on password change.
+- Passwords argon2id; login by e-mail or Vietnamese phone number; failed logins and failed re-authentications count per identifier (`login_attempts`) towards a lockout window (429 `rate_limited`), and failed re-authentications are audited; sign-up does the same work whether or not the e-mail is registered; TOTP MFA required for owner (optional others) and platform admins; each accepted TOTP time step is stored so a code (or an older one inside the skew window) cannot be replayed.
+- Sessions opaque, hashed at rest, idle 12 h / absolute 30 d; changing the password (`POST /auth/password`, re-authenticated) or enabling MFA revokes the user's other sessions and keeps the current one, audited.
 - Authorization: one owner account per tenant with full rights (SEC-01); the server still checks session, tenant and entitlement on every request, and sensitive actions (ownership transfer, period reopen, write-off, data export, MFA reset) require re-authentication within 5 minutes (SEC-06). Platform admins never act inside a tenant except through a consented read-only support session (SEC-07).
 - RLS as defence in depth behind explicit `tenant_id` filters; isolation integration tests per table.
-- Uploads: content-type sniffing, size limit, private bucket, presigned GET with short TTL.
+- Uploads: content-type sniffing, size limit, private bucket, presigned GET with short TTL. The presigned PUT targets a separate upload key; completion copies it server-side to the attachment's storage key, which no presigned URL can write, and checks size, type and the declared SHA-256 on that copy, so verified content cannot be replaced through the still-valid upload URL.
 - Logs redact tokens, passwords, phone/email beyond last 3 chars.
 - CSP and headers as a Traefik middleware (as Sidecup homelab), no third-party scripts; HSTS forced with `includeSubDomains`.
 - Tenant hosts: host-only cookies, session tenant must equal host tenant, login scoped to the host tenant with timing parity, unknown slugs indistinguishable from real ones outside sign-up (§7).
@@ -312,7 +316,7 @@ Production runs on the homelab machine; nothing listens on the internet directly
 ```
 browser ──HTTPS──▶ Cloudflare edge (sidecup.app, *.sidecup.app; Universal SSL)
         ──tunnel──▶ cloudflared-sidecup (network homelab, outbound only)
-        ──http────▶ Traefik :80 (entrypoint web) ──▶ tally api:8080 (/api/*) | tally web:80 (rest)
+        ──http────▶ Traefik :80 (entrypoint web) ──▶ tally api:8080 (/api/*) | tally web:8080 (rest)
 ```
 
 - Already running, outside this repo (`/home/cesc/Documents/homelab-infras`): external Docker network `homelab`; Traefik v3 (`proxy/compose.yml`, entrypoint `web` on :80, docker provider with `exposedByDefault: false` and `network: homelab`); the `cloudflared-sidecup` tunnel container, whose ingress lives in the Cloudflare Zero Trust dashboard and points to `http://traefik:80`. Tally only adds labelled containers; it runs no proxy and no TLS of its own.
@@ -320,7 +324,7 @@ browser ──HTTPS──▶ Cloudflare edge (sidecup.app, *.sidecup.app; Univer
 - Tunnel public hostnames (tunnel `cloudflared-sidecup`): `sidecup.app` and `*.sidecup.app` → `http://traefik:80`, ordered after the existing specific hostnames (`tiendouong.sidecup.app`, `tiendouong-api.sidecup.app`) because ingress rules match top-down. Each public hostname gets a proxied CNAME to `<tunnel-id>.cfargotunnel.com`; explicit DNS records keep winning over the wildcard.
 - Traefik routers (labels in `docker-compose.homelab.yml`): `tally-api` = ``(Host(`${DOMAIN}`) || HostRegexp(`^[a-z0-9-]+[.]${DOMAIN}$`)) && PathPrefix(`/api/`)`` with `priority=3`; `tally-web` = the same host part `&& !PathPrefix(`/api/`)` with `priority=2`. The explicit low priorities are required: Traefik ranks by rule length by default, so Tally's long wildcard rule would otherwise outrank Sidecup's `Host(`tiendouong.sidecup.app`)` routers and take their traffic. Unescaped dots of `${DOMAIN}` in the regex are harmless: only `sidecup.app` hosts arrive through the tunnel and `HostContext` re-validates the host exactly (§7.3).
 - Shared network hygiene (as Sidecup): postgres stays on the project network with alias `tally-postgres` and `DATABASE_URL` uses that alias, because other stacks on `homelab` also have services named `api`, `web`, `postgres`; Traefik routes `/api/` straight to the api container, so nginx in `web` never proxies `/api`.
-- Security headers: Traefik middleware `tally-headers` on both routers: HSTS forced (Traefik only sees http) `max-age=31536000; includeSubDomains`, nosniff, `frameDeny`, Referrer-Policy `strict-origin-when-cross-origin`, Permissions-Policy, CSP `default-src 'self'; img-src 'self' data: blob: https://<object-store-host>; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`, empty `Server`.
+- Security headers: Traefik middleware `tally-headers` declared identically on the api and web containers (so neither router depends on the other container) and used by both routers: HSTS forced (Traefik only sees http) `max-age=31536000; includeSubDomains`, nosniff, `frameDeny`, Referrer-Policy `strict-origin-when-cross-origin`, Permissions-Policy, CSP `default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://<object-store-host>; connect-src 'self' https://<object-store-host>; frame-ancestors 'none'; base-uri 'self'; form-action 'self'` (scripts stay `'self'`; `'unsafe-inline'` is limited to styles because the Radix dialog scroll lock injects `<style>` elements at runtime, one with computed content, which neither a hash nor a nonce in a static header can cover), empty `Server`.
 - Cloudflare zone: Always Use HTTPS on (zone-wide, Sidecup hosts are already HTTPS); Redirect Rule `www.sidecup.app/*` → `https://sidecup.app/${1}` (301); Cache Rule "bypass cache" for `/api/*` on `sidecup.app` and `*.sidecup.app`; static assets follow origin `Cache-Control` (nginx marks `index.html` and `sw.js` `no-cache`). The zone SSL mode does not affect tunnel origins.
 - Shared zone with Sidecup: Sidecup customer stacks already use `sidecup.app` hostnames. Those names are listed in `RESERVED_SLUGS` (§7.2), and before adding any new Sidecup hostname the operator checks that no Tally tenant owns that slug (runbook).
 - Known trade-off: Traefik also publishes :80 on the LAN (a homelab-infras choice), so a LAN client could forge `CF-Connecting-IP`. Accepted for a home network; origin hardening (keep or drop the LAN port, firewall) is decided at deploy time.

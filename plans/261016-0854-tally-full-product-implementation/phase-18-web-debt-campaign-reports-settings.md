@@ -1,6 +1,6 @@
 ---
 title: "Phase 18: Web overview, debt, campaigns, reports, settings, onboarding & admin"
-status: todo
+status: in-progress
 priority: P1
 effort: 10d
 dependsOn: [phase-14-web-foundation-design-system, phase-10-debt-cash, phase-12-campaign-crm-notifications-reporting, phase-13-saas-control-settings]
@@ -184,16 +184,29 @@ Modify: `src/app/router.tsx`, `src/app/shell/util-bar.tsx` (badge source), `src/
 
 ## Todo
 
-- [ ] Debt: tables, party drawer, PayDialog + allocation, note, write-off (re-auth)
-- [ ] Advances + allocation; statements + dispute + print; schedule
-- [ ] Dashboard + notifications + util badge
-- [ ] Campaigns + demand; CRM + customer dialog + reorder
-- [ ] Reports ×6 + ReportFilter + saved views + export jobs
-- [ ] Settings ×3 + additions (profile, period lock, ownership, export, closure, tickets, MFA)
-- [ ] Onboarding steps ×7
-- [ ] Admin console pages
-- [ ] Sandbox reset
-- [ ] Unit + e2e tests
+- [x] Debt: tables, party drawer, PayDialog + allocation, note, write-off (re-auth)
+  - Evidence (2026-10-18): `apps/web/src/features/debt` (receivables/payables pages, party drawer, `containers/pay-dialog.tsx` with Decimal `allocation.ts`, debt-note and write-off dialogs; write-off goes reauth → `debt_write_off` exception with one Idempotency-Key); tests `allocation.test.ts`, `containers/*.test.tsx`, `pages/receivables-page.test.tsx`.
+- [x] Advances + allocation; statements + dispute + print; schedule
+  - Evidence (2026-10-18): `features/debt/pages/{advances,statements,schedule,print-statement}-page.tsx`, PT/PC/DS/DN openers in `features/debt/doc-openers.ts`; tests in `features/debt/pages/*.test.tsx`.
+- [x] Dashboard + notifications + util badge
+  - Evidence (2026-10-18): `features/dashboard` (`GET /reports/dashboard`, period in the URL), `features/notifications` (chips per kind incl. "Lỗi đồng bộ POS", read/resolve/snooze refresh the util-bar unread count); tests `pages/dashboard-page.test.tsx`, `pages/notifications-page.test.tsx`.
+- [x] Campaigns + demand; CRM + customer dialog + reorder
+  - Evidence (2026-10-18): `features/campaign` (cards, activate/close with If-Match, checklist PATCH, demand table), `features/crm` (list, customer dialog with consents, reorder drafts); tests `campaign/**/*.test.ts(x)`, `crm/**/*.test.ts(x)`.
+- [x] Reports ×6 + ReportFilter + saved views + export jobs
+  - Evidence (2026-10-18): `features/reports` (six pages, cursor paging keeping first-page totals, filter in the URL, saved reports CRUD, `use-export-job.ts` with bounded polling, cancel and expiry); tests `features/reports/**/*.test.ts(x)`.
+- [x] Settings ×3 + additions (profile, period lock, ownership, export, closure, tickets, MFA)
+  - Evidence (2026-10-18): `features/settings/pages/{account,account-closure,subscription,audit-log}-page.tsx` with owner, devices, TOTP (re-auth), store profile, period lock (reopen = re-auth + `period_reopen` exception), owner transfer, full export, closure lifecycle, plan cards, current subscription, support access grant/revoke, support tickets; audit log cursor pages of 200; tests `features/settings/pages/*.test.tsx`.
+- [x] Onboarding steps ×7
+  - Evidence (2026-10-18): `features/onboarding/steps/*-step.tsx` (seven bodies, skip only on `catalog_setup`/`first_sale`, opening steps behind the cut-off gate); tests `pages/onboarding-page.test.tsx`, `steps/opening-balances.test.tsx`.
+- [x] Admin console pages
+  - Evidence (2026-10-18): `features/admin/pages/*` (tenants, tenant, usage, invoices, incidents, feature flags, support, ticket, support view, partners) on its own client (`shared/api/schema-admin.d.ts`, `gen:api:admin`) and session; dark header in `app/layouts/admin-shell.tsx`; typed confirmation for destructive actions; session from `GET /me` (`adminGetMe`, `useAdminSession`) with the admin name in the header and "Giao cho tôi" on tickets; 429 on login in `features/auth/pages/admin-login-page.test.tsx`; tests `features/admin/**/*.test.tsx` cover every console page.
+- [x] Sandbox reset
+  - Evidence (2026-10-18): already in `app/layouts/util-bar.tsx` (`POST /tenant/sandbox/reset`), covered by `app/layouts/app-shell.test.tsx`; no change needed.
+- [ ] Unit + e2e tests (unit done; e2e written, not run)
+  - Evidence (2026-10-18): unit tests for debt, dashboard, notifications, campaign, crm and reports pass (`apps/web` 106 files / 715 tests after the review fixes, 3 consecutive green runs; typecheck and lint clean). Review fixes: export job kept in an app-level store (`features/reports/export-job-store.ts`, job id in sessionStorage) and downloadable from the `export_ready` notification; server error codes always read in Vietnamese with a generic fallback (`shared/api/api-error.ts`, feature adapters); field errors marked in debt and campaign dialogs (`features/debt/field-errors.ts`); per-row reads bounded by `shared/lib/concurrency.ts`; header payment picks any party through server search; `shared/ui/period-bar.test.tsx` added. Details and API gaps: `plans/reports/fullstack-developer-261018-1230-web-debt-campaign-reports.md` (Review fixes). E2E specs `apps/web/e2e/{debt,overview,campaigns,reports}.spec.ts` are written but not run (no `E2E_OWNER_PASSWORD`). Settings, onboarding and admin: `apps/web` 122 files / 842 tests, 2 consecutive green runs, typecheck and lint clean; Vietnamese texts for the store/platform error codes in `shared/api/api-error.ts`; E2E `apps/web/e2e/{settings,onboarding,admin}.spec.ts` written but not run. Details and API gaps: `plans/reports/fullstack-developer-261018-2040-web-settings-onboarding-admin.md`.
+  - Review fixes (2026-10-19, after `plans/reports/code-reviewer-261018-2300-web-settings-onboarding-admin-review.md`): the onboarding gate lets `/catalog/*` through and the opening-debt step creates a customer in place (`features/crm/containers/customer-quick-dialog.tsx`); "Đổi mật khẩu" (`POST /auth/password`) and "Đăng xuất các thiết bị khác" (`POST /sessions:revoke-all`) under re-auth; owner transfer sends the invite only, per ORG-07; the business date runs on the server clock offset and turns at the store's midnight (`shared/api/platform-queries.ts`); one `GET /tenant` cache; add-ons in force read from `SubscriptionView.addons`; `POST /data-exports` and `subscription:change` send one Idempotency-Key per intent; tests run with `testTimeout` 15 s and no query retry. `apps/web` 130 files / 908 tests, two consecutive green runs by the lead, typecheck and lint clean.
+  - API adoption (2026-10-19, report `plans/reports/fullstack-developer-261019-0242-web-adopt-api-gaps.md`): advances from `GET /payments?unallocated=true`, PT/PC/DN/BT drawers from their detail routes, statements and CRM from list fields (no per-row reads), revenue by customer in pages of 100 `customer_ids`, notifications follow `action_path`, "Nhắc lại mai" on server time, export jobs (report CSV and full data export) found again through `GET /export-jobs`, dashboard by-category cash, next due dates and season cards; the three OPEN-13 cost tiles stay without numbers. Idempotency-Key per intent on customers, consents, reorder drafts, statements and collection notes. `apps/web` 132 files / 948 tests, 10 consecutive green runs (agent).
+  - Current gate (2026-10-19, lead): `apps/web` typecheck, lint and vitest green (156 files / 1109 tests). The e2e specs above are still not run, so this item stays open.
 
 ## Success criteria & verification
 

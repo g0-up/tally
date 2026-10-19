@@ -57,7 +57,8 @@ CREATE TABLE stock_moves (                            -- append-only
   CHECK ((move_type = 'cost_adjustment') = (qty = 0)),
   FOREIGN KEY (tenant_id, lot_id) REFERENCES lots (tenant_id, id),
   FOREIGN KEY (tenant_id, sku_id) REFERENCES skus (tenant_id, id),
-  FOREIGN KEY (tenant_id, reversal_of) REFERENCES stock_moves (tenant_id, id)
+  FOREIGN KEY (tenant_id, reversal_of) REFERENCES stock_moves (tenant_id, id),
+  FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouses (tenant_id, id)
 );
 CREATE INDEX ix_stock_moves__card ON stock_moves (tenant_id, sku_id, business_date, id);   -- stock card (INV-10)
 CREATE INDEX ix_stock_moves__doc ON stock_moves (tenant_id, doc_type, doc_id);             -- trace back
@@ -113,7 +114,8 @@ CREATE TABLE reservations (                           -- per SKU, not per color 
   UNIQUE (tenant_id, id),
   UNIQUE (tenant_id, source_type, source_id),
   CHECK (consumed_qty + released_qty <= qty),
-  FOREIGN KEY (tenant_id, sku_id) REFERENCES skus (tenant_id, id)
+  FOREIGN KEY (tenant_id, sku_id) REFERENCES skus (tenant_id, id),
+  FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouses (tenant_id, id)
 );
 CREATE INDEX ix_reservations__sku_active ON reservations (tenant_id, sku_id) WHERE status = 'active';
 ```
@@ -135,7 +137,8 @@ CREATE TABLE stock_counts (                           -- KK (INV-05)
   created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL, version int NOT NULL DEFAULT 1,
   UNIQUE (tenant_id, id), UNIQUE (tenant_id, doc_no),
   UNIQUE (tenant_id, idempotency_key),
-  FOREIGN KEY (tenant_id, category_id) REFERENCES categories (tenant_id, id)
+  FOREIGN KEY (tenant_id, category_id) REFERENCES categories (tenant_id, id),
+  FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouses (tenant_id, id)
 );
 
 CREATE TABLE stock_count_lines (                      -- one line per SKU × color (× lot when tracked)
@@ -172,7 +175,8 @@ CREATE TABLE stock_adjustments (                      -- DC (INV-06, INV-11, ope
   UNIQUE (tenant_id, id), UNIQUE (tenant_id, doc_no), UNIQUE (tenant_id, idempotency_key),
   CHECK ((kind = 'count') = (stock_count_id IS NOT NULL)),
   FOREIGN KEY (tenant_id, reason_id) REFERENCES reasons (tenant_id, id),
-  FOREIGN KEY (tenant_id, stock_count_id) REFERENCES stock_counts (tenant_id, id)
+  FOREIGN KEY (tenant_id, stock_count_id) REFERENCES stock_counts (tenant_id, id),
+  FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouses (tenant_id, id)
 );
 
 CREATE TABLE stock_adjustment_lines (
@@ -245,7 +249,8 @@ CREATE TABLE receipts (                               -- PN (PUR-03/04/05/07)
   UNIQUE (tenant_id, id), UNIQUE (tenant_id, doc_no), UNIQUE (tenant_id, idempotency_key),
   CHECK (paid_now_amount <= total_amount),
   FOREIGN KEY (tenant_id, supplier_party_id) REFERENCES supplier_profiles (tenant_id, party_id),
-  FOREIGN KEY (tenant_id, purchase_order_id) REFERENCES purchase_orders (tenant_id, id)
+  FOREIGN KEY (tenant_id, purchase_order_id) REFERENCES purchase_orders (tenant_id, id),
+  FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouses (tenant_id, id)
 );
 CREATE INDEX ix_receipts__supplier_date ON receipts (tenant_id, supplier_party_id, business_date);
 
@@ -329,7 +334,8 @@ CREATE TABLE purchase_returns (                       -- XT (PUR-09)
   UNIQUE (tenant_id, id), UNIQUE (tenant_id, doc_no), UNIQUE (tenant_id, idempotency_key),
   FOREIGN KEY (tenant_id, supplier_party_id) REFERENCES supplier_profiles (tenant_id, party_id),
   FOREIGN KEY (tenant_id, receipt_id) REFERENCES receipts (tenant_id, id),
-  FOREIGN KEY (tenant_id, reason_id) REFERENCES reasons (tenant_id, id)
+  FOREIGN KEY (tenant_id, reason_id) REFERENCES reasons (tenant_id, id),
+  FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouses (tenant_id, id)
 );
 
 CREATE TABLE purchase_return_lines (                  -- exact lot and color of the receipt line

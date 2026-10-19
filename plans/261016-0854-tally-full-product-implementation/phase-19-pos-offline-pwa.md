@@ -1,6 +1,6 @@
 ---
 title: "Phase 19: POS offline & PWA"
-status: todo
+status: in-progress
 priority: P1
 effort: 6d
 dependsOn: [phase-16-web-sales-pos]
@@ -110,16 +110,46 @@ Modify: `apps/web/vite.config.ts` (plugin), `apps/web/src/main.tsx` (register SW
 
 ## Todo
 
-- [ ] PWA plugin, manifest, icons, service worker, update prompt
-- [ ] IndexedDB schema + wipe rules
-- [ ] Offline bundle repository + refresh
-- [ ] Connectivity hook (onLine + heartbeat)
-- [ ] Offline sale service with caps and cash-only rules
-- [ ] Outbox + sync service with backoff and re-auth gate
-- [ ] Banner, queue callout, pending list, exception callout + drawer
-- [ ] Offline policy card + notification chip
-- [ ] Dev/sandbox simulation toggle
-- [ ] Unit + e2e tests
+- [ ] PWA plugin, manifest, icons, service worker, update prompt (coded, update prompt unit-tested; bundle build that emits the manifest and service worker not run)
+- [x] IndexedDB schema + wipe rules
+- [x] Offline bundle repository + refresh
+- [x] Connectivity hook (onLine + heartbeat)
+- [x] Offline sale service with caps and cash-only rules
+- [x] Outbox + sync service with backoff and re-auth gate
+- [x] Banner, queue callout, pending list, exception callout + drawer
+- [x] Offline policy card + notification chip (chip "Lỗi đồng bộ POS" on the notifications page, `features/notifications/pages/notifications-page.test.tsx`)
+- [x] Dev/sandbox simulation toggle
+- [ ] Unit + e2e tests (unit green, web vitest 156 files / 1109 tests on 2026-10-19; `e2e/pos-offline.spec.ts` written, not run)
+
+Evidence (2026-10-18): unit tests in `apps/web/src/features/pos/offline/**` and
+`apps/web/src/features/settings/components/offline-policy-card.test.tsx`; `corepack pnpm lint` and
+`test` green in `apps/web` (62 files, 416 tests); `typecheck` is clean for these files (the only
+errors are in `src/features/inventory/containers/color-price-dialog.test.tsx`, outside this phase).
+Still open: the PWA item is coded (`vite.config.ts`, `src/sw.ts`, `public/icons/*`, update prompt
+tested), but the bundle build that generates the manifest and service worker was not run. The
+policy card is done; the notification chip belongs to the overview. Playwright
+`e2e/pos-offline.spec.ts` is written and listed, but not run: it needs the local stack and
+`E2E_OWNER_PASSWORD`. The sync endpoint is `POST /pos/offline-sync` (OpenAPI), not
+`/pos-offline-sales`. Report: `plans/reports/fullstack-developer-261018-0955-pos-offline-pwa.md`.
+
+Review fixes (2026-10-18, after `plans/reports/code-reviewer-261018-1030-pos-offline-pwa-review.md`):
+- An online checkout without an answer is kept as an intent in IndexedDB and resent with the same key
+  before the outbox, and its cart cannot be sold offline, so a lost response never posts twice.
+- Only network errors switch to offline; server errors wait for the backoff.
+- A sale refused for good, or failing five times, is set aside without blocking the queue.
+- The cumulative cap is checked inside the outbox write.
+- Sync requests time out after 15 s.
+- A 5xx at boot opens the offline POS.
+- Offline selling is blocked when prices exclude tax, when a named customer is chosen, or when the
+  server could round the total differently.
+Re-verified with phases 15–17: typecheck, lint and test green (76 files, 492 tests).
+
+Accepted deviations (2026-10-18, to confirm with the owner):
+- Logout keeps unsynced sales on the device; they sync only after signing back in to the same store.
+- Discarding a parked sale asks for confirmation only, since the API takes no reason and no re-auth.
+- A cleared cart whose checkout had no answer is still resent, so the sale posts at most once and its
+  number is shown.
+
 
 ## Success criteria & verification
 

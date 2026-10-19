@@ -1,6 +1,6 @@
 ---
 title: "Phase 09: Sales, POS, Returns & Exchanges"
-status: todo
+status: done
 priority: P1
 effort: 9d
 dependsOn: [phase-06-pricing, phase-07-inventory-ledger, phase-10-debt-cash]
@@ -102,18 +102,18 @@ Routes (`/api/v1`): quotes `GET/POST /quotes`, `GET/PATCH/DELETE /quotes/{id}`, 
 
 ## Todo
 
-- [ ] Shared sales line model + mix pack expander + pricing adapter
-- [ ] Quotes (status, expiry, copy, convert)
-- [ ] Invoices draft + paid amount + payment state
-- [ ] Confirm (color/min price/credit, reservation/backorder, version 1)
-- [ ] Revise + cancel remainder
-- [ ] Stock out → BH + receivable + advance consumption
-- [ ] POS checkout + implicit shift + carts
-- [ ] Returns (color from source, quarantine, credit/refund)
-- [ ] Exchanges (preview + composite posting)
-- [ ] Offline sync + exception queue
-- [ ] Print payloads
-- [ ] Integration tests + ledger verify + OpenAPI
+- [x] Shared sales line model + mix pack expander + pricing adapter
+- [x] Quotes (status, expiry, copy, convert)
+- [x] Invoices draft + paid amount + payment state
+- [x] Confirm (color/min price/credit, reservation/backorder, version 1)
+- [x] Revise + cancel remainder
+- [x] Stock out → BH + receivable + advance consumption
+- [x] POS checkout + implicit shift + carts
+- [x] Returns (color from source, quarantine, credit/refund)
+- [x] Exchanges (preview + composite posting)
+- [x] Offline sync + exception queue
+- [x] Print payloads
+- [x] Integration tests + ledger verify + OpenAPI
 
 ## Success criteria & verification
 

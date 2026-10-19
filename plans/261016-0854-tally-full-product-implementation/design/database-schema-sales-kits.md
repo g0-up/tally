@@ -24,6 +24,8 @@ On sales line tables the snapshot block relaxes `sku_id` and `sku_code_snap` to 
 
 Calculation order (PRD §7.3) is one Go type, `pricing.DocumentCalculator`: line price → line discount → allocate order discount by eligible value → tax base per `tenant_settings.prices_include_tax` → rounding per `rounding_mode` with remainder on the largest line. Mix packs: `mix_pack` line carries the pack price and pack count; flavor children carry parts and are what posting turns into stock moves (§7.10). Migrations: `000015_sales_quotes_invoices`, `000016_sales_stock_outs_documents`, `000017_sales_pos`, `000018_sales_returns_exchanges`, `000019_kits`.
 
+The `campaign_id` columns on `quotes`, `invoices`, `sales_documents`, `sales_document_lines` and `assembly_orders` are created here without a constraint because `campaigns` does not exist yet; the campaign migration (`000023_campaign_crm`) adds the composite `fk_<table>__campaign_id` to each of them (see [debt, cash, CRM & SaaS](database-schema-debt-cash-crm-saas.md) §3), and its down migration drops them first.
+
 ## 1. Quotes (PRC-05)
 
 ```sql
@@ -125,7 +127,8 @@ CREATE TABLE stock_outs (                             -- PX: posted on creation,
   idempotency_key text NOT NULL, posted_at timestamptz NOT NULL, posted_by uuid NOT NULL, reversal_of uuid,
   created_at timestamptz NOT NULL,
   UNIQUE (tenant_id, id), UNIQUE (tenant_id, doc_no), UNIQUE (tenant_id, idempotency_key),
-  FOREIGN KEY (tenant_id, invoice_id) REFERENCES invoices (tenant_id, id)
+  FOREIGN KEY (tenant_id, invoice_id) REFERENCES invoices (tenant_id, id),
+  FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouses (tenant_id, id)
 );
 
 CREATE TABLE stock_out_lines (
@@ -248,7 +251,8 @@ CREATE TABLE sales_returns (                          -- TH
   UNIQUE (tenant_id, id), UNIQUE (tenant_id, doc_no), UNIQUE (tenant_id, idempotency_key),
   CHECK (debt_reduction_amount + refund_due_amount = total_amount),
   FOREIGN KEY (tenant_id, sales_document_id) REFERENCES sales_documents (tenant_id, id),
-  FOREIGN KEY (tenant_id, reason_id) REFERENCES reasons (tenant_id, id)
+  FOREIGN KEY (tenant_id, reason_id) REFERENCES reasons (tenant_id, id),
+  FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouses (tenant_id, id)
 );
 
 CREATE TABLE sales_return_lines (
@@ -347,7 +351,8 @@ CREATE TABLE assembly_orders (                        -- LD (KIT-04/05/06/07)
   created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL, version int NOT NULL DEFAULT 1,
   UNIQUE (tenant_id, id), UNIQUE (tenant_id, doc_no),
   FOREIGN KEY (tenant_id, kit_recipe_id) REFERENCES kit_recipes (tenant_id, id),
-  FOREIGN KEY (tenant_id, invoice_id) REFERENCES invoices (tenant_id, id)
+  FOREIGN KEY (tenant_id, invoice_id) REFERENCES invoices (tenant_id, id),
+  FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouses (tenant_id, id)
 );
 
 CREATE TABLE assembly_order_items (                   -- planned components; substitutions recorded here (KIT-05)
@@ -404,7 +409,8 @@ CREATE TABLE disassemblies (                          -- + TG (KIT-06)
   UNIQUE (tenant_id, id), UNIQUE (tenant_id, doc_no), UNIQUE (tenant_id, idempotency_key),
   FOREIGN KEY (tenant_id, assembly_order_id) REFERENCES assembly_orders (tenant_id, id),
   FOREIGN KEY (tenant_id, kit_lot_id) REFERENCES lots (tenant_id, id),
-  FOREIGN KEY (tenant_id, reason_id) REFERENCES reasons (tenant_id, id)
+  FOREIGN KEY (tenant_id, reason_id) REFERENCES reasons (tenant_id, id),
+  FOREIGN KEY (tenant_id, warehouse_id) REFERENCES warehouses (tenant_id, id)
 );
 
 CREATE TABLE disassembly_lines (                      -- back to the exact lot + color used (from lot_genealogy)

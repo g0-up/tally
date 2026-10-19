@@ -107,7 +107,7 @@ CREATE TABLE products (
   FOREIGN KEY (tenant_id, category_id) REFERENCES categories (tenant_id, id),
   FOREIGN KEY (tenant_id, attribute_set_id) REFERENCES attribute_sets (tenant_id, id)
 );
-CREATE INDEX ix_products__attributes ON products USING gin (attributes jsonb_path_ops);
+CREATE INDEX ix_products__attributes ON products USING gin (attributes jsonb_path_ops);   -- the one tenant index not led by tenant_id: GIN needs btree_gin (an extension) to carry it
 CREATE INDEX ix_products__category ON products (tenant_id, category_id, status);
 
 CREATE TABLE product_variant_axes (
@@ -269,7 +269,8 @@ CREATE TABLE price_list_items (
   FOREIGN KEY (tenant_id, price_list_id) REFERENCES price_lists (tenant_id, id),
   FOREIGN KEY (tenant_id, sku_id) REFERENCES skus (tenant_id, id),
   FOREIGN KEY (tenant_id, color_id) REFERENCES colors (tenant_id, id),
-  FOREIGN KEY (tenant_id, unit_id) REFERENCES units (tenant_id, id)
+  FOREIGN KEY (tenant_id, unit_id) REFERENCES units (tenant_id, id),
+  UNIQUE (tenant_id, id)
 );
 CREATE INDEX ix_price_list_items__sku ON price_list_items (tenant_id, sku_id, price_list_id);
 
@@ -282,7 +283,8 @@ CREATE TABLE price_changes (                          -- append-only
   created_at timestamptz NOT NULL,                    -- Δ no DEFAULT now()
   CHECK (old_price IS NOT NULL OR new_price IS NOT NULL),
   FOREIGN KEY (tenant_id, price_list_id) REFERENCES price_lists (tenant_id, id),
-  FOREIGN KEY (tenant_id, sku_id) REFERENCES skus (tenant_id, id)
+  FOREIGN KEY (tenant_id, sku_id) REFERENCES skus (tenant_id, id),
+  UNIQUE (tenant_id, id)
 );
 CREATE INDEX ix_price_changes__sku ON price_changes (tenant_id, sku_id, created_at DESC);
 REVOKE UPDATE, DELETE ON price_changes FROM tally_app;
@@ -325,7 +327,8 @@ CREATE TABLE promotion_items (                        -- scope SKUs, gift SKUs, 
   sku_id uuid NOT NULL, qty numeric(18,4) NOT NULL DEFAULT 1 CHECK (qty > 0),
   UNIQUE (tenant_id, promotion_id, role, sku_id),
   FOREIGN KEY (tenant_id, promotion_id) REFERENCES promotions (tenant_id, id),
-  FOREIGN KEY (tenant_id, sku_id) REFERENCES skus (tenant_id, id)
+  FOREIGN KEY (tenant_id, sku_id) REFERENCES skus (tenant_id, id),
+  UNIQUE (tenant_id, id)
 );
 
 CREATE TABLE promotion_usages (                       -- usage_limit accounting; one row per applied doc

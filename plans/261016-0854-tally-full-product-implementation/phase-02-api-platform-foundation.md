@@ -1,6 +1,6 @@
 ---
 title: "Phase 02: API Platform Foundation"
-status: todo
+status: done
 priority: P1
 effort: 5d
 dependsOn: [phase-01-monorepo-docker-infra]
@@ -125,18 +125,18 @@ func (b Builder) Admin(path string) string
 
 ## Todo
 
-- [ ] config, logging, metrics
-- [ ] db pool + WithTenantTx/WithPlatformTx/WithReadOnlyTenantTx + version helper
-- [ ] money/qty/factor/percent, clock, ids, textnorm with tests
-- [ ] apperr + httpx (render, bind, pagination, etag)
-- [ ] middleware chain with interface seams
-- [ ] idempotency guard, docseq issuer, periodlock guard, audit recorder
-- [ ] outbox publisher + dispatcher + worker command
-- [ ] posting coordinator + lock ordering + replay test
-- [ ] objectstore (S3/MinIO) + mailer (SMTP) adapters
-- [ ] testkit (postgres container, fixtures, fixed clock)
-- [ ] openapi.yaml skeleton + contract test
-- [ ] CLI serve/worker/migrate/healthcheck with production backup guard
+- [x] config, logging, metrics
+- [x] db pool + WithTenantTx/WithPlatformTx/WithReadOnlyTenantTx + version helper
+- [x] money/qty/factor/percent, clock, ids, textnorm with tests
+- [x] apperr + httpx (render, bind, pagination, etag)
+- [x] middleware chain with interface seams
+- [x] idempotency guard, docseq issuer, periodlock guard, audit recorder
+- [x] outbox publisher + dispatcher + worker command
+- [x] posting coordinator + lock ordering + replay test
+- [x] objectstore (S3/MinIO) + mailer (SMTP) adapters
+- [x] testkit (postgres container, fixtures, fixed clock)
+- [x] openapi.yaml skeleton + contract test
+- [x] CLI serve/worker/migrate/healthcheck with production backup guard
 
 ## Success criteria & verification
 
