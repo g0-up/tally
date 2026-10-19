@@ -124,4 +124,32 @@ describe("Combobox", () => {
     await user.type(input(), "xyz");
     expect(screen.getByText("Không tìm thấy “xyz”.")).toBeInTheDocument();
   });
+
+  it("offers the typed text for creation after the matches, reachable by keyboard", async () => {
+    const onCreate = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(<Combobox items={ITEMS} value={null} onChange={() => undefined} onCreate={onCreate} createLabel={(t) => `+ Tạo hàng mới “${t}”`} />);
+    await user.click(await screen.findByRole("combobox"));
+    await user.type(input(), " Kẹo gừng ");
+    expect(screen.getByText("Không tìm thấy “ Kẹo gừng ”.")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "+ Tạo hàng mới “Kẹo gừng”" })).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{Enter}");
+    expect(onCreate).toHaveBeenCalledWith("Kẹo gừng");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+    await user.clear(input());
+    await user.type(input(), "keo");
+    const options = screen.getAllByRole("option");
+    expect(options.at(-1)).toHaveAccessibleName("+ Tạo hàng mới “keo”");
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{ArrowUp}{Enter}");
+    expect(onCreate).toHaveBeenLastCalledWith("keo");
+  });
+
+  it("offers no creation without onCreate or typed text", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Combobox items={ITEMS} value={null} onChange={() => undefined} onCreate={() => undefined} />);
+    await user.click(await screen.findByRole("combobox"));
+    expect(screen.queryByRole("option", { name: /Tạo mới/ })).not.toBeInTheDocument();
+  });
 });

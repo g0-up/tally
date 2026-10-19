@@ -39,6 +39,10 @@ export interface ComboboxProps extends Source {
   onChange: (item: ComboItem) => void;
   /** Extra client-side restriction on candidates. */
   filter?: (item: ComboItem) => boolean;
+  /** Offers the typed text as a last option ("+ Tạo mới …") for something not in the list yet. */
+  onCreate?: (text: string) => void;
+  /** Text of that option for the typed text. */
+  createLabel?: (text: string) => string;
   placeholder?: string;
   /** Defaults to a generic name, except inside a `Field`, whose visible label names it. */
   "aria-label"?: string;
@@ -83,6 +87,8 @@ export function Combobox({
   valueLabel,
   onChange,
   filter,
+  onCreate,
+  createLabel = (t) => `+ Tạo mới “${t}”`,
   placeholder,
   "aria-label": ariaLabel,
   "aria-describedby": describedBy,
@@ -143,8 +149,11 @@ export function Combobox({
   const shown = open ? text : selectedLabel;
 
   const n = results.length;
+  /** Typed text offered for creation once its results are in; its option comes after the results. */
+  const createText = onCreate && typed && fresh && !remote.isError ? text.trim() : "";
+  const count = n + (createText ? 1 : 0);
   const defaultIdx = typed ? 0 : Math.max(0, results.findIndex((x) => x.id === value));
-  const idx = n === 0 ? -1 : Math.min(cursor ?? defaultIdx, n - 1);
+  const idx = count === 0 ? -1 : Math.min(cursor ?? defaultIdx, count - 1);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -157,6 +166,16 @@ export function Combobox({
     setPicked(item);
     close();
     onChange(item);
+  };
+
+  const create = () => {
+    close();
+    onCreate?.(createText);
+  };
+
+  const pick = (i: number) => {
+    if (i < n) choose(results[i]);
+    else if (createText) create();
   };
 
   useLayoutEffect(() => {
@@ -211,16 +230,16 @@ export function Combobox({
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
-        if (n) setCursor((idx + 1) % n);
+        if (count) setCursor((idx + 1) % count);
         break;
       case "ArrowUp":
         e.preventDefault();
-        if (n) setCursor((idx - 1 + n) % n);
+        if (count) setCursor((idx - 1 + count) % count);
         break;
       case "Enter":
         e.preventDefault();
         e.stopPropagation();
-        if (idx >= 0) choose(results[idx]);
+        if (idx >= 0) pick(idx);
         break;
       case "Escape":
         e.preventDefault();
@@ -257,7 +276,7 @@ export function Combobox({
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={open}
-        aria-controls={open && n ? listId : undefined}
+        aria-controls={open && count ? listId : undefined}
         aria-activedescendant={open && idx >= 0 ? optionId(idx) : undefined}
         aria-label={ariaLabel ?? (inField ? undefined : defaultLabel)}
         {...field}
@@ -297,7 +316,8 @@ export function Combobox({
           style={pos ? { left: pos.left, top: pos.top, width: pos.width } : undefined}
           onMouseDown={(e) => e.preventDefault()}
         >
-          {n ? (
+          {n === 0 && !failed && !loading ? <div className="cbx-empty">{comboEmptyText(text)}</div> : null}
+          {count ? (
             <div role="listbox" id={listId} aria-label={ariaLabel ?? defaultLabel}>
               {results.map((x, i) => (
                 <button
@@ -322,6 +342,22 @@ export function Combobox({
                   {x.detail ? <small>{x.detail}</small> : null}
                 </button>
               ))}
+              {createText ? (
+                <button
+                  id={optionId(n)}
+                  type="button"
+                  className="cbx-opt cbx-create"
+                  role="option"
+                  tabIndex={-1}
+                  aria-selected={idx === n}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    create();
+                  }}
+                >
+                  <b>{createLabel(createText)}</b>
+                </button>
+              ) : null}
             </div>
           ) : null}
           {failed ? (
@@ -330,8 +366,6 @@ export function Combobox({
             </div>
           ) : loading ? (
             <div className="cbx-empty">{COMBO_LOADING}</div>
-          ) : n === 0 ? (
-            <div className="cbx-empty">{comboEmptyText(text)}</div>
           ) : n === COMBO_MAX_RESULTS ? (
             <div className="cbx-empty">{COMBO_MORE_HINT}</div>
           ) : null}
