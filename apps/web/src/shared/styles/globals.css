@@ -445,7 +445,6 @@ a.kpi { text-decoration: none; }
 .onb input:disabled { background: var(--surface-100); color: var(--gray-600); }
 .onb .btn[disabled]:not([aria-busy]) { cursor: not-allowed; }
 .onb .check { align-items: center; min-height: 44px; cursor: pointer; }
-.onb .check input { width: 20px; height: 20px; flex: none; margin: 0; }
 .onb .chip { min-height: 40px; padding: 8px 14px; }
 .onb-cut { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 14px 20px; align-items: start; }
 .onb-seg { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -486,8 +485,7 @@ a.kpi { text-decoration: none; }
   .onb-cut { grid-template-columns: minmax(0, 1fr); }
   .onb-prog { min-width: 0; width: 100%; }
   .onb .f input, .onb .f select, .onb .f textarea, .onb .in { font-size: 16px; }
-  .onb .btn, .onb-out, .onb .chip { min-height: 44px; }
-  .onb .btn-row > .lnk { display: inline-flex; align-items: center; min-height: 44px; }
+  .onb-out, .onb .chip { min-height: 44px; }
 }
 @media (max-width: 520px) { .onb-top .who { display: none; } }
 .onb-foot .onb-nav { justify-content: flex-end; }
@@ -507,8 +505,9 @@ a.kpi { text-decoration: none; }
 /* Keep focused fields clear of the sticky util bar when the page scrolls to them. */
 html { scroll-padding-top: 72px; }
 /* Skip link: hidden until focused, then the first thing on the page. */
-.skip-link { position: absolute; left: 8px; top: -200px; z-index: 80; background: var(--navy-700); color: var(--surface-0); padding: 10px 16px; font-weight: 600; text-decoration: none; }
+.skip-link { position: absolute; left: 8px; top: -200px; z-index: 80; display: inline-flex; align-items: center; min-height: 44px; background: var(--navy-700); color: var(--surface-0); padding: 10px 16px; font-weight: 600; text-decoration: none; }
 .skip-link:focus { top: 8px; }
+.skip-link:not(:focus) { width: 1px; height: 1px; min-height: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 main.view:focus { outline: none; }
 /* Sidebar group: the name links to the group's first screen, the chevron folds its links. */
 .nav-gr { display: flex; align-items: stretch; }
@@ -518,23 +517,47 @@ main.view:focus { outline: none; }
 .nav-tg { flex: none; width: 44px; background: none; border: 0; color: var(--surface-blue-100); cursor: pointer; font-size: 12px; }
 .nav-tg:hover { background: var(--on-navy-hover); color: var(--surface-0); }
 /* Every target is at least 24x24 CSS px. */
-.lnk, .btn-sm, .cp, .chip, .x, .dp-btn, .bell { min-height: 24px; }
-button.lnk, .dp-btn { min-width: 24px; }
+.lnk, .btn-sm, .cp, .chip, .x, .dp-btn, .bell, .auth-links a { min-height: 24px; }
+button.lnk, a.lnk, .dp-btn { min-width: 24px; }
+a.lnk, .auth-links a { display: inline-flex; align-items: center; }
+/* A native checkbox grows with its box, so the box is transparent and the square is drawn on it:
+   a 16px square in a 24px box here, 20px in 44px on narrow screens and touch pointers. The box
+   overlaps its neighbours sideways only, so stacked options never cover each other. The drawn
+   colours are --input-line and --navy-700; a data URI cannot read the tokens. */
+input[type="checkbox"], .onb .check input {
+  --cb-box: 24px; --cb-mark: 16px;
+  appearance: none; flex: none; width: var(--cb-box); height: var(--cb-box); margin: 0 calc((var(--cb-mark) - var(--cb-box)) / 2);
+  border: 0; border-radius: 0; padding: 0; cursor: pointer;
+  background: no-repeat center / var(--cb-mark) var(--cb-mark) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='.75' y='.75' width='18.5' height='18.5' rx='2' fill='%23fff' stroke='%238a8a8a' stroke-width='1.5'/%3E%3C/svg%3E");
+}
+.onb .check input { --cb-mark: 20px; }
+input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect width='20' height='20' rx='2' fill='%23233c65'/%3E%3Cpath d='M5 10.5l3.2 3.2L15 7' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
+input[type="checkbox"]:focus-visible { outline-offset: calc((var(--cb-mark) - var(--cb-box)) / 2 + 2px); }
+/* Forced colours: the native control at the drawn size; the wrapping label stays the large target. */
+@media (forced-colors: active) {
+  input[type="checkbox"], input[type="checkbox"]:checked, .onb .check input { appearance: auto; background: none; width: var(--cb-mark); height: var(--cb-mark); margin: 0; }
+}
 .sw { width: 24px; height: 24px; }
 .toast .toast-x { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; }
 .update-prompt { position: fixed; left: 16px; bottom: 16px; z-index: 60; max-width: 420px; }
 /* Narrow screens and touch pointers: 44px targets, whatever the container. */
 @media (max-width: 860px), (pointer: coarse) {
   .tgl-hit { min-width: 44px; min-height: 44px; margin: -10px; }
-  .btn-sm, button.lnk, .cp, .chip, .x, .dp-btn, .bell, .nav-sub a, .tabs a, .toast .toast-x, .nav-tg { min-height: 44px; }
-  button.lnk, .toast .toast-x, .x, .dp-btn { min-width: 44px; }
+  .btn, .btn-sm, a.lnk, button.lnk, .auth-links a, .cp, .chip, .x, .dp-btn, .bell, .nav-sub a, .tabs a, .toast .toast-x, .nav-tg { min-height: 44px; }
+  a.lnk, button.lnk, .toast .toast-x, .x, .dp-btn, .cp, .chip { min-width: 44px; }
+  .cp, .chip { justify-content: center; }
   .dp .dp-in { padding-right: 52px; }
   .btn-sm, button.lnk, .cp, .chip, .bell, .tabs a { display: inline-flex; align-items: center; }
   .nav-sub a { display: flex; align-items: center; }
   .sw { width: 44px; height: 44px; }
   .f input, .f select, .in, select, .filters input, .filters select, .check { min-height: 44px; }
+  .check { align-items: center; }
   .dp-pop { width: min(340px, calc(100vw - 16px)); }
   .dp-day { min-height: 44px; }
+  input[type="checkbox"], .onb .check input { --cb-box: 44px; --cb-mark: 20px; }
 }
 @media (max-width: 860px) {
   .toasts { left: 16px; right: 16px; max-width: none; }

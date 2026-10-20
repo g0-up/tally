@@ -53,7 +53,7 @@ export function NotFoundPage() {
         <div className="auth-body">
           <h1>{NOT_FOUND_TITLE}</h1>
           <p>Địa chỉ này không có trên cửa hàng. Kiểm tra lại đường dẫn.</p>
-          <p>
+          <p className="auth-links">
             <Link to="/">Về trang đầu</Link>
           </p>
         </div>

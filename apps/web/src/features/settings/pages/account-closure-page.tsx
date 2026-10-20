@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { RequireRecentAuth } from "../../../app/guards/require-recent-auth";
 import { useApiClient } from "../../../shared/api/api-context";
 import { errorMessage } from "../../../shared/api/api-error";
@@ -8,6 +8,7 @@ import { fd } from "../../../shared/lib/format";
 import { Button, ButtonRow } from "../../../shared/ui/button";
 import { Callout } from "../../../shared/ui/callout";
 import { Card } from "../../../shared/ui/card";
+import { TextLink } from "../../../shared/ui/link-button";
 import { PageHeader } from "../../../shared/ui/page-header";
 import { closureRequestSchema, type ClosureRequest } from "../api/account";
 import { settingsKeys } from "../api/tenant-settings";
@@ -60,7 +61,7 @@ export default function AccountClosurePage() {
           </RequireRecentAuth>
         )}
         <p style={{ marginTop: 14 }}>
-          <Link to="/settings/account">Về Tài khoản &amp; bảo mật</Link>
+          <TextLink to="/settings/account">Về Tài khoản &amp; bảo mật</TextLink>
         </p>
       </Card>
     </>
