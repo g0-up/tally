@@ -75,6 +75,7 @@ describe("contrast of the accessibility tokens", () => {
   it.each([
     ["white text on the orange button", "--surface-0", "--accent-orange-strong", 4.5],
     ["white text on the crimson button", "--surface-0", "--accent-crimson-strong", 4.5],
+    ["orange series heading on white", "--accent-orange-strong", "--surface-0", 4.5],
     ["placeholder text", "--placeholder", "--surface-0", 4.5],
     ["secondary text", "--muted-strong", "--surface-0", 4.5],
     ["input borders on white", "--input-line", "--surface-0", 3],

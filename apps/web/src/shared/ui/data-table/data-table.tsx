@@ -1,7 +1,8 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useId, type ReactNode } from "react";
 import { useOneStore } from "../../hooks/use-one-store";
 import { cx } from "../../lib/cx";
 import { TableCaption } from "./table-caption";
+import { TableWrap } from "./table-wrap";
 import { EMPTY_TABLE_TEXT, visibleColumns, type Column, type RowProps } from "./columns";
 
 export type { Column } from "./columns";
@@ -26,20 +27,20 @@ export interface DataTableProps<R> {
 /** Prototype `table()`: `.tw > table.t` with numeric columns, optional footer and empty state. */
 export function DataTable<R>({ caption, columns, rows, rowKey, flat = false, empty, after, rowProps }: DataTableProps<R>) {
   const oneStore = useOneStore();
+  const captionId = useId();
   const cols = visibleColumns(columns, oneStore);
-  const wrap = cx("tw", flat && "flat");
   if (rows.length === 0) {
     return (
-      <div className={wrap}>
+      <div className={cx("tw", flat && "flat")}>
         <div className="empty">{empty ?? EMPTY_TABLE_TEXT}</div>
       </div>
     );
   }
   const hasFooter = cols.some((c) => c.footer !== undefined);
   return (
-    <div className={wrap}>
+    <TableWrap flat={flat} labelledBy={captionId}>
       <table className="t">
-        <TableCaption>{caption}</TableCaption>
+        <TableCaption id={captionId}>{caption}</TableCaption>
         <thead>
           <tr>
             {cols.map((c) => (
@@ -80,6 +81,6 @@ export function DataTable<R>({ caption, columns, rows, rowKey, flat = false, emp
           </tfoot>
         ) : null}
       </table>
-    </div>
+    </TableWrap>
   );
 }

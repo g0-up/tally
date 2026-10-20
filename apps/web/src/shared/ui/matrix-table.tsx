@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
-import { cx } from "../lib/cx";
+import { useId, type ReactNode } from "react";
 import { TableCaption } from "./data-table/table-caption";
+import { TableWrap } from "./data-table/table-wrap";
 
 export interface MatrixTableProps<R, C> {
   caption: ReactNode;
@@ -18,10 +18,11 @@ export interface MatrixTableProps<R, C> {
 
 /** Prototype `.matrix`: dense grid with centred cells and a left-aligned row header column. */
 export function MatrixTable<R, C>({ caption, corner, rows, columns, rowKey, columnKey, rowHeader, columnHeader, cell, flat = false }: MatrixTableProps<R, C>) {
+  const captionId = useId();
   return (
-    <div className={cx("tw", flat && "flat")}>
+    <TableWrap flat={flat} labelledBy={captionId}>
       <table className="t matrix">
-        <TableCaption>{caption}</TableCaption>
+        <TableCaption id={captionId}>{caption}</TableCaption>
         <thead>
           <tr>
             <th scope="col">{corner}</th>
@@ -43,6 +44,6 @@ export function MatrixTable<R, C>({ caption, corner, rows, columns, rowKey, colu
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }

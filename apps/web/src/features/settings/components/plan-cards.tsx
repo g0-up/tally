@@ -51,7 +51,7 @@ export function PlanCards({ currentPlanId, addons: inForce }: { currentPlanId: s
               <p className="hint">{planHint(p)}</p>
               {current ? null : (
                 <ButtonRow style={{ marginTop: 10 }}>
-                  <Button size="sm" aria-label={`Đổi sang gói ${p.name}`} onClick={() => setChangeTo(p)}>
+                  <Button size="sm" aria-label={`Đổi sang gói này: ${p.name}`} onClick={() => setChangeTo(p)}>
                     Đổi sang gói này
                   </Button>
                 </ButtonRow>

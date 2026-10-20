@@ -98,7 +98,7 @@ export function CashBand({ data }: { data: Dashboard }) {
             Thu {vnd(cash.in)}
           </h3>
           <CategoryList items={categoriesOf(cash.by_category, "in")} total={cash.in} />
-          <h3 className="mini-h" style={{ color: "var(--series-2)", marginTop: 16 }}>
+          <h3 className="mini-h" style={{ color: "var(--accent-orange-strong)", marginTop: 16 }}>
             Chi {vnd(cash.out)}
           </h3>
           <CategoryList items={categoriesOf(cash.by_category, "out")} total={cash.out} />

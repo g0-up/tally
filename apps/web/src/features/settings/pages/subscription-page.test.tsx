@@ -67,10 +67,10 @@ describe("SubscriptionPage", () => {
     expect(await screen.findByText(SUBSCRIPTION_LEAD)).toBeInTheDocument();
     const store = await findCard(STORE_PLAN.name);
     expect(within(store).getByText("Đang dùng")).toBeInTheDocument();
-    expect(within(store).queryByRole("button", { name: `Đổi sang gói ${STORE_PLAN.name}` })).not.toBeInTheDocument();
-    expect(within(await findCard(SEASON_PLAN.name)).getByRole("button", { name: `Đổi sang gói ${SEASON_PLAN.name}` })).toBeInTheDocument();
+    expect(within(store).queryByRole("button", { name: `Đổi sang gói này: ${STORE_PLAN.name}` })).not.toBeInTheDocument();
+    expect(within(await findCard(SEASON_PLAN.name)).getByRole("button", { name: `Đổi sang gói này: ${SEASON_PLAN.name}` })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Dùng thử" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: `Đổi sang gói ${ADDON_PLAN.name}` })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: `Đổi sang gói này: ${ADDON_PLAN.name}` })).not.toBeInTheDocument();
     const addons = await screen.findByRole("region", { name: ADDONS_TITLE });
     expect(await within(addons).findByRole("button", { name: `${ADDON_BUY_SUBMIT} ${ADDON_PLAN.name}` })).toBeInTheDocument();
     expect(addons).toHaveTextContent("Giá: 49.000 ₫ / tháng");
@@ -109,7 +109,7 @@ describe("SubscriptionPage", () => {
     const user = userEvent.setup();
     renderApp(PATH);
 
-    await user.click(await screen.findByRole("button", { name: `Đổi sang gói ${SEASON_PLAN.name}` }));
+    await user.click(await screen.findByRole("button", { name: `Đổi sang gói này: ${SEASON_PLAN.name}` }));
     const dialog = await screen.findByRole("dialog", { name: `Đổi sang gói ${SEASON_PLAN.name}` });
     expect(await within(dialog).findByText("850.000 ₫")).toBeInTheDocument();
     expect(dialog).toHaveTextContent("Trừ 140.000 ₫ còn lại của gói Cửa hàng.");
@@ -138,7 +138,7 @@ describe("SubscriptionPage", () => {
     const user = userEvent.setup();
     renderApp(PATH);
 
-    await user.click(await screen.findByRole("button", { name: `Đổi sang gói ${SEASON_PLAN.name}` }));
+    await user.click(await screen.findByRole("button", { name: `Đổi sang gói này: ${SEASON_PLAN.name}` }));
     const dialog = await screen.findByRole("dialog", { name: `Đổi sang gói ${SEASON_PLAN.name}` });
     await user.click(await within(dialog).findByRole("checkbox", { name: ACCEPT_TERMS_LABEL }));
     await user.click(within(dialog).getByRole("button", { name: PLAN_CHANGE_SUBMIT }));
@@ -270,7 +270,7 @@ describe("SubscriptionPage", () => {
       await user.click(within(dialog).getByRole("button", { name: "Hủy" }));
       await waitFor(() => expect(screen.queryByRole("dialog", { name: title })).not.toBeInTheDocument());
     };
-    const season = [`Đổi sang gói ${SEASON_PLAN.name}`, `Đổi sang gói ${SEASON_PLAN.name}`, PLAN_CHANGE_SUBMIT] as const;
+    const season = [`Đổi sang gói này: ${SEASON_PLAN.name}`, `Đổi sang gói ${SEASON_PLAN.name}`, PLAN_CHANGE_SUBMIT] as const;
     await submit(...season);
     await submit(...season);
     await submit(`${ADDON_BUY_SUBMIT} ${ADDON_PLAN.name}`, `${ADDON_BUY_SUBMIT} ${ADDON_PLAN.name}`, ADDON_BUY_SUBMIT);
