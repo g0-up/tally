@@ -95,6 +95,18 @@ func (in *SkuInput) normaliseFields(f fieldErrors, prefix string) {
 	}
 }
 
+// ValidateBarcode answers 422 validation_failed when a trimmed code cannot be a barcode: empty,
+// longer than maxBarcodeLen, or not printable ASCII without spaces.
+func ValidateBarcode(code string) error {
+	if code == "" {
+		return errInvalid(map[string]string{"code": "required"})
+	}
+	if reason := barcodeReason(code); reason != "" {
+		return errInvalid(map[string]string{"code": reason})
+	}
+	return nil
+}
+
 // barcodeReason checks a trimmed barcode: printable ASCII without spaces, at most maxBarcodeLen.
 func barcodeReason(code string) string {
 	if len(code) > maxBarcodeLen {
@@ -222,8 +234,22 @@ func insertSkuUnit(ctx context.Context, q db.Querier, tenantID uuid.UUID, u SkuU
 	return nil
 }
 
+// insertBarcode adds a barcode unless the store already has it under any of its CodeVariants, on
+// any SKU: a scan must resolve to one (SKU, unit). The transaction lock on the canonical form makes
+// two concurrent inserts of variants of one code wait for each other.
 func insertBarcode(ctx context.Context, q db.Querier, tenantID uuid.UUID, b Barcode) (Barcode, error) {
-	_, err := q.ExecContext(ctx, `INSERT INTO sku_barcodes (id, tenant_id, sku_id, unit_id, code, created_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+	if _, err := q.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('sku_barcode:' || $1::text || ':' || $2, 0))`,
+		tenantID, canonicalCode(b.Code)); err != nil {
+		return Barcode{}, fmt.Errorf("catalog: lock barcode: %w", err)
+	}
+	taken, err := exists(ctx, q, `SELECT 1 FROM sku_barcodes WHERE code = ANY($1::text[])`, CodeVariants(b.Code))
+	if err != nil {
+		return Barcode{}, fmt.Errorf("catalog: check barcode: %w", err)
+	}
+	if taken {
+		return Barcode{}, errBarcodeTaken()
+	}
+	_, err = q.ExecContext(ctx, `INSERT INTO sku_barcodes (id, tenant_id, sku_id, unit_id, code, created_at) VALUES ($1, $2, $3, $4, $5, $6)`,
 		b.ID, tenantID, b.SkuID, b.UnitID, b.Code, b.CreatedAt)
 	if db.IsUniqueViolation(err, "ux_sku_barcodes__code") {
 		return Barcode{}, errBarcodeTaken()
@@ -812,11 +838,8 @@ type BarcodeInput struct {
 // AddBarcode adds a barcode; barcodes are unique in the store.
 func (s *Service) AddBarcode(ctx context.Context, actor audit.Actor, skuID uuid.UUID, in BarcodeInput) (Barcode, error) {
 	code := strings.TrimSpace(in.Code)
-	if code == "" {
-		return Barcode{}, errInvalid(map[string]string{"code": "required"})
-	}
-	if reason := barcodeReason(code); reason != "" {
-		return Barcode{}, errInvalid(map[string]string{"code": reason})
+	if err := ValidateBarcode(code); err != nil {
+		return Barcode{}, err
 	}
 	var out Barcode
 	err := s.write(ctx, actor, func(q db.Querier) error {
@@ -841,6 +864,52 @@ func (s *Service) AddBarcode(ctx context.Context, actor audit.Actor, skuID uuid.
 			return err
 		}
 		return s.record(ctx, q, actor, "sku.barcode_add", "sku", skuID, nil, out)
+	})
+	return out, err
+}
+
+// UpdateBarcodeUnit moves a barcode of a SKU to another unit of the same SKU, so the next scan of
+// that code answers the new unit. A barcode already on the unit is returned unchanged and unaudited.
+func (s *Service) UpdateBarcodeUnit(ctx context.Context, actor audit.Actor, skuID, barcodeID, unitID uuid.UUID) (Barcode, error) {
+	if unitID == uuid.Nil {
+		return Barcode{}, errInvalid(map[string]string{"unit_id": "required"})
+	}
+	var out Barcode
+	err := s.write(ctx, actor, func(q db.Querier) error {
+		if _, err := lockSku(ctx, q, skuID); err != nil {
+			return err
+		}
+		// The barcode in the path is looked up before the unit in the body is checked against the SKU,
+		// so a barcode outside this SKU (or this store) answers 404 for any unit_id the body names. A
+		// body without unit_id is refused with 422 above, before any lookup, so that answer says
+		// nothing about which barcodes exist. Barcodes of a SKU change only under its lock, so this
+		// read stays current until the update.
+		var before Barcode
+		err := q.QueryRowxContext(ctx, `SELECT `+barcodeColumns+` FROM sku_barcodes WHERE id = $1 AND sku_id = $2`,
+			barcodeID, skuID).StructScan(&before)
+		if db.IsNoRows(err) {
+			return errNotFound()
+		}
+		if err != nil {
+			return fmt.Errorf("catalog: read barcode: %w", err)
+		}
+		if _, err := readSkuUnit(ctx, q, skuID, unitID); apperrNotFound(err) {
+			return errInvalid(map[string]string{"unit_id": "not_a_unit_of_sku"})
+		} else if err != nil {
+			return err
+		}
+		if before.UnitID == unitID {
+			out = before
+			return nil
+		}
+		if err := q.QueryRowxContext(ctx, `UPDATE sku_barcodes SET unit_id = $1 WHERE id = $2 AND sku_id = $3 RETURNING `+barcodeColumns,
+			unitID, barcodeID, skuID).StructScan(&out); err != nil {
+			return fmt.Errorf("catalog: update barcode unit: %w", err)
+		}
+		if err := s.indexer.Reindex(ctx, q, []uuid.UUID{skuID}); err != nil {
+			return err
+		}
+		return s.record(ctx, q, actor, "sku.barcode_update", "sku", skuID, before, out)
 	})
 	return out, err
 }

@@ -36,6 +36,7 @@ import (
 	"github.com/g0-up/tally/apps/api/internal/reporting"
 	"github.com/g0-up/tally/apps/api/internal/saas"
 	"github.com/g0-up/tally/apps/api/internal/sales"
+	"github.com/g0-up/tally/apps/api/internal/scanner"
 	"github.com/g0-up/tally/apps/api/internal/support"
 )
 
@@ -52,8 +53,8 @@ type RateLimit struct {
 }
 
 // Ports are the middleware seams implemented by domain modules. A nil port gets a closed
-// default: no session ever resolves, no tenant host is known, writes and every module are
-// allowed (no subscription gate) and no tenant is ever held in maintenance.
+// default: no session ever resolves or stays active, no tenant host is known, writes and every
+// module are allowed (no subscription gate) and no tenant is ever held in maintenance.
 type Ports struct {
 	Sessions    middleware.SessionResolver
 	TenantHosts middleware.TenantHostResolver
@@ -68,6 +69,10 @@ type Ports struct {
 	// Maintenance refuses every change of a tenant an operator holds in maintenance, on every
 	// tenant route but the account security ones.
 	Maintenance middleware.MaintenanceReader
+	// LoginSessions tells whether the login session behind an open desktop scanner stream is
+	// still open, by session id (a re-authentication rotates the cookie, not the session) and
+	// without counting the check as use.
+	LoginSessions scanner.LoginSessions
 }
 
 // Options configures New.
@@ -128,6 +133,9 @@ type Modules struct {
 	Analytics *analytics.Handler
 	// Printing serves the print data of every printable document.
 	Printing *printing.Handler
+	// Scanner pairs a phone with a desktop screen as a barcode scanner: the desktop routes on the
+	// tenant chain, the phone routes on the tenant host with the phone's scanner cookie.
+	Scanner *scanner.Handler
 
 	// SaaS serves plans, the subscription, service invoices, the full data export, account
 	// closure and the payment provider callbacks.
@@ -238,6 +246,10 @@ func (noSessions) ResolveSession(context.Context, string) (middleware.Principal,
 	return middleware.Principal{}, false, nil
 }
 
+func (noSessions) SessionActive(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (bool, error) {
+	return false, nil
+}
+
 type unknownTenantHosts struct{}
 
 func (unknownTenantHosts) ResolveSlug(context.Context, string) (uuid.UUID, bool, error) {
@@ -274,6 +286,9 @@ func withDefaults(p Ports) Ports {
 	}
 	if p.Maintenance == nil {
 		p.Maintenance = neverHeld{}
+	}
+	if p.LoginSessions == nil {
+		p.LoginSessions = noSessions{}
 	}
 	return p
 }

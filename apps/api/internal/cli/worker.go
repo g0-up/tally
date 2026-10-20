@@ -28,6 +28,7 @@ import (
 	"github.com/g0-up/tally/apps/api/internal/reporting"
 	"github.com/g0-up/tally/apps/api/internal/saas"
 	"github.com/g0-up/tally/apps/api/internal/sales"
+	"github.com/g0-up/tally/apps/api/internal/scanner"
 )
 
 // Worker schedules.
@@ -163,13 +164,21 @@ func runWorker(ctx context.Context, cfg config.Worker, sched workerSchedule, log
 	g.Go(func() error {
 		every(gctx, sched.purge, func(ctx context.Context) {
 			n, err := purgeIdempotency(ctx, database, clk)
-			if err != nil {
-				if ctx.Err() == nil {
-					logger.Error("idempotency purge failed", "deleted", n, "error", err.Error())
-				}
+			switch {
+			case err == nil:
+				logger.Info("idempotency keys purged", "deleted", n)
+			case ctx.Err() == nil:
+				logger.Error("idempotency purge failed", "deleted", n, "error", err.Error())
+			default:
 				return
 			}
-			logger.Info("idempotency keys purged", "deleted", n)
+			n, err = purgeScannerSessions(ctx, database, domains.Scanner)
+			switch {
+			case err == nil:
+				logger.Info("scanner sessions purged", "deleted", n)
+			case ctx.Err() == nil:
+				logger.Error("scanner session purge failed", "deleted", n, "error", err.Error())
+			}
 		})
 		return nil
 	})
@@ -227,7 +236,7 @@ func runWorker(ctx context.Context, cfg config.Worker, sched workerSchedule, log
 		return nil
 	})
 	g.Go(func() error {
-		return runHTTPServer(gctx, metricsLn, m.Handler(), logger.With("server", "metrics"))
+		return runHTTPServer(gctx, metricsLn, m.Handler(), nil, logger.With("server", "metrics"))
 	})
 	err = g.Wait()
 	logger.Info("worker stopped")
@@ -282,6 +291,25 @@ func purgeIdempotency(ctx context.Context, database *db.DB, clk clock.Clock) (in
 		})
 		if err == nil {
 			total += n // a failed transaction deleted nothing
+		}
+		return err
+	})
+	return total, err
+}
+
+// purgeScannerSessions deletes the scanner sessions of every active tenant that were revoked, or
+// whose desktop went away, more than a day ago, with their scans; one transaction per tenant. A
+// tenant that fails is skipped; failures are returned joined.
+func purgeScannerSessions(ctx context.Context, database *db.DB, svc *scanner.Service) (int64, error) {
+	tenants, err := database.ActiveTenantIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var total int64
+	err = eachTenant(ctx, tenants, func(tenantID uuid.UUID) error {
+		n, err := svc.Purge(ctx, tenantID)
+		if err == nil {
+			total += n
 		}
 		return err
 	})

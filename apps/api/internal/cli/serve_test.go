@@ -47,7 +47,7 @@ func TestRunHTTPServerStopsOnContextCancel(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- runHTTPServer(ctx, ln, okHandler(), discardLogger()) }()
+	go func() { done <- runHTTPServer(ctx, ln, okHandler(), nil, discardLogger()) }()
 
 	url := "http://" + ln.Addr().String() + "/healthz"
 	if err := checkHealth(context.Background(), http.DefaultClient, url, 2*time.Second); err != nil {
@@ -62,6 +62,46 @@ func TestRunHTTPServerStopsOnContextCancel(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("server did not stop after context cancel")
+	}
+}
+
+// A stream that only ends when told to must not hold the drain: onShutdown tells it.
+func TestRunHTTPServerRunsOnShutdownBeforeDraining(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	stop, opened := make(chan struct{}), make(chan struct{})
+	stream := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		http.NewResponseController(w).Flush() //nolint:errcheck // the test reads the status line only
+		close(opened)
+		<-stop
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runHTTPServer(ctx, ln, stream, func() { close(stop) }, discardLogger()) }()
+
+	go func() {
+		res, err := http.Get("http://" + ln.Addr().String() + "/stream") //nolint:noctx // ends with the server
+		if err == nil {
+			_, _ = io.Copy(io.Discard, res.Body)
+			_ = res.Body.Close()
+		}
+	}()
+	select {
+	case <-opened:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream did not open")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("runHTTPServer returned %v, want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the drain waited for the open stream")
 	}
 }
 

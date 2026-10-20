@@ -15,7 +15,7 @@ import (
 // NewProduct is a product typed by name on a purchase line that the catalog does not have yet.
 // The document creates it with one SKU in its own transaction, so cancelling the document leaves
 // no product behind. Factor is how many base units one purchase unit holds; the prices are per
-// base unit.
+// base unit; Barcode, when given, becomes a barcode of the base unit.
 type NewProduct struct {
 	Name           string
 	CategoryID     *uuid.UUID
@@ -25,7 +25,11 @@ type NewProduct struct {
 	TrackLot       bool
 	RetailPrice    *money.Money
 	WholesalePrice *money.Money
+	Barcode        *string
 }
+
+// codeBarcodeTaken is the catalog's conflict for a barcode another SKU of the store holds.
+const codeBarcodeTaken = "barcode_taken"
 
 // NewProductInput is a NewProduct with the price typed on its line per purchase unit, which
 // becomes the reference cost.
@@ -85,6 +89,9 @@ func (s *Service) createProduct(ctx context.Context, q db.Querier, actor audit.A
 	if unit != p.lineUnit() {
 		price = nil
 	}
+	if err := s.checkBarcode(&p, i); err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
 	skuID, err := s.catalog.CreateProduct(ctx, q, actor, NewProductInput{NewProduct: p, PurchasePrice: price})
 	if err != nil {
 		return uuid.Nil, uuid.Nil, newProductError(err, i)
@@ -92,8 +99,36 @@ func (s *Service) createProduct(ctx context.Context, q db.Querier, actor audit.A
 	return skuID, unit, nil
 }
 
+// checkBarcode trims the barcode of the new product of request line i, drops a blank one and
+// checks the rest against the catalog's barcode rules.
+func (s *Service) checkBarcode(p *NewProduct, i int) error {
+	if p.Barcode == nil {
+		return nil
+	}
+	code := strings.TrimSpace(*p.Barcode)
+	if code == "" {
+		p.Barcode = nil
+		return nil
+	}
+	if err := s.catalog.ValidateBarcode(code); err != nil {
+		e, ok := apperr.As(err)
+		if !ok {
+			return err
+		}
+		// The catalog names one field (the code) with the reason.
+		reason := e.Code
+		for _, v := range e.Fields {
+			reason = v
+		}
+		return errInvalid(map[string]string{lineField(i, "new_product.barcode"): reason})
+	}
+	p.Barcode = &code
+	return nil
+}
+
 // newProductError points an error of the catalog at the new product of request line i: its fields
-// move under lines.i.new_product, and an error without fields (a duplicate name) lands on the name.
+// move under lines.i.new_product; a barcode taken by another SKU lands on the barcode and any other
+// error without fields (a duplicate name) on the name.
 func newProductError(err error, i int) error {
 	e, ok := apperr.As(err)
 	if !ok {
@@ -104,7 +139,11 @@ func newProductError(err error, i int) error {
 	for k, v := range e.Fields {
 		fields[prefix+k] = v
 	}
-	if len(fields) == 0 {
+	switch {
+	case len(fields) > 0:
+	case e.Code == codeBarcodeTaken:
+		fields[prefix+"barcode"] = e.Code
+	default:
 		fields[prefix+"name"] = e.Code
 	}
 	out := *e

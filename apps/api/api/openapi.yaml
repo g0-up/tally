@@ -124,6 +124,12 @@ tags:
     description: The set-up checklist, ending with the confirmation of the opening balances and the period lock up to the cutoff.
   - name: service
     description: Public service status and product feedback.
+  - name: scanner
+    description: |
+      A phone paired with a desktop screen as a barcode scanner. The desktop opens a session and
+      shows its QR code; the phone claims it, both show a verify code and the desktop approves;
+      the phone then sends scanned codes, which reach the desktop over its event stream, and
+      waits for what the desktop did with each.
 paths:
   /host-context:
     get:
@@ -2462,6 +2468,10 @@ paths:
       tags: [catalog]
       operationId: addBarcode
       summary: Add a barcode, unique in the store
+      description: |
+        A code is taken when the store already has it, or any form a scanner may report for the
+        same retail barcode, on any SKU or unit: `036000291452`, `0036000291452` and
+        `00036000291452` are one code, and so are a UPC-E and its UPC-A expansion.
       parameters:
         - $ref: '#/components/parameters/ID'
       requestBody:
@@ -2491,6 +2501,36 @@ paths:
         '422':
           $ref: '#/components/responses/Error'
   /skus/{id}/barcodes/{barcodeId}:
+    patch:
+      tags: [catalog]
+      operationId: updateBarcodeUnit
+      summary: Move a barcode to another unit of its SKU
+      description: |
+        The next lookup of the code answers the new unit and its factor. A barcode already on the
+        unit is returned unchanged.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - {name: barcodeId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BarcodeUnitUpdate'
+      responses:
+        '200':
+          description: Barcode.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Barcode'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '422':
+          description: unit_id required or not_a_unit_of_sku.
+          $ref: '#/components/responses/Error'
     delete:
       tags: [catalog]
       operationId: deleteBarcode
@@ -2685,6 +2725,485 @@ paths:
         '401':
           $ref: '#/components/responses/Error'
         '422':
+          $ref: '#/components/responses/Error'
+  /sku-lookup:
+    get:
+      tags: [catalog]
+      operationId: lookupSkuCode
+      summary: The SKU and unit a scanned code stands for
+      description: |
+        The scan lookup of POS, stock counts and receipts. A barcode matches under the forms a
+        scanner may report for it (`036000291452` finds a stored `0036000291452`, a UPC-E finds
+        its UPC-A), the code exactly as given first; it answers the unit of the barcode. Failing
+        that, the code is tried as a SKU code as given, then upper-cased, answering the base unit.
+        Only active SKUs of active products match, and a barcode only on an active unit.
+      parameters:
+        - {name: code, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 64}}
+      responses:
+        '200':
+          description: The match.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkuCodeMatch'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          description: code_not_found.
+          $ref: '#/components/responses/Error'
+        '422':
+          description: The code is empty or cannot be a barcode (`fields.code` required, too_long or invalid_format).
+          $ref: '#/components/responses/Error'
+  /scanner-sessions:
+    post:
+      tags: [scanner]
+      operationId: createScannerSession
+      summary: Open a phone scanner session and show its QR code
+      description: |
+        Opens a session for the signed-in user and login session. The claim code goes into the QR
+        code the phone opens (`/scan#c=<claim_code>`); it is shown only here, works once and expires
+        after 2 minutes (`POST /scanner-sessions/{id}:refresh-code` issues a new one). A user holds
+        at most 3 open sessions: opening a fourth revokes the oldest (`revoked` with `by: system`
+        on its streams). Limited to 6 per minute per client address.
+      responses:
+        '201':
+          description: The session and its claim code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScannerSessionCreated'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          description: support_read_only or subscription_read_only.
+          $ref: '#/components/responses/Error'
+        '423':
+          description: tenant_maintenance.
+          $ref: '#/components/responses/Error'
+        '429':
+          description: rate_limited, with Retry-After.
+          $ref: '#/components/responses/Error'
+  /scanner-sessions/{id}:
+    get:
+      tags: [scanner]
+      operationId: getScannerSession
+      summary: The state of a scanner session
+      description: |
+        `waiting` until a phone claims the code, `pending` while the claim waits for approval (with
+        the phone's device label and verify code), `claimed` once approved, `ended` once revoked,
+        rejected sessions excepted, or expired: the desktop stream gone for 60 seconds, a claim not
+        approved within 2 minutes, or 12 hours after the approval. Only the user and login session
+        that opened the session see it; anyone else gets 404.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: The state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScannerSessionStatus'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [scanner]
+      operationId: revokeScannerSession
+      summary: End a scanner session from the desktop
+      description: |
+        The phone's stream gets `revoked` with `by: desktop`. Ending an ended session succeeds.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204':
+          description: Ended.
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          description: support_read_only or subscription_read_only.
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '423':
+          description: tenant_maintenance.
+          $ref: '#/components/responses/Error'
+  /scanner-sessions/{id}:refresh-code:
+    post:
+      tags: [scanner]
+      operationId: refreshScannerClaimCode
+      summary: Issue a new claim code for a session no phone claimed yet
+      description: The old code stops working. Limited to 6 per minute per client address.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: The new claim code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScannerClaimCode'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          description: support_read_only or subscription_read_only.
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: already_claimed (a phone claimed the session, or it ended).
+          $ref: '#/components/responses/Error'
+        '423':
+          description: tenant_maintenance.
+          $ref: '#/components/responses/Error'
+        '429':
+          description: rate_limited, with Retry-After.
+          $ref: '#/components/responses/Error'
+  /scanner-sessions/{id}:approve:
+    post:
+      tags: [scanner]
+      operationId: approveScannerSession
+      summary: Let the phone that claimed the session scan
+      description: |
+        Approve only after the verify code on the phone matches the one shown here. The phone's
+        stream gets `approved`. Limited to 6 per minute per client address.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: The session, now claimed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScannerSessionStatus'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          description: support_read_only or subscription_read_only.
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: not_pending (no claim waits for approval).
+          $ref: '#/components/responses/Error'
+        '423':
+          description: tenant_maintenance.
+          $ref: '#/components/responses/Error'
+        '429':
+          description: rate_limited, with Retry-After.
+          $ref: '#/components/responses/Error'
+  /scanner-sessions/{id}:reject:
+    post:
+      tags: [scanner]
+      operationId: rejectScannerSession
+      summary: Refuse the phone that claimed the session and show a new QR code
+      description: |
+        The phone's stream gets `rejected` and its cookie stops working (401 scan_session_ended);
+        the session waits for a claim of the new code. Limited to 6 per minute per client address.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: The new claim code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScannerClaimCode'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          description: support_read_only or subscription_read_only.
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: not_pending (no claim waits for approval).
+          $ref: '#/components/responses/Error'
+        '423':
+          description: tenant_maintenance.
+          $ref: '#/components/responses/Error'
+        '429':
+          description: rate_limited, with Retry-After.
+          $ref: '#/components/responses/Error'
+  /scanner-sessions/{id}/events:
+    get:
+      tags: [scanner]
+      operationId: streamScannerSessionEvents
+      summary: Server-sent events of a scanner session, for the desktop
+      description: |
+        A `text/event-stream`; every event's data is JSON. The stream starts with `retry: 3000` and
+        a `state` event (`ScannerSessionStatus`), also on every reconnect, so nothing that happened
+        while it was closed is missed. Then:
+        - `claim_requested` `{device_label?, verify_code}`: a phone claimed the code; show the
+          verify code and ask to approve or reject.
+        - `scan` `{scan_id, code, ttl_ms}`: the approved phone scanned `code`; answer with
+          `POST /scanner-sessions/{id}/scans/{scan_id}/result` within `ttl_ms`.
+        - `state` `{state: ended}`: the session expired; the stream closes.
+        - `revoked` `{by: desktop|phone|system}`: the session ended (`system`: the login session was
+          signed out, or a fourth session replaced it); the stream closes.
+        - `replaced` `{}`: another stream of this session opened (a second tab); the stream closes
+          and must not reconnect.
+        - `restarting` `{}`: the server is shutting down; reconnect after a short delay.
+        - A `: ping` comment every 15 seconds.
+
+        The open stream keeps the session alive; it is checked every 10 seconds against the login
+        session of its own cookie. Opening the stream of an ended session answers 204, which stops
+        EventSource from reconnecting. Limited to 10 per minute per client address.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: The event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '204':
+          description: The session ended.
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '429':
+          description: rate_limited, with Retry-After.
+          $ref: '#/components/responses/Error'
+        '503':
+          description: stream_limit (too many open streams) or server_restarting; retry after a short delay.
+          $ref: '#/components/responses/Error'
+  /scanner-sessions/{id}/scans/{scanId}/result:
+    post:
+      tags: [scanner]
+      operationId: resolveScannerScan
+      summary: Tell the phone what the desktop did with a scanned code
+      description: |
+        The phone waiting on the scan gets the result, with the product and unit names when
+        `added`. Answering a scan again returns the first result unchanged.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - {name: scanId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome:
+                  type: string
+                  enum: [added, not_found, not_accepting, needs_desktop_edit, new_product, not_in_order]
+                sku_id: {type: string, format: uuid, description: Required when added.}
+                unit_id: {type: string, format: uuid, description: Required when added; a unit of the SKU.}
+      responses:
+        '200':
+          description: The stored result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanResult'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          description: support_read_only or subscription_read_only.
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: scan_expired (the scan outlived its 10 seconds unanswered, or its session ended).
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed (`fields.outcome` oneof; `fields.sku_id`, `fields.unit_id` required or not_found).
+          $ref: '#/components/responses/Error'
+        '423':
+          description: tenant_maintenance.
+          $ref: '#/components/responses/Error'
+  /scan/claim:
+    post:
+      tags: [scanner]
+      operationId: claimScannerSession
+      summary: Claim a scanner session from the phone
+      description: |
+        Served on the store's host without a login. The phone sends the claim code of the QR code
+        and gets the scanner cookie (`__Host-tally_scan`, `tally_scan` in plain-http development;
+        HttpOnly, SameSite=Strict, 12 hours) and the verify code to show while the desktop decides.
+        An unknown, used, expired or replaced code, or a code of another store, answers the same
+        410 claim_invalid, checked before the store's maintenance (423) or read-only (403) state,
+        which only a live code learns. Limited to 10 per minute per client address.
+      security:
+        - csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: {type: string, maxLength: 64}
+      responses:
+        '200':
+          description: Claimed; the scanner cookie is set.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [state, verify_code]
+                properties:
+                  state: {type: string, enum: [pending]}
+                  verify_code: {type: string, pattern: '^[0-9]{4}$'}
+        '403':
+          description: csrf_failed or subscription_read_only.
+          $ref: '#/components/responses/Error'
+        '410':
+          description: claim_invalid.
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        '423':
+          description: tenant_maintenance.
+          $ref: '#/components/responses/Error'
+        '429':
+          description: rate_limited, with Retry-After.
+          $ref: '#/components/responses/Error'
+  /scan/session:
+    get:
+      tags: [scanner]
+      operationId: getPhoneScannerSession
+      summary: The state of the phone's scanner session
+      description: |
+        `pending` (with the verify code) until the desktop approves, then `claimed`; `ended` once
+        the session expired. A missing cookie, or a session that was revoked or rejected, answers
+        401 scan_session_ended.
+      security:
+        - scannerCookie: []
+      responses:
+        '200':
+          description: The state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhoneScannerSession'
+        '401':
+          description: scan_session_ended.
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [scanner]
+      operationId: revokePhoneScannerSession
+      summary: End the scanner session from the phone
+      description: |
+        The desktop's stream gets `revoked` with `by: phone`; the scanner cookie is cleared. Like
+        signing out, it works while the store is in maintenance or read-only. Limited to 10 per
+        minute per client address.
+      security:
+        - scannerCookie: []
+          csrfHeader: []
+      responses:
+        '204':
+          description: Ended; the scanner cookie is cleared.
+        '401':
+          description: scan_session_ended (the cookie is cleared too).
+          $ref: '#/components/responses/Error'
+        '403':
+          description: csrf_failed.
+          $ref: '#/components/responses/Error'
+        '429':
+          description: rate_limited, with Retry-After.
+          $ref: '#/components/responses/Error'
+  /scan/events:
+    get:
+      tags: [scanner]
+      operationId: streamPhoneScannerEvents
+      summary: Server-sent events of the phone's scanner session
+      description: |
+        A `text/event-stream`; every event's data is JSON. The stream starts with `retry: 3000` and
+        a `state` event (`PhoneScannerSession`), also on every reconnect. Then:
+        - `approved` `{}`: the desktop approved; scanning may start.
+        - `rejected` `{}`: the desktop refused this phone; the cookie no longer works. The stream
+          closes.
+        - `revoked` `{by: desktop|phone|system}`: the session was ended; the stream closes.
+        - `ended` `{}`: the session expired or the desktop's login session was signed out; the
+          stream closes.
+        - `replaced` `{}`: another stream of this phone session opened; the stream closes.
+        - `restarting` `{}`: the server is shutting down; reconnect after a short delay.
+        - A `: ping` comment every 15 seconds.
+
+        Opening the stream of an ended session answers 204. Limited to 10 per minute per client
+        address.
+      security:
+        - scannerCookie: []
+      responses:
+        '200':
+          description: The event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '204':
+          description: The session ended.
+        '401':
+          description: scan_session_ended.
+          $ref: '#/components/responses/Error'
+        '429':
+          description: rate_limited, with Retry-After.
+          $ref: '#/components/responses/Error'
+        '503':
+          description: stream_limit (too many open streams) or server_restarting; retry after a short delay.
+          $ref: '#/components/responses/Error'
+  /scan/scans:
+    post:
+      tags: [scanner]
+      operationId: sendPhoneScan
+      summary: Send a scanned code to the desktop and wait for what it did
+      description: |
+        The desktop's stream gets a `scan` event; the request waits up to 4 seconds for its answer.
+        `desktop_unavailable` (no desktop stream took the scan) and `timeout` (no answer in time)
+        are answered by the server and not stored, so a retry with the same Idempotency-Key tries
+        again; any other result is stored and a retry answers it unchanged. The answer carries only
+        the outcome and, when added, the product and unit names: never prices or stock. The scanner
+        cookie is checked first (401 scan_session_ended), before the store's maintenance (423) or
+        read-only (403) state. Limited to 5 per second (burst 10) per client address.
+      security:
+        - scannerCookie: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: {type: string, maxLength: 64}
+      responses:
+        '200':
+          description: What the desktop did with the code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanResult'
+        '401':
+          description: scan_session_ended (no cookie, or the session was revoked, rejected or expired).
+          $ref: '#/components/responses/Error'
+        '403':
+          description: csrf_failed or subscription_read_only.
+          $ref: '#/components/responses/Error'
+        '409':
+          description: |
+            scan_pending_approval (the desktop has not approved this phone yet) or
+            idempotency_key_reused (the key was used for another code).
+          $ref: '#/components/responses/Error'
+        '422':
+          description: |
+            validation_failed (`fields.code` required, too_long or invalid_format),
+            idempotency_key_required or idempotency_key_invalid.
+          $ref: '#/components/responses/Error'
+        '423':
+          description: tenant_maintenance.
+          $ref: '#/components/responses/Error'
+        '429':
+          description: rate_limited, with Retry-After.
           $ref: '#/components/responses/Error'
   /customers:
     get:
@@ -10986,6 +11505,13 @@ components:
       in: header
       name: X-CSRF-Token
       description: Double-submit token equal to the `__Host-tally_csrf` cookie; required on unsafe methods.
+    scannerCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-tally_scan
+      description: |
+        The phone's scanner session cookie set by `POST /scan/claim` (`tally_scan` in plain-http
+        development). A request carrying several cookies of this name is matched on any of them.
   parameters:
     ID:
       name: id
@@ -11644,6 +12170,65 @@ components:
         active: {type: boolean}
         is_default_sale: {type: boolean}
         is_default_purchase: {type: boolean}
+    SkuBarcodeRef:
+      type: object
+      required: [code, unit_id, unit_name]
+      properties:
+        code: {type: string}
+        unit_id: {type: string, format: uuid}
+        unit_name: {type: string}
+    SkuCodeMatch:
+      type: object
+      required: [sku, unit_id, unit_name, factor, matched_by]
+      properties:
+        sku: {$ref: '#/components/schemas/SkuListItem'}
+        unit_id: {type: string, format: uuid, description: The unit of the barcode; the base unit for a SKU code.}
+        unit_name: {type: string}
+        factor: {$ref: '#/components/schemas/Decimal', description: Base units in one of the unit.}
+        matched_by: {type: string, enum: [barcode, sku_code]}
+    ScannerClaimCode:
+      type: object
+      required: [claim_code, claim_expires_at]
+      properties:
+        claim_code: {type: string, description: Goes into the QR code as `/scan#c=<claim_code>`; works once.}
+        claim_expires_at: {type: string, format: date-time}
+    ScannerSessionCreated:
+      allOf:
+        - $ref: '#/components/schemas/ScannerClaimCode'
+        - type: object
+          required: [id]
+          properties:
+            id: {type: string, format: uuid}
+    ScannerSessionStatus:
+      type: object
+      required: [state]
+      properties:
+        state: {type: string, enum: [waiting, pending, claimed, ended]}
+        device_label: {type: string, description: 'The phone as "system · browser", such as "iPhone · Safari"; while pending or claimed, when recognised.'}
+        verify_code: {type: string, pattern: '^[0-9]{4}$', description: While pending or claimed; must match the code the phone shows.}
+        claimed_at: {type: string, format: date-time}
+        approved_at: {type: string, format: date-time}
+    PhoneScannerSession:
+      type: object
+      required: [state]
+      properties:
+        state: {type: string, enum: [pending, claimed, ended]}
+        verify_code: {type: string, pattern: '^[0-9]{4}$', description: While pending or claimed.}
+    ScanResult:
+      type: object
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [added, not_found, not_accepting, needs_desktop_edit, new_product, not_in_order, desktop_unavailable, timeout]
+          description: |
+            What the desktop did: `added` to the open document, `not_found` (no SKU has the code),
+            `not_accepting` (no screen takes scans), `needs_desktop_edit` (the line needs a choice
+            on the desktop), `new_product` (the desktop opened a product form for the code) or
+            `not_in_order` (the order being received has no such line). The server answers
+            `desktop_unavailable` (no desktop stream) and `timeout` (no answer in time) itself.
+        product_name: {type: string, description: When added.}
+        unit_name: {type: string, description: When added.}
     SkuUnitRequest:
       type: object
       properties:
@@ -11659,6 +12244,11 @@ components:
         unit_id: {type: string, format: uuid}
         code: {type: string}
         created_at: {type: string, format: date-time}
+    BarcodeUnitUpdate:
+      type: object
+      required: [unit_id]
+      properties:
+        unit_id: {type: string, format: uuid, description: A unit of the barcode's SKU.}
     MixGroupItem:
       type: object
       required: [sku_id, sku_code, sku_name, flavor_label, sort_order, active]
@@ -13088,7 +13678,10 @@ components:
         A product with one SKU created with the line, in the same transaction; the line then buys it
         in its purchase unit (else its base unit) and `unit_id` must be that unit or omitted. Prices
         are per base unit and are recorded as edited from the purchase order. Not allowed with
-        `sku_id` (422 not_allowed_with_sku_id) nor, on a receipt, with an order line.
+        `sku_id` (422 not_allowed_with_sku_id) nor, on a receipt, with an order line. A name the
+        store already has is 409 product_name_taken on `lines.{i}.new_product.name`; a barcode
+        another SKU holds, under any of its GTIN forms (another line of the same request included),
+        is 409 barcode_taken on `lines.{i}.new_product.barcode`.
       required: [name, base_unit_id]
       properties:
         name: {type: string, maxLength: 200}
@@ -13099,6 +13692,12 @@ components:
         track_lot: {type: boolean, description: Track lots and expiry dates.}
         retail_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}]}
         wholesale_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}]}
+        barcode:
+          type: [string, 'null']
+          maxLength: 64
+          description: |
+            A barcode of the new SKU, attached to its base unit. Trimmed; blank means none. Printable
+            ASCII without spaces (422 on `lines.{i}.new_product.barcode`).
     PurchaseOrderRequest:
       type: object
       required: [supplier_party_id, lines]
@@ -13962,7 +14561,7 @@ components:
         qty: {$ref: '#/components/schemas/Qty'}
     PosTile:
       type: object
-      required: [sku_id, sku_code, name, variant_label, unit_id, unit_name, retail_price, stock]
+      required: [sku_id, sku_code, name, variant_label, unit_id, unit_name, retail_price, stock, barcodes]
       properties:
         sku_id: {type: string, format: uuid}
         sku_code: {type: string}
@@ -13972,6 +14571,7 @@ components:
         unit_name: {type: string}
         retail_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}], description: 'The retail list price; null when the SKU has none.'}
         stock: {type: array, items: {$ref: '#/components/schemas/PosTileStock'}}
+        barcodes: {type: array, items: {$ref: '#/components/schemas/SkuBarcodeRef'}, description: The barcodes of the active units of the SKU.}
     PosBootstrap:
       type: object
       required: [settings, payment_methods, shift, tiles, priced_at]

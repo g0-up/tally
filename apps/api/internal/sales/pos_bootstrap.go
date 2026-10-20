@@ -49,6 +49,16 @@ type PosTile struct {
 	// RetailPrice is nil when the retail list has no price for the SKU.
 	RetailPrice *money.Money `db:"-" json:"retail_price"`
 	Stock       []TileStock  `db:"-" json:"stock"`
+	// Barcodes are the codes of the active units of the SKU, so the POS matches scans offline.
+	Barcodes []TileBarcode `db:"-" json:"barcodes"`
+}
+
+// TileBarcode is a barcode of a tile and the unit it sells.
+type TileBarcode struct {
+	SkuID    uuid.UUID `db:"sku_id" json:"-"`
+	Code     string    `db:"code" json:"code"`
+	UnitID   uuid.UUID `db:"unit_id" json:"unit_id"`
+	UnitName string    `db:"unit_name" json:"unit_name"`
 }
 
 // TileStock is the sellable on-hand quantity of one color of a tile; ColorID nil is the stock
@@ -135,11 +145,29 @@ func (s *Service) tiles(ctx context.Context, q db.Querier, tenantID uuid.UUID, s
 	if err != nil {
 		return nil, err
 	}
+	var codes []TileBarcode
+	if err := sqlx.SelectContext(ctx, q, &codes, `
+		SELECT b.sku_id, b.code, b.unit_id, u.name AS unit_name
+		FROM sku_barcodes b
+		JOIN sku_units su ON su.sku_id = b.sku_id AND su.unit_id = b.unit_id
+		JOIN units u ON u.id = b.unit_id
+		WHERE b.sku_id = ANY($1) AND su.active
+		ORDER BY b.created_at, b.code`, skus); err != nil {
+		return nil, wrap("read pos tile barcodes", err)
+	}
+	bySku := make(map[uuid.UUID][]TileBarcode, len(out))
+	for _, b := range codes {
+		bySku[b.SkuID] = append(bySku[b.SkuID], b)
+	}
 	for i := range out {
 		out[i].RetailPrice = prices[i]
 		out[i].Stock = []TileStock{}
 		for _, c := range stock[out[i].SkuID] {
 			out[i].Stock = append(out[i].Stock, TileStock(c))
+		}
+		out[i].Barcodes = bySku[out[i].SkuID]
+		if out[i].Barcodes == nil {
+			out[i].Barcodes = []TileBarcode{}
 		}
 	}
 	return out, nil

@@ -192,17 +192,19 @@ func (p procurementPricing) SetRetailPrice(ctx context.Context, q db.Querier, ac
 }
 
 // procurementCatalog creates the new products of purchase lines through the catalog's quick
-// create, in the document's transaction.
+// create, in the document's transaction, with the catalog's barcode rules.
 type procurementCatalog struct{ s *catalog.Service }
 
 func (c procurementCatalog) CreateProduct(ctx context.Context, q db.Querier, actor audit.Actor, p procurement.NewProductInput) (uuid.UUID, error) {
 	res, err := c.s.QuickCreateProductIn(ctx, q, actor, catalog.QuickCreateInput{
 		Name: p.Name, CategoryID: p.CategoryID, BaseUnitID: p.BaseUnitID, PurchaseUnitID: p.PurchaseUnitID, Factor: p.Factor,
-		PurchasePrice: p.PurchasePrice, SalePrice: p.RetailPrice, WholesalePrice: p.WholesalePrice, TrackLot: p.TrackLot,
-		PriceSource: pricing.ChangePurchaseOrder,
+		PurchasePrice: p.PurchasePrice, SalePrice: p.RetailPrice, WholesalePrice: p.WholesalePrice, Barcode: p.Barcode,
+		TrackLot: p.TrackLot, PriceSource: pricing.ChangePurchaseOrder,
 	})
 	if err != nil {
 		return uuid.Nil, err
 	}
 	return res.Product.Skus[0].Sku.ID, nil
 }
+
+func (procurementCatalog) ValidateBarcode(code string) error { return catalog.ValidateBarcode(code) }

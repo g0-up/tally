@@ -70,6 +70,32 @@ func (s *Service) ResolveSession(ctx context.Context, token string) (middleware.
 	}, true, nil
 }
 
+// SessionActive reports whether a login session of a user is still open by the rules of
+// ResolveSession: not revoked, not past its absolute expiry, used within the idle timeout, its
+// owner active and its tenant neither closed nor replaced. It finds the session by id, so the token
+// rotation of a re-authentication keeps it open, and it never moves last_seen_at, so a background
+// check does not count as use and cannot hold off the idle timeout.
+func (s *Service) SessionActive(ctx context.Context, tenantID, userID, sessionID uuid.UUID) (bool, error) {
+	now := s.clock.Now()
+	var active bool
+	err := s.db.WithPlatformTx(ctx, func(q db.Querier) error {
+		if err := q.QueryRowxContext(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM sessions s
+				JOIN users u ON u.tenant_id = s.tenant_id AND u.id = s.user_id
+				JOIN tenants t ON t.id = s.tenant_id
+				WHERE s.tenant_id = $1 AND s.user_id = $2 AND s.id = $3
+				  AND s.revoked_at IS NULL AND s.expires_at > $4 AND s.last_seen_at > $5
+				  AND u.status = $6 AND t.status NOT IN ('closed', 'replaced'))`,
+			tenantID, userID, sessionID, now, now.Add(-SessionIdleTTL), StatusActive).Scan(&active); err != nil {
+			return fmt.Errorf("identity: check session: %w", err)
+		}
+		return nil
+	})
+	return active, err
+}
+
 // ResolveSlug implements middleware.TenantHostResolver. A replaced sandbox answers to no host: its
 // address belongs to the tenant that replaced it.
 func (s *Service) ResolveSlug(ctx context.Context, slug string) (uuid.UUID, bool, error) {

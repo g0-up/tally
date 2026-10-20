@@ -214,9 +214,11 @@ type Pricing interface {
 }
 
 // Catalog creates the products that purchase lines introduce (CreateProduct returns the SKU), in
-// the document's transaction q.
+// the document's transaction q, and holds the rules their barcodes follow.
 type Catalog interface {
 	CreateProduct(ctx context.Context, q db.Querier, actor audit.Actor, p NewProductInput) (uuid.UUID, error)
+	// ValidateBarcode answers 422 when a trimmed code cannot be a barcode.
+	ValidateBarcode(code string) error
 }
 
 // Campaigns tags a receipt with the campaign the goods were bought for, in the receipt's

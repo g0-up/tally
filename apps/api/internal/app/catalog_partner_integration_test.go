@@ -263,6 +263,7 @@ func idRoutesOf(st catalogStore, own catalogStore) []idRoute {
 		{method: "DELETE", path: "/skus/{id}/units/{unitId}", args: u(st.sku, thung)},
 		{method: "GET", path: "/skus/{id}/barcodes", args: u(st.sku)},
 		{method: "POST", path: "/skus/{id}/barcodes", args: u(st.sku), body: map[string]any{"code": "8930000000031"}},
+		{method: "PATCH", path: "/skus/{id}/barcodes/{barcodeId}", args: u(st.sku, st.barcode), body: map[string]any{"unit_id": own.units["thùng"]}},
 		{method: "DELETE", path: "/skus/{id}/barcodes/{barcodeId}", args: u(st.sku, st.barcode)},
 		{method: "GET", path: "/mix-groups/{id}", args: u(st.mixGroup)},
 		{method: "PATCH", path: "/mix-groups/{id}", args: u(st.mixGroup), body: map[string]any{"name": "x"}, ifMatch: true},
@@ -389,6 +390,17 @@ func TestCatalogAndPartnersOverHTTP(t *testing.T) {
 		}](t, a, http.MethodGet, "/suppliers/"+storeA.supplier.String(), nil)
 		if p.Name != "Bánh đậu xanh" || sup.Status != "active" {
 			t.Errorf("A's records changed: product %q, supplier %q", p.Name, sup.Status)
+		}
+		type barcode struct {
+			ID     uuid.UUID `json:"id"`
+			UnitID uuid.UUID `json:"unit_id"`
+		}
+		barcodes := send[struct {
+			Data []barcode `json:"data"`
+		}](t, a, http.MethodGet, "/skus/"+storeA.sku.String()+"/barcodes", nil)
+		i := slices.IndexFunc(barcodes.Data, func(bc barcode) bool { return bc.ID == storeA.barcode })
+		if i < 0 || barcodes.Data[i].UnitID != storeA.units["hộp"] {
+			t.Errorf("A's barcode is gone or moved: %+v", barcodes.Data)
 		}
 	})
 

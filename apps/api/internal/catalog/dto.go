@@ -532,6 +532,11 @@ type barcodeRequest struct {
 	UnitID *uuid.UUID `json:"unit_id"`
 }
 
+// barcodeUnitRequest moves a barcode to another unit; a missing unit_id decodes to uuid.Nil.
+type barcodeUnitRequest struct {
+	UnitID uuid.UUID `json:"unit_id"`
+}
+
 type mixItemDTO struct {
 	SkuID       uuid.UUID `json:"sku_id"`
 	SkuCode     string    `json:"sku_code"`

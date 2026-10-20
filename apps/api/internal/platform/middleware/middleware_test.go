@@ -368,7 +368,7 @@ func TestActorAndTenantIDOutsideTenantRoutes(t *testing.T) {
 
 func TestCookieNames(t *testing.T) {
 	prod, dev := CookieNames(true), CookieNames(false)
-	for _, name := range []string{prod.Session, prod.CSRF, prod.AdminSession, prod.AdminCSRF} {
+	for _, name := range []string{prod.Session, prod.CSRF, prod.AdminSession, prod.AdminCSRF, prod.Scan} {
 		if !strings.HasPrefix(name, "__Host-") {
 			t.Errorf("production cookie %s lacks __Host-", name)
 		}

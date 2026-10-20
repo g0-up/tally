@@ -48,6 +48,7 @@ import (
 	"github.com/g0-up/tally/apps/api/internal/saas"
 	"github.com/g0-up/tally/apps/api/internal/saas/provider"
 	"github.com/g0-up/tally/apps/api/internal/sales"
+	"github.com/g0-up/tally/apps/api/internal/scanner"
 	"github.com/g0-up/tally/apps/api/internal/support"
 	"github.com/g0-up/tally/apps/api/internal/testkit"
 )
@@ -68,6 +69,13 @@ type controlStack struct {
 	objects *memStore
 	auth    *admin.AuthService
 	webhook provider.SignedWebhook
+}
+
+// testScannerRateLimits lift the per-address scanner limits for the same reason as
+// testAPIRateLimit; the scanner tests cover the limits themselves.
+var testScannerRateLimits = scanner.RateLimits{
+	Claim: scanner.RateLimit{PerSecond: 1000, Burst: 10000}, Scans: scanner.RateLimit{PerSecond: 1000, Burst: 10000},
+	Events: scanner.RateLimit{PerSecond: 1000, Burst: 10000}, Commands: scanner.RateLimit{PerSecond: 1000, Burst: 10000},
 }
 
 func newControlStack(t *testing.T) controlStack {
@@ -127,7 +135,7 @@ func newControlStack(t *testing.T) controlStack {
 		PublicBaseURL: testBaseURL,
 		Logger:        slog.New(slog.DiscardHandler),
 		Ports: app.Ports{
-			Sessions: idSvc, TenantHosts: idSvc, Entitlements: entitlements, Modules: entitlements, AdminSessions: auth,
+			Sessions: idSvc, TenantHosts: idSvc, LoginSessions: idSvc, Entitlements: entitlements, Modules: entitlements, AdminSessions: auth,
 			Maintenance: entitlements,
 		},
 		CSRFKey:      []byte("0123456789abcdef0123456789abcdef"),
@@ -147,6 +155,7 @@ func newControlStack(t *testing.T) controlStack {
 			SaaS: saas.NewHandler(sa), Support: support.NewHandler(supportSvc), SupportAdmin: supportSvc,
 			Onboarding: org.NewOnboardingHandler(orgSvc), Feedback: admin.NewFeedbackHandler(box),
 			Status: admin.NewStatusHandler(incidents), Admin: adminHandler,
+			Scanner: scanner.NewHandler(domains.Scanner, scanner.WithRateLimits(testScannerRateLimits)),
 		},
 	})
 	if err != nil {

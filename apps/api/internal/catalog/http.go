@@ -13,6 +13,7 @@ import (
 	"github.com/g0-up/tally/apps/api/internal/platform/httpx"
 	"github.com/g0-up/tally/apps/api/internal/platform/ids"
 	"github.com/g0-up/tally/apps/api/internal/platform/middleware"
+	"github.com/g0-up/tally/apps/api/internal/platform/money"
 )
 
 // Handler serves the catalog endpoints of tenant hosts.
@@ -89,6 +90,7 @@ func (h *Handler) Register(r Routes) {
 	g.DELETE("/skus/:id/units/:unitId", h.deleteSkuUnit)
 	g.GET("/skus/:id/barcodes", h.listBarcodes)
 	g.POST("/skus/:id/barcodes", h.addBarcode)
+	g.PATCH("/skus/:id/barcodes/:barcodeId", h.updateBarcodeUnit)
 	g.DELETE("/skus/:id/barcodes/:barcodeId", h.deleteBarcode)
 
 	g.GET("/mix-groups", h.listMixGroups)
@@ -101,6 +103,7 @@ func (h *Handler) Register(r Routes) {
 	mix.Item("reactivate", h.setMixGroupStatus(StatusActive))
 
 	g.GET("/search", h.search)
+	g.GET("/sku-lookup", h.lookupSku)
 }
 
 // Request helpers: each renders the error itself and reports whether the handler may go on.
@@ -965,6 +968,27 @@ func (h *Handler) addBarcode(c *gin.Context) {
 	respond(c, http.StatusCreated, 0, toBarcodeDTO(b), err)
 }
 
+func (h *Handler) updateBarcodeUnit(c *gin.Context) {
+	actor, ok := actorFor(c)
+	if !ok {
+		return
+	}
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	barcodeID, ok := pathID(c, "barcodeId")
+	if !ok {
+		return
+	}
+	req, ok := bind[barcodeUnitRequest](c)
+	if !ok {
+		return
+	}
+	b, err := h.svc.UpdateBarcodeUnit(c.Request.Context(), actor, id, barcodeID, req.UnitID)
+	respond(c, http.StatusOK, 0, toBarcodeDTO(b), err)
+}
+
 func (h *Handler) deleteBarcode(c *gin.Context) {
 	actor, ok := actorFor(c)
 	if !ok {
@@ -1080,4 +1104,23 @@ func (h *Handler) search(c *gin.Context) {
 	}
 	items, err := h.svc.Search(c.Request.Context(), scope, req)
 	respond(c, http.StatusOK, 0, listOf(mapSlice(items, toSearchItemDTO)), err)
+}
+
+type skuCodeMatchDTO struct {
+	Sku       skuListItemDTO `json:"sku"`
+	UnitID    uuid.UUID      `json:"unit_id"`
+	UnitName  string         `json:"unit_name"`
+	Factor    money.Factor   `json:"factor"`
+	MatchedBy string         `json:"matched_by"`
+}
+
+// lookupSku resolves a scanned code for POS, stock counts and receipts alike.
+func (h *Handler) lookupSku(c *gin.Context) {
+	scope, ok := scopeFor(c)
+	if !ok {
+		return
+	}
+	m, err := h.svc.LookupSkuCode(c.Request.Context(), scope, c.Query("code"))
+	respond(c, http.StatusOK, 0, skuCodeMatchDTO{Sku: toSkuListItemDTO(m.Sku), UnitID: m.UnitID, UnitName: m.UnitName,
+		Factor: m.Factor, MatchedBy: m.MatchedBy}, err)
 }

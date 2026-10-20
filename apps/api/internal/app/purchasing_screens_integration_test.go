@@ -110,6 +110,52 @@ func TestPurchasingScreensOverHTTP(t *testing.T) {
 		}
 	})
 
+	t.Run("a new product line attaches its barcode to the base unit", func(t *testing.T) {
+		confirmedOrder(t, a, map[string]any{"supplier_party_id": store.supplier,
+			"lines": []map[string]any{{"qty": "2", "unit_price": "96000", "new_product": map[string]any{
+				"name": "Sữa đậu nành hộp", "base_unit_id": store.units["cái"], "purchase_unit_id": store.units["thùng"],
+				"factor": "24", "barcode": " 8936000111222 "}}}})
+		sku := skuNamed(t, a, "Sữa đậu nành hộp")
+		m := send[struct {
+			Sku struct {
+				ID uuid.UUID `json:"id"`
+			} `json:"sku"`
+			UnitID    uuid.UUID `json:"unit_id"`
+			Factor    string    `json:"factor"`
+			MatchedBy string    `json:"matched_by"`
+		}](t, a, http.MethodGet, "/sku-lookup?code=8936000111222", nil)
+		if m.Sku.ID != sku.ID || m.UnitID != store.units["cái"] || m.Factor != "1" || m.MatchedBy != "barcode" {
+			t.Errorf("lookup = %+v, want the new SKU in its base unit", m)
+		}
+
+		products := countRows(t, store.tenant, `SELECT count(*) FROM products`)
+		expect(t, a.do(http.MethodPost, v1+"/purchase-orders", map[string]any{"supplier_party_id": store.supplier,
+			"lines": []map[string]any{{"qty": "1", "unit_price": "4000", "new_product": map[string]any{
+				"name": "Sữa đậu nành chai", "base_unit_id": store.units["cái"], "barcode": "8936000111222"}}}}),
+			http.StatusConflict, "lines.0.new_product.barcode")
+		expect(t, a.do(http.MethodPost, v1+"/purchase-orders", map[string]any{"supplier_party_id": store.supplier,
+			"lines": []map[string]any{{"qty": "1", "unit_price": "4000", "new_product": map[string]any{
+				"name": "Sữa đậu nành chai", "base_unit_id": store.units["cái"], "barcode": "8936 000"}}}}),
+			http.StatusUnprocessableEntity, "lines.0.new_product.barcode")
+		if n := countRows(t, store.tenant, `SELECT count(*) FROM products`); n != products {
+			t.Errorf("products = %d, want %d: a refused line creates nothing", n, products)
+		}
+	})
+
+	t.Run("two new products whose barcodes are forms of one UPC are refused on the second", func(t *testing.T) {
+		products := countRows(t, store.tenant, `SELECT count(*) FROM products`)
+		rec := post(a, "/receipts", map[string]any{"supplier_party_id": store.supplier, "lines": []map[string]any{
+			{"qty": "1", "unit_price": "5000", "new_product": map[string]any{
+				"name": "Kẹo dẻo gói nhỏ", "base_unit_id": store.units["cái"], "barcode": "012345678905"}},
+			{"qty": "1", "unit_price": "5000", "new_product": map[string]any{
+				"name": "Kẹo dẻo gói lớn", "base_unit_id": store.units["cái"], "barcode": "0012345678905"}}}})
+		expect(t, rec, http.StatusConflict, "barcode_taken")
+		expect(t, rec, http.StatusConflict, "lines.1.new_product.barcode")
+		if n := countRows(t, store.tenant, `SELECT count(*) FROM products`); n != products {
+			t.Errorf("products = %d, want %d: no SKU of the refused receipt is kept", n, products)
+		}
+	})
+
 	t.Run("a quick receipt creates a lot-tracked product and lists its receipt", func(t *testing.T) {
 		supplier := store.newSupplier(t, a, "Kho Bánh Kẹo Sỉ")
 		r := postReceipt(t, a, map[string]any{"supplier_party_id": supplier, "lines": []map[string]any{{

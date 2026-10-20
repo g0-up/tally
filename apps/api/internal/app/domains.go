@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,6 +41,7 @@ import (
 	"github.com/g0-up/tally/apps/api/internal/saas"
 	"github.com/g0-up/tally/apps/api/internal/saas/provider"
 	"github.com/g0-up/tally/apps/api/internal/sales"
+	"github.com/g0-up/tally/apps/api/internal/scanner"
 	"github.com/g0-up/tally/apps/api/internal/support"
 )
 
@@ -83,6 +85,9 @@ type Domains struct {
 	// Limits enforces the plan limits (nil without the subscription gate); give it to the
 	// organisation service as well.
 	Limits *saas.Reader
+	// Scanner pairs a phone with a desktop screen as a barcode scanner; its hub lives in this
+	// process, so the server closes it on shutdown.
+	Scanner *scanner.Service
 }
 
 // DomainOption sets an optional collaborator of the domain services.
@@ -217,9 +222,10 @@ func NewDomains(d *db.DB, clk clock.Clock, rec *audit.Recorder, opts ...DomainOp
 			Deadline: o.askDeadline}),
 		Printing: printing.NewService(printing.Deps{DB: d, Clock: clk,
 			Registry: printRegistry(sal, pro, inv, dbt, kt)}),
-		SaaS:   sa,
-		Flags:  flags,
-		Limits: limits,
+		SaaS:    sa,
+		Flags:   flags,
+		Limits:  limits,
+		Scanner: scanner.NewService(scanner.Deps{DB: d, Clock: clk, Catalog: scannerCatalog{s: cat}}),
 	}
 }
 
@@ -272,6 +278,30 @@ func (s catalogStock) OnHandByColor(ctx context.Context, q db.Querier, skuIDs []
 		}
 	}
 	return out, nil
+}
+
+// scannerCatalog is the catalog as the phone scanner sees it: the barcode rules a scanned code
+// must pass, and the names the phone shows once the desktop added a scanned item.
+type scannerCatalog struct{ s *catalog.Service }
+
+func (c scannerCatalog) ValidateCode(code string) error {
+	return catalog.ValidateBarcode(strings.TrimSpace(code))
+}
+
+func (c scannerCatalog) ItemNames(ctx context.Context, tenantID, skuID, unitID uuid.UUID) (string, string, error) {
+	d, err := c.s.Sku(ctx, catalog.Scope{TenantID: tenantID, ReadOnly: true}, skuID)
+	if apperr.KindOf(err) == apperr.NotFound {
+		return "", "", scanner.ErrUnknownSKU
+	}
+	if err != nil {
+		return "", "", err
+	}
+	for _, u := range d.Units {
+		if u.UnitID == unitID {
+			return d.Sku.DisplayName, u.UnitName, nil
+		}
+	}
+	return "", "", scanner.ErrUnknownUnit
 }
 
 // cashBook is the cash domain as the debt domain sees it: payment methods resolve to their fund

@@ -27,6 +27,7 @@ import (
 	"github.com/g0-up/tally/apps/api/internal/reporting"
 	"github.com/g0-up/tally/apps/api/internal/saas"
 	"github.com/g0-up/tally/apps/api/internal/sales"
+	"github.com/g0-up/tally/apps/api/internal/scanner"
 	"github.com/g0-up/tally/apps/api/internal/support"
 )
 
@@ -120,6 +121,13 @@ func (a *App) registerModules(m Modules) {
 	}
 	if m.Printing != nil {
 		m.Printing.Register(a.TenantAPI())
+	}
+	if m.Scanner != nil {
+		m.Scanner.Register(scanner.Routes{
+			Tenant: a.TenantAPI(), Public: a.API(httpx.HostTenant), Commands: a.CommandRouter,
+			Sessions: a.ports.LoginSessions, Maintenance: a.ports.Maintenance, Entitlements: a.ports.Entitlements,
+			Cookies: a.cookies,
+		})
 	}
 	a.registerControlModules(m, reauth)
 }

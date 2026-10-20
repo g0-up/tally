@@ -35,6 +35,7 @@ import (
 	"github.com/g0-up/tally/apps/api/internal/reporting"
 	"github.com/g0-up/tally/apps/api/internal/saas"
 	"github.com/g0-up/tally/apps/api/internal/sales"
+	"github.com/g0-up/tally/apps/api/internal/scanner"
 	"github.com/g0-up/tally/apps/api/internal/support"
 )
 
@@ -373,7 +374,8 @@ func newContractApp(t *testing.T) *App {
 			Procurement: procurement.NewHandler(nil), Sales: sales.NewHandler(nil), Kits: kits.NewHandler(nil),
 			Campaign: campaign.NewHandler(nil), CRM: crm.NewHandler(nil), Notification: notification.NewHandler(nil),
 			Reporting: reporting.NewHandler(nil), Analytics: analytics.NewHandler(nil), Printing: printing.NewHandler(nil),
-			SaaS: saas.NewHandler(nil), Support: support.NewHandler(nil), SupportAdmin: support.NewService(support.Deps{}),
+			Scanner: scanner.NewHandler(nil),
+			SaaS:    saas.NewHandler(nil), Support: support.NewHandler(nil), SupportAdmin: support.NewService(support.Deps{}),
 			Onboarding: org.NewOnboardingHandler(nil), Feedback: admin.NewFeedbackHandler(nil),
 			Status: admin.NewStatusHandler(nil), Admin: admin.NewHandler(admin.HandlerDeps{}),
 		},

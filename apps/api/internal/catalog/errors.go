@@ -31,6 +31,10 @@ func errSkuCodeTaken() error { return apperr.NewConflict("sku_code_taken", msgSk
 
 func errBarcodeTaken() error { return apperr.NewConflict("barcode_taken", msgBarcodeTaken) }
 
+func errCodeNotFound() error {
+	return apperr.NewNotFound("code_not_found", "No active SKU has this barcode or SKU code")
+}
+
 func errFactorNotPositive(field string) error {
 	return apperr.NewValidation("factor_not_positive", msgFactorNotPositive, map[string]string{field: "not_positive"})
 }

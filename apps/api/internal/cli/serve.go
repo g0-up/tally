@@ -40,6 +40,7 @@ import (
 	"github.com/g0-up/tally/apps/api/internal/reporting"
 	"github.com/g0-up/tally/apps/api/internal/saas"
 	"github.com/g0-up/tally/apps/api/internal/sales"
+	"github.com/g0-up/tally/apps/api/internal/scanner"
 	"github.com/g0-up/tally/apps/api/internal/support"
 )
 
@@ -153,7 +154,7 @@ func runServe(ctx context.Context, cfg config.Serve, logger *slog.Logger, apiLn,
 		Ready:         database.Ping,
 		Ports: app.Ports{
 			Sessions: accounts.identity, TenantHosts: accounts.identity, Entitlements: entitlements, Modules: entitlements,
-			AdminSessions: control.auth, Maintenance: entitlements,
+			AdminSessions: control.auth, Maintenance: entitlements, LoginSessions: accounts.identity,
 		},
 		CSRFKey: []byte(cfg.Secrets.CSRFKey),
 		Modules: app.Modules{
@@ -177,6 +178,7 @@ func runServe(ctx context.Context, cfg config.Serve, logger *slog.Logger, apiLn,
 			Reporting:    reporting.NewHandler(accounts.domains.Reporting),
 			Analytics:    analytics.NewHandler(accounts.domains.Analytics),
 			Printing:     printing.NewHandler(accounts.domains.Printing),
+			Scanner:      scanner.NewHandler(accounts.domains.Scanner),
 
 			SaaS:         saas.NewHandler(accounts.domains.SaaS),
 			Support:      support.NewHandler(control.support),
@@ -193,7 +195,9 @@ func runServe(ctx context.Context, cfg config.Serve, logger *slog.Logger, apiLn,
 	hosts = a.TenantHostCache()
 	logger.Info("api listening", "addr", apiLn.Addr().String(), "metrics_addr", metricsLn.Addr().String())
 	return runServers(ctx, logger,
-		namedServer{name: "api", ln: apiLn, handler: a.Handler()},
+		// Shutting down sends restarting to every open scanner stream and closes it, so the drain
+		// does not wait for streams that never end on their own.
+		namedServer{name: "api", ln: apiLn, handler: a.Handler(), onShutdown: accounts.domains.Scanner.Hub().CloseAll},
 		namedServer{name: "metrics", ln: metricsLn, handler: m.Handler()},
 	)
 }
@@ -245,6 +249,8 @@ type namedServer struct {
 	name    string
 	ln      net.Listener
 	handler http.Handler
+	// onShutdown, when set, runs as the graceful shutdown starts.
+	onShutdown func()
 }
 
 // runServers serves every listener until ctx is cancelled or one server fails, then shuts all
@@ -252,13 +258,14 @@ type namedServer struct {
 func runServers(ctx context.Context, logger *slog.Logger, servers ...namedServer) error {
 	g, gctx := errgroup.WithContext(ctx)
 	for _, s := range servers {
-		g.Go(func() error { return runHTTPServer(gctx, s.ln, s.handler, logger.With("server", s.name)) })
+		g.Go(func() error { return runHTTPServer(gctx, s.ln, s.handler, s.onShutdown, logger.With("server", s.name)) })
 	}
 	return g.Wait()
 }
 
-// runHTTPServer serves until ctx is cancelled, then drains in-flight requests.
-func runHTTPServer(ctx context.Context, ln net.Listener, handler http.Handler, logger *slog.Logger) error {
+// runHTTPServer serves until ctx is cancelled, then drains in-flight requests. onShutdown, when
+// not nil, runs as the drain starts (http.Server.RegisterOnShutdown).
+func runHTTPServer(ctx context.Context, ln net.Listener, handler http.Handler, onShutdown func(), logger *slog.Logger) error {
 	srv := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: readHeaderTimeout,
@@ -266,6 +273,9 @@ func runHTTPServer(ctx context.Context, ln net.Listener, handler http.Handler, l
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
+	}
+	if onShutdown != nil {
+		srv.RegisterOnShutdown(onShutdown)
 	}
 
 	serveErr := make(chan error, 1)

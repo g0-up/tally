@@ -310,6 +310,18 @@ func fillIsolationStore(t *testing.T, s controlStack, adm *browser, adminID uuid
 		"doc_id": invoice.ID, "doc_version": invoice.Version, "payload_hash": strings.Repeat("ab", 32), "note": "Khách quen"}),
 		"exception confirmation")
 	reportingStack{domains: s.domains, clk: s.clk}.drainOutbox(t, st.tenant)
+	// A phone scanner session of the owner's desktop with one scan, ended so that its event stream
+	// answers at once instead of staying open.
+	scannerSession := send[withID](t, b, http.MethodPost, "/scanner-sessions", nil).ID
+	testkit.InTenant(t, testkit.DB(t), st.tenant, func(q db.Querier) error {
+		_, err := q.ExecContext(ctx, `
+			INSERT INTO scanner_scans (id, tenant_id, session_id, idempotency_key, request_hash, code, created_at, expires_at)
+			VALUES ($1, $2, $3, 'iso-scan', '\x00', '8935001234567', $4, $4)`, ids.New(), st.tenant, scannerSession, s.clk.Now())
+		return err
+	})
+	if rec := b.do(http.MethodDelete, v1+"/scanner-sessions/"+scannerSession.String(), nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("end scanner session = %d %s", rec.Code, rec.Body)
+	}
 
 	// Platform records about the store: a support ticket with a consented session, and an invoice.
 	ticket := send[support.TicketDTO](t, b, http.MethodPost, "/support-tickets",
@@ -365,6 +377,7 @@ var childPairs = map[string]struct{ table, parent, child string }{
 	"product_images":    {"product_images", "product_id", "id"},
 	"sku_barcodes":      {"sku_barcodes", "sku_id", "id"},
 	"sku_units":         {"sku_units", "sku_id", "unit_id"},
+	"scanner_scans":     {"scanner_scans", "session_id", "id"},
 }
 
 // collectIDs reads one id of every kind and every id the store owns, from every table with a
@@ -735,7 +748,7 @@ var pathParamRE = regexp.MustCompile(`\{\w+\}`)
 // childKinds name the kind of the second id of a path by the collection before it.
 var childKinds = map[string]string{
 	"options": "attribute_options", "images": "product_images", "barcodes": "sku_barcodes", "units": "sku_units",
-	"contacts": "contacts", "addresses": "party_addresses", "items": "price_list_items",
+	"contacts": "contacts", "addresses": "party_addresses", "items": "price_list_items", "scans": "scanner_scans",
 }
 
 // reportRef is a report of the catalogue with the filters it takes.

@@ -86,6 +86,7 @@ type newProductRequest struct {
 	TrackLot       bool         `json:"track_lot"`
 	RetailPrice    *money.Money `json:"retail_price"`
 	WholesalePrice *money.Money `json:"wholesale_price"`
+	Barcode        *string      `json:"barcode"`
 }
 
 func (r *newProductRequest) input() *NewProduct {

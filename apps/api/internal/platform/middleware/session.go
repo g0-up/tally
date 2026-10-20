@@ -48,7 +48,9 @@ type Cookies struct {
 	CSRF         string
 	AdminSession string
 	AdminCSRF    string
-	Secure       bool
+	// Scan is the phone's scanner session cookie.
+	Scan   string
+	Secure bool
 }
 
 // CookieNames returns the names for production (secure) or development.
@@ -57,10 +59,13 @@ func CookieNames(secure bool) Cookies {
 		return Cookies{
 			Session: "__Host-tally_session", CSRF: "__Host-tally_csrf",
 			AdminSession: "__Host-tally_admin_session", AdminCSRF: "__Host-tally_admin_csrf",
-			Secure: true,
+			Scan: "__Host-tally_scan", Secure: true,
 		}
 	}
-	return Cookies{Session: "tally_session", CSRF: "tally_csrf", AdminSession: "tally_admin_session", AdminCSRF: "tally_admin_csrf"}
+	return Cookies{
+		Session: "tally_session", CSRF: "tally_csrf", AdminSession: "tally_admin_session", AdminCSRF: "tally_admin_csrf",
+		Scan: "tally_scan",
+	}
 }
 
 const principalKey = "middleware.principal"
