@@ -1,10 +1,15 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { pushEscapeLayer } from "../../../shared/hooks/use-hotkeys";
 import { apiUrl } from "../../../test/msw/handlers";
+import { scannerServer } from "../../../test/msw/scanner";
 import { server } from "../../../test/msw/server";
 import { renderWithProviders } from "../../../test/render";
+import type { ScanHandler } from "../../scanner";
+import { createFakeStreams } from "../../scanner/testing/fake-event-stream";
+import { memorySessionStore, pairedStream, withScanner } from "../../scanner/testing/scanner-harness";
 import { usePosCart, type PosProduct } from "../hooks/use-pos-cart";
 import { listCheckoutIntents } from "../offline/checkout-intents";
 import { connectivity, useConnectivity } from "../offline/connectivity";
@@ -20,7 +25,7 @@ const BUNDLE = testBundle();
 const BASE_LIST = { kind: "base_list", price_list_name: "Bảng giá chung", color_id: null };
 
 /** The POS screen's cart column with the page's connectivity and background sync. */
-function Screen() {
+function Screen({ onPhoneScan }: { onPhoneScan?: ScanHandler }) {
   const cart = usePosCart();
   const view = useConnectivity();
   useOfflineSync(OFFLINE_TENANT_ID);
@@ -32,7 +37,14 @@ function Screen() {
       <button type="button" onClick={() => cart.setCustomer({ id: "party-an", name: "Chị An" })}>
         Chọn Chị An
       </button>
-      <PosCartContainer cart={cart} catalog={null} methods={OFFLINE_METHODS} onFocusScan={() => undefined} offline={{ offline: view.state !== "online", bundle: BUNDLE }} />
+      <PosCartContainer
+        cart={cart}
+        catalog={null}
+        methods={OFFLINE_METHODS}
+        onFocusScan={() => undefined}
+        {...(onPhoneScan ? { onPhoneScan } : {})}
+        offline={{ offline: view.state !== "online", bundle: BUNDLE }}
+      />
     </>
   );
 }
@@ -89,6 +101,19 @@ async function fillCart() {
   // The first chip is the exact total.
   await userEvent.click(within(chips).getAllByRole("button")[0] as HTMLElement);
 }
+
+/** The cart column with a paired phone whose codes go to `onPhoneScan`. */
+async function renderWithPhone(onPhoneScan: ScanHandler) {
+  const api = scannerServer({ "ss-1": { state: "claimed", device_label: "Pixel 8" } });
+  const streams = createFakeStreams();
+  renderWithProviders(withScanner(<Screen onPhoneScan={onPhoneScan} />, streams, memorySessionStore("ss-1")));
+  const stream = await pairedStream(streams, "Pixel 8");
+  let n = 0;
+  const scan = (code: string) => stream.emit("scan", { scan_id: `scan-${++n}`, code, ttl_ms: 10_000 });
+  return { api, scan };
+}
+
+const ADDED = { outcome: "added", skuId: "sku-keo", unitId: "unit-goi" } as const;
 
 beforeEach(resetOfflineDb);
 afterEach(() => connectivity.reset());
@@ -166,6 +191,57 @@ describe("PosCartContainer", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Thêm Kẹo dừa" }));
     await waitFor(() => expect(due).toHaveTextContent(/^Khách cần trả 50\.000\s₫$/));
+  });
+
+  it("turns a phone's code away while a sale is being saved, and takes codes again once it is", async () => {
+    let release: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      ...bootstrapHandlers(),
+      ...pricingHandlers(),
+      syncExceptionsHandler(() => []),
+      http.post(apiUrl("/pos/checkout"), async () => {
+        await answered;
+        return HttpResponse.json(testPosSale("HD-0042"), { status: 201 });
+      }),
+    );
+    const onPhoneScan = vi.fn<ScanHandler>(() => ADDED);
+    const { api, scan } = await renderWithPhone(onPhoneScan);
+    await fillCart();
+
+    await userEvent.click(screen.getByRole("button", { name: "Thanh toán · F9" }));
+    await waitFor(() => expect(document.querySelector('button[aria-busy="true"]')).not.toBeNull());
+    scan("8935000000024");
+    await waitFor(() => expect(api.results).toHaveLength(1));
+    expect(api.results[0]?.body).toEqual({ outcome: "not_accepting" });
+    expect(onPhoneScan).not.toHaveBeenCalled();
+
+    release();
+    expect(await screen.findByText(/HD-0042/)).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('button[aria-busy="true"]')).toBeNull());
+    scan("8935000000024");
+    await waitFor(() => expect(api.results).toHaveLength(2));
+    expect(api.results[1]?.body).toEqual({ outcome: "added", sku_id: "sku-keo", unit_id: "unit-goi" });
+    expect(onPhoneScan).toHaveBeenCalledOnce();
+  });
+
+  it("turns a phone's code away while a dialog or drawer covers the screen", async () => {
+    server.use(...bootstrapHandlers(), ...pricingHandlers(), syncExceptionsHandler(() => []));
+    const onPhoneScan = vi.fn<ScanHandler>(() => ADDED);
+    const { api, scan } = await renderWithPhone(onPhoneScan);
+
+    const close = pushEscapeLayer(() => undefined);
+    scan("8935000000024");
+    await waitFor(() => expect(api.results).toHaveLength(1));
+    expect(api.results[0]?.body).toEqual({ outcome: "not_accepting" });
+    expect(onPhoneScan).not.toHaveBeenCalled();
+
+    close();
+    scan("8935000000024");
+    await waitFor(() => expect(api.results).toHaveLength(2));
+    expect(api.results[1]?.body).toEqual({ outcome: "added", sku_id: "sku-keo", unit_id: "unit-goi" });
   });
 
   it("states why the cart cannot be saved offline next to the disabled button", async () => {

@@ -1,5 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useApiClient } from "../../../shared/api/api-context";
+import { errorMessage } from "../../../shared/api/api-error";
 import { toMoney } from "../../../shared/domain/money";
+import type { ScanOutcome } from "../../../shared/lib/barcode";
 import { dec } from "../../../shared/lib/decimal";
 import { money, num, vnd } from "../../../shared/lib/format";
 import { Button, ButtonRow } from "../../../shared/ui/button";
@@ -14,8 +17,26 @@ import { Input } from "../../../shared/ui/input";
 import { LinkButton } from "../../../shared/ui/link-button";
 import { MoneyInput } from "../../../shared/ui/money-input";
 import { QtyInput } from "../../../shared/ui/qty-input";
-import { baseUnitName, useSkuPicker, useUnits, type SkuListItem } from "../../catalog";
-import { emptyBuyLine, lineAmount, lineName, newProductLine, tracksExpiry, tracksLot, withSku, withUnit, type BuyLine } from "../buy-lines";
+import { toast } from "../../../shared/ui/toast-store";
+import { baseUnitName, lookupSkuCode, useSkuPicker, useUnits, type SkuCodeMatch } from "../../catalog";
+import { NOT_ACCEPTING, PhonePairingCard, useScanTarget, type ScanHandler } from "../../scanner";
+import { PROCUREMENT_MESSAGES } from "../api/adapters";
+import {
+  addScan,
+  emptyBuyLine,
+  isBuyable,
+  lineAmount,
+  lineName,
+  newProductLine,
+  scanNewProduct,
+  tracksExpiry,
+  tracksLot,
+  withSku,
+  withUnit,
+  type BarcodeError,
+  type BuyLine,
+  type ScanStep,
+} from "../buy-lines";
 
 export interface BuyEditorProps {
   lines: readonly BuyLine[];
@@ -24,6 +45,10 @@ export interface BuyEditorProps {
   receive?: boolean;
   /** Receiving against an order: the rows are the ordered lines, quantities in base units. */
   fixed?: boolean;
+  /** Barcodes the server refused, by row key; shown while the row still holds the refused code. */
+  barcodeErrors?: ReadonlyMap<string, BarcodeError>;
+  /** The document is being saved or posted: its rows are already sent, so a phone's code is turned away. */
+  busy?: boolean;
 }
 
 const BUY_HINT =
@@ -32,25 +57,72 @@ const BUY_HINT =
 /** Shorter than the combobox default so it fits the product column without clipping. */
 const SKU_PLACEHOLDER = "Mã, tên hoặc mã vạch…";
 
-/** Goods and materials are bought; kits and combos are not. */
-const isBuyable = (sku: SkuListItem | undefined) => sku?.product_type === "goods" || sku?.product_type === "material";
-
 /** Accessible name of a row control: its product ("Số lượng – Trà ô long"), or its row before one is picked ("Số lượng – dòng 2"). */
 const rowLabel = (label: string, line: BuyLine, index: number) => `${label} – ${lineName(line, `dòng ${index + 1}`)}`;
 
 /**
  * Prototype `buyEditor`: the line table of Đơn nhập and Nhận hàng. A row is an existing SKU picked
  * from the catalog, an inline new product ("Hàng mới"), or — receiving against an order — an
- * ordered line counted in base units at the ordered price.
+ * ordered line counted in base units at the ordered price. A paired phone's scans add to the rows.
  */
-export function BuyEditor({ lines, onChange, receive = false, fixed = false }: BuyEditorProps) {
+export function BuyEditor({ lines, onChange, receive = false, fixed = false, barcodeErrors, busy = false }: BuyEditorProps) {
   const units = useUnits();
   const picker = useSkuPicker(null);
-  /** New-product row made from a search that found nothing; its name field takes focus. */
+  /** New-product row made from a search or a scan that found nothing; its name field takes focus. */
   const [created, setCreated] = useState<string | null>(null);
+
+  // Scans resolve after the server answers, so two of them can land before the dialog renders
+  // again: each adds to the latest rows held here, not to the ones of the render it began in.
+  const client = useApiClient();
+  const latest = useRef(lines);
+  const busyNow = useRef(busy);
+  useLayoutEffect(() => {
+    latest.current = lines;
+    busyNow.current = busy;
+  }, [lines, busy]);
 
   const set = (index: number, next: BuyLine) => onChange(lines.map((l, i) => (i === index ? next : l)));
   const remove = (index: number) => onChange(lines.filter((_, i) => i !== index));
+
+  // A phone's code is turned away while the document is being saved (its rows are already sent, so
+  // a code added now would be lost) and while another dialog is open over this one. The editor sits
+  // in a dialog itself, so the app-wide `hasBlockingLayer()` is always true here; instead, a modal
+  // dialog marks everything outside it aria-hidden, which covers this table only when a dialog is
+  // opened above the one holding it.
+  const table = useRef<HTMLDivElement>(null);
+  const refusing = () => busyNow.current || table.current?.closest('[aria-hidden="true"]') != null;
+
+  const applyScan = (step: ScanStep): ScanOutcome => {
+    if (step.notice !== undefined) toast.error(step.notice);
+    if (step.lines !== null) {
+      latest.current = step.lines;
+      onChange(step.lines);
+    }
+    if (step.created !== undefined) setCreated(step.created);
+    return step.outcome;
+  };
+
+  /** Adds one code sent by a paired phone. */
+  const scanCode: ScanHandler = async (code) => {
+    if (refusing()) return NOT_ACCEPTING;
+    const wanted = code.trim();
+    if (wanted === "") return { outcome: "not_found" };
+    // A code of a new product typed on this screen is not in the catalog yet.
+    const known = fixed ? null : scanNewProduct(latest.current, wanted);
+    if (known) return applyScan(known);
+    let found: SkuCodeMatch | null;
+    try {
+      found = await lookupSkuCode(client, wanted);
+    } catch (e) {
+      toast.error(PROCUREMENT_MESSAGES.scanLookupFailed(wanted, errorMessage(e)));
+      return { outcome: "not_found" };
+    }
+    // A save may have started while the code was being looked up.
+    if (refusing()) return NOT_ACCEPTING;
+    return applyScan(addScan(latest.current, wanted, found, { fixed, unitIdByName: units.idByName }));
+  };
+
+  useScanTarget(busy ? null : scanCode);
 
   const spec = (l: BuyLine, i: number) => (
     <td>
@@ -78,6 +150,33 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false }: B
           </div>
         ) : null}
       </td>
+    );
+  };
+
+  const barcodeInput = (l: BuyLine, i: number) => {
+    const refused = barcodeErrors?.get(l.key);
+    const error = refused !== undefined && refused.code === l.barcode.trim() ? refused.message : null;
+    const errorId = `bp-barcode-err-${l.key}`;
+    // The error wraps onto its own line under the field.
+    return (
+      <span style={{ flexWrap: "wrap" }}>
+        Mã vạch
+        <Input
+          style={{ width: 132 }}
+          value={l.barcode}
+          onChange={(e) => set(i, { ...l, barcode: e.target.value })}
+          placeholder="Không bắt buộc"
+          maxLength={64}
+          invalid={error !== null}
+          aria-describedby={error === null ? undefined : errorId}
+          aria-label={rowLabel("Mã vạch", l, i)}
+        />
+        {error === null ? null : (
+          <span id={errorId} className="err-text" role="alert" style={{ flexBasis: "100%", whiteSpace: "normal" }}>
+            {error}
+          </span>
+        )}
+      </span>
     );
   };
 
@@ -139,6 +238,7 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false }: B
               <QtyInput size="sm" style={{ width: 56 }} value={l.factor} onChange={(factor) => set(i, { ...l, factor })} placeholder="hệ số" aria-label={rowLabel("Hệ số quy đổi", l, i)} />
               {base}
             </span>
+            {barcodeInput(l, i)}
           </div>
           <div style={{ marginTop: 6, fontSize: 12 }}>
             <Checkbox label="Quản lý lô/hạn" aria-label={rowLabel("Quản lý lô/hạn", l, i)} checked={l.trackLot} onChange={(e) => set(i, { ...l, trackLot: e.target.checked })} />
@@ -273,7 +373,8 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false }: B
 
   return (
     <>
-      <div className="tw flat bp">
+      <PhonePairingCard />
+      <div ref={table} className="tw flat bp">
         <table className="t">
           <TableCaption>Hàng nhập</TableCaption>
           <thead>

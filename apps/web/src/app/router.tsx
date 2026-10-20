@@ -82,6 +82,8 @@ function tenantRoutes(): RouteObject[] {
       ],
     },
     { index: true, element: <TenantHome /> },
+    // The phone's scan page, opened from the desktop's pairing QR code: no sign-in, no app shell.
+    { path: "/scan", handle: { title: "Quét mã vạch" } satisfies RouteTitle, lazy: lazyPage("scanner", "scan"), errorElement: <RouteErrorBoundary /> },
     ...movedRoutes(),
     {
       element: <RequireAuth />,

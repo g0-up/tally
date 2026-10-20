@@ -8,7 +8,8 @@ import type { NewOutboxEntry } from "../outbox-repository";
 
 // MSW handlers and fixtures of the offline POS endpoints, applied per test with `server.use(...)`:
 // the store sells offline with a 2 000 000 đ cap and 12 hours, one cash and one transfer method,
-// two products. Each handler records what it received so tests can assert on the requests.
+// two products, the second with a box and a carton barcode. Each handler records what it received
+// so tests can assert on the requests.
 
 export const OFFLINE_TENANT_ID = TEST_TENANT.id;
 export const OFFLINE_SESSION_ID = "01J00000000000000000SESSION";
@@ -29,8 +30,22 @@ export const OFFLINE_METHODS = [
 ];
 
 export const OFFLINE_TILES = [
-  { sku_id: "sku-keo", sku_code: "KEO-DUA", name: "Kẹo dừa", variant_label: "", unit_id: "unit-goi", unit_name: "Gói", retail_price: "50000", stock: [{ color_id: null, qty: "40" }] },
-  { sku_id: "sku-mut", sku_code: "MUT-GUNG", name: "Mứt gừng", variant_label: "", unit_id: "unit-hop", unit_name: "Hộp", retail_price: "120000", stock: [{ color_id: null, qty: "8" }] },
+  { sku_id: "sku-keo", sku_code: "KEO-DUA", name: "Kẹo dừa", variant_label: "", unit_id: "unit-goi", unit_name: "Gói", retail_price: "50000", stock: [{ color_id: null, qty: "40" }], barcodes: [] },
+  {
+    sku_id: "sku-mut",
+    sku_code: "MUT-GUNG",
+    name: "Mứt gừng",
+    variant_label: "",
+    unit_id: "unit-hop",
+    unit_name: "Hộp",
+    retail_price: "120000",
+    stock: [{ color_id: null, qty: "8" }],
+    // One barcode on the box, one on the carton of 24 boxes.
+    barcodes: [
+      { code: "8935000000024", unit_id: "unit-hop", unit_name: "Hộp" },
+      { code: "18935000000021", unit_id: "unit-thung", unit_name: "Thùng" },
+    ],
+  },
 ];
 
 export const OFFLINE_COLORS = [{ id: "c-do", code: "do", name: "Đỏ", sort_order: 1, active: true }];

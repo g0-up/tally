@@ -1170,7 +1170,12 @@ export interface paths {
         /** Barcodes of a SKU */
         get: operations["listBarcodes"];
         put?: never;
-        /** Add a barcode, unique in the store */
+        /**
+         * Add a barcode, unique in the store
+         * @description A code is taken when the store already has it, or any form a scanner may report for the
+         *     same retail barcode, on any SKU or unit: `036000291452`, `0036000291452` and
+         *     `00036000291452` are one code, and so are a UPC-E and its UPC-A expansion.
+         */
         post: operations["addBarcode"];
         delete?: never;
         options?: never;
@@ -1192,7 +1197,12 @@ export interface paths {
         delete: operations["deleteBarcode"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Move a barcode to another unit of its SKU
+         * @description The next lookup of the code answers the new unit and its factor. A barcode already on the
+         *     unit is returned unchanged.
+         */
+        patch: operations["updateBarcodeUnit"];
         trace?: never;
     };
     "/mix-groups": {
@@ -1286,6 +1296,314 @@ export interface paths {
         get: operations["search"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sku-lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The SKU and unit a scanned code stands for
+         * @description The scan lookup of POS, stock counts and receipts. A barcode matches under the forms a
+         *     scanner may report for it (`036000291452` finds a stored `0036000291452`, a UPC-E finds
+         *     its UPC-A), the code exactly as given first; it answers the unit of the barcode. Failing
+         *     that, the code is tried as a SKU code as given, then upper-cased, answering the base unit.
+         *     Only active SKUs of active products match, and a barcode only on an active unit.
+         */
+        get: operations["lookupSkuCode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scanner-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a phone scanner session and show its QR code
+         * @description Opens a session for the signed-in user and login session. The claim code goes into the QR
+         *     code the phone opens (`/scan#c=<claim_code>`); it is shown only here, works once and expires
+         *     after 2 minutes (`POST /scanner-sessions/{id}:refresh-code` issues a new one). A user holds
+         *     at most 3 open sessions: opening a fourth revokes the oldest (`revoked` with `by: system`
+         *     on its streams). Limited to 6 per minute per client address.
+         */
+        post: operations["createScannerSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scanner-sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The state of a scanner session
+         * @description `waiting` until a phone claims the code, `pending` while the claim waits for approval (with
+         *     the phone's device label and verify code), `claimed` once approved, `ended` once revoked,
+         *     rejected sessions excepted, or expired: the desktop stream gone for 60 seconds, a claim not
+         *     approved within 2 minutes, or 12 hours after the approval. Only the user and login session
+         *     that opened the session see it; anyone else gets 404.
+         */
+        get: operations["getScannerSession"];
+        put?: never;
+        post?: never;
+        /**
+         * End a scanner session from the desktop
+         * @description The phone's stream gets `revoked` with `by: desktop`. Ending an ended session succeeds.
+         */
+        delete: operations["revokeScannerSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scanner-sessions/{id}:refresh-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue a new claim code for a session no phone claimed yet
+         * @description The old code stops working. Limited to 6 per minute per client address.
+         */
+        post: operations["refreshScannerClaimCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scanner-sessions/{id}:approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Let the phone that claimed the session scan
+         * @description Approve only after the verify code on the phone matches the one shown here. The phone's
+         *     stream gets `approved`. Limited to 6 per minute per client address.
+         */
+        post: operations["approveScannerSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scanner-sessions/{id}:reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refuse the phone that claimed the session and show a new QR code
+         * @description The phone's stream gets `rejected` and its cookie stops working (401 scan_session_ended);
+         *     the session waits for a claim of the new code. Limited to 6 per minute per client address.
+         */
+        post: operations["rejectScannerSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scanner-sessions/{id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Server-sent events of a scanner session, for the desktop
+         * @description A `text/event-stream`; every event's data is JSON. The stream starts with `retry: 3000` and
+         *     a `state` event (`ScannerSessionStatus`), also on every reconnect, so nothing that happened
+         *     while it was closed is missed. Then:
+         *     - `claim_requested` `{device_label?, verify_code}`: a phone claimed the code; show the
+         *       verify code and ask to approve or reject.
+         *     - `scan` `{scan_id, code, ttl_ms}`: the approved phone scanned `code`; answer with
+         *       `POST /scanner-sessions/{id}/scans/{scan_id}/result` within `ttl_ms`.
+         *     - `state` `{state: ended}`: the session expired; the stream closes.
+         *     - `revoked` `{by: desktop|phone|system}`: the session ended (`system`: the login session was
+         *       signed out, or a fourth session replaced it); the stream closes.
+         *     - `replaced` `{}`: another stream of this session opened (a second tab); the stream closes
+         *       and must not reconnect.
+         *     - `restarting` `{}`: the server is shutting down; reconnect after a short delay.
+         *     - A `: ping` comment every 15 seconds.
+         *
+         *     The open stream keeps the session alive; it is checked every 10 seconds against the login
+         *     session of its own cookie. Opening the stream of an ended session answers 204, which stops
+         *     EventSource from reconnecting. Limited to 10 per minute per client address.
+         */
+        get: operations["streamScannerSessionEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scanner-sessions/{id}/scans/{scanId}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tell the phone what the desktop did with a scanned code
+         * @description The phone waiting on the scan gets the result, with the product and unit names when
+         *     `added`. Answering a scan again returns the first result unchanged.
+         */
+        post: operations["resolveScannerScan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scan/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim a scanner session from the phone
+         * @description Served on the store's host without a login. The phone sends the claim code of the QR code
+         *     and gets the scanner cookie (`__Host-tally_scan`, `tally_scan` in plain-http development;
+         *     HttpOnly, SameSite=Strict, 12 hours) and the verify code to show while the desktop decides.
+         *     An unknown, used, expired or replaced code, or a code of another store, answers the same
+         *     410 claim_invalid, checked before the store's maintenance (423) or read-only (403) state,
+         *     which only a live code learns. Limited to 10 per minute per client address.
+         */
+        post: operations["claimScannerSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scan/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The state of the phone's scanner session
+         * @description `pending` (with the verify code) until the desktop approves, then `claimed`; `ended` once
+         *     the session expired. A missing cookie, or a session that was revoked or rejected, answers
+         *     401 scan_session_ended.
+         */
+        get: operations["getPhoneScannerSession"];
+        put?: never;
+        post?: never;
+        /**
+         * End the scanner session from the phone
+         * @description The desktop's stream gets `revoked` with `by: phone`; the scanner cookie is cleared. Like
+         *     signing out, it works while the store is in maintenance or read-only. Limited to 10 per
+         *     minute per client address.
+         */
+        delete: operations["revokePhoneScannerSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scan/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Server-sent events of the phone's scanner session
+         * @description A `text/event-stream`; every event's data is JSON. The stream starts with `retry: 3000` and
+         *     a `state` event (`PhoneScannerSession`), also on every reconnect. Then:
+         *     - `approved` `{}`: the desktop approved; scanning may start.
+         *     - `rejected` `{}`: the desktop refused this phone; the cookie no longer works. The stream
+         *       closes.
+         *     - `revoked` `{by: desktop|phone|system}`: the session was ended; the stream closes.
+         *     - `ended` `{}`: the session expired or the desktop's login session was signed out; the
+         *       stream closes.
+         *     - `replaced` `{}`: another stream of this phone session opened; the stream closes.
+         *     - `restarting` `{}`: the server is shutting down; reconnect after a short delay.
+         *     - A `: ping` comment every 15 seconds.
+         *
+         *     Opening the stream of an ended session answers 204. Limited to 10 per minute per client
+         *     address.
+         */
+        get: operations["streamPhoneScannerEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scan/scans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a scanned code to the desktop and wait for what it did
+         * @description The desktop's stream gets a `scan` event; the request waits up to 4 seconds for its answer.
+         *     `desktop_unavailable` (no desktop stream took the scan) and `timeout` (no answer in time)
+         *     are answered by the server and not stored, so a retry with the same Idempotency-Key tries
+         *     again; any other result is stored and a retry answers it unchanged. The answer carries only
+         *     the outcome and, when added, the product and unit names: never prices or stock. The scanner
+         *     cookie is checked first (401 scan_session_ended), before the store's maintenance (423) or
+         *     read-only (403) state. Limited to 5 per second (burst 10) per client address.
+         */
+        post: operations["sendPhoneScan"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6259,6 +6577,68 @@ export interface components {
             is_default_sale: boolean;
             is_default_purchase: boolean;
         };
+        SkuBarcodeRef: {
+            code: string;
+            /** Format: uuid */
+            unit_id: string;
+            unit_name: string;
+        };
+        SkuCodeMatch: {
+            sku: components["schemas"]["SkuListItem"];
+            /**
+             * Format: uuid
+             * @description The unit of the barcode; the base unit for a SKU code.
+             */
+            unit_id: string;
+            unit_name: string;
+            /** @description Base units in one of the unit. */
+            factor: components["schemas"]["Decimal"];
+            /** @enum {string} */
+            matched_by: "barcode" | "sku_code";
+        };
+        ScannerClaimCode: {
+            /** @description Goes into the QR code as `/scan#c=<claim_code>`; works once. */
+            claim_code: string;
+            /** Format: date-time */
+            claim_expires_at: string;
+        };
+        ScannerSessionCreated: components["schemas"]["ScannerClaimCode"] & {
+            /** Format: uuid */
+            id: string;
+        };
+        ScannerSessionStatus: {
+            /** @enum {string} */
+            state: "waiting" | "pending" | "claimed" | "ended";
+            /** @description The phone as "system · browser", such as "iPhone · Safari"; while pending or claimed, when recognised. */
+            device_label?: string;
+            /** @description While pending or claimed; must match the code the phone shows. */
+            verify_code?: string;
+            /** Format: date-time */
+            claimed_at?: string;
+            /** Format: date-time */
+            approved_at?: string;
+        };
+        PhoneScannerSession: {
+            /** @enum {string} */
+            state: "pending" | "claimed" | "ended";
+            /** @description While pending or claimed. */
+            verify_code?: string;
+        };
+        ScanResult: {
+            /**
+             * @description What the desktop did: `added` to the open document, `not_found` (no SKU has the code),
+             *     `not_accepting` (no screen takes scans), `needs_desktop_edit` (the line needs a choice
+             *     on the desktop), `new_product` (the desktop opened a product form for the code) or
+             *     `not_in_order` (the order being received has no such line). The server answers
+             *     `desktop_unavailable` (no desktop stream) and `timeout` (no answer in time) itself.
+             * @enum {string}
+             */
+            outcome: "added" | "not_found" | "not_accepting" | "needs_desktop_edit" | "new_product" | "not_in_order" | "desktop_unavailable" | "timeout";
+            /** @description When added. */
+            product_name?: string;
+            /** @description When added. */
+            unit_name?: string;
+        };
         SkuUnitRequest: {
             /** @description Base units in one of this unit, a positive decimal. */
             factor?: string;
@@ -6274,6 +6654,13 @@ export interface components {
             code: string;
             /** Format: date-time */
             created_at: string;
+        };
+        BarcodeUnitUpdate: {
+            /**
+             * Format: uuid
+             * @description A unit of the barcode's SKU.
+             */
+            unit_id: string;
         };
         MixGroupItem: {
             /** Format: uuid */
@@ -7802,7 +8189,10 @@ export interface components {
          * @description A product with one SKU created with the line, in the same transaction; the line then buys it
          *     in its purchase unit (else its base unit) and `unit_id` must be that unit or omitted. Prices
          *     are per base unit and are recorded as edited from the purchase order. Not allowed with
-         *     `sku_id` (422 not_allowed_with_sku_id) nor, on a receipt, with an order line.
+         *     `sku_id` (422 not_allowed_with_sku_id) nor, on a receipt, with an order line. A name the
+         *     store already has is 409 product_name_taken on `lines.{i}.new_product.name`; a barcode
+         *     another SKU holds, under any of its GTIN forms (another line of the same request included),
+         *     is 409 barcode_taken on `lines.{i}.new_product.barcode`.
          */
         NewProductRequest: {
             name: string;
@@ -7818,6 +8208,11 @@ export interface components {
             track_lot?: boolean;
             retail_price?: components["schemas"]["Money"] | null;
             wholesale_price?: components["schemas"]["Money"] | null;
+            /**
+             * @description A barcode of the new SKU, attached to its base unit. Trimmed; blank means none. Printable
+             *     ASCII without spaces (422 on `lines.{i}.new_product.barcode`).
+             */
+            barcode?: string | null;
         };
         PurchaseOrderRequest: {
             /** Format: uuid */
@@ -8838,6 +9233,8 @@ export interface components {
             /** @description The retail list price; null when the SKU has none. */
             retail_price: components["schemas"]["Money"] | null;
             stock: components["schemas"]["PosTileStock"][];
+            /** @description The barcodes of the active units of the SKU. */
+            barcodes: components["schemas"]["SkuBarcodeRef"][];
         };
         PosBootstrap: {
             settings: components["schemas"]["PosSettings"];
@@ -13545,6 +13942,37 @@ export interface operations {
             404: components["responses"]["Error"];
         };
     };
+    updateBarcodeUnit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+                barcodeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BarcodeUnitUpdate"];
+            };
+        };
+        responses: {
+            /** @description Barcode. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Barcode"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            /** @description unit_id required or not_a_unit_of_sku. */
+            422: components["responses"]["Error"];
+        };
+    };
     listMixGroups: {
         parameters: {
             query?: {
@@ -13762,6 +14190,455 @@ export interface operations {
             };
             401: components["responses"]["Error"];
             422: components["responses"]["Error"];
+        };
+    };
+    lookupSkuCode: {
+        parameters: {
+            query: {
+                code: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The match. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkuCodeMatch"];
+                };
+            };
+            401: components["responses"]["Error"];
+            /** @description code_not_found. */
+            404: components["responses"]["Error"];
+            /** @description The code is empty or cannot be a barcode (`fields.code` required, too_long or invalid_format). */
+            422: components["responses"]["Error"];
+        };
+    };
+    createScannerSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session and its claim code. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScannerSessionCreated"];
+                };
+            };
+            401: components["responses"]["Error"];
+            /** @description support_read_only or subscription_read_only. */
+            403: components["responses"]["Error"];
+            /** @description tenant_maintenance. */
+            423: components["responses"]["Error"];
+            /** @description rate_limited, with Retry-After. */
+            429: components["responses"]["Error"];
+        };
+    };
+    getScannerSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScannerSessionStatus"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    revokeScannerSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ended. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            /** @description support_read_only or subscription_read_only. */
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            /** @description tenant_maintenance. */
+            423: components["responses"]["Error"];
+        };
+    };
+    refreshScannerClaimCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new claim code. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScannerClaimCode"];
+                };
+            };
+            401: components["responses"]["Error"];
+            /** @description support_read_only or subscription_read_only. */
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            /** @description already_claimed (a phone claimed the session, or it ended). */
+            409: components["responses"]["Error"];
+            /** @description tenant_maintenance. */
+            423: components["responses"]["Error"];
+            /** @description rate_limited, with Retry-After. */
+            429: components["responses"]["Error"];
+        };
+    };
+    approveScannerSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session, now claimed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScannerSessionStatus"];
+                };
+            };
+            401: components["responses"]["Error"];
+            /** @description support_read_only or subscription_read_only. */
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            /** @description not_pending (no claim waits for approval). */
+            409: components["responses"]["Error"];
+            /** @description tenant_maintenance. */
+            423: components["responses"]["Error"];
+            /** @description rate_limited, with Retry-After. */
+            429: components["responses"]["Error"];
+        };
+    };
+    rejectScannerSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new claim code. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScannerClaimCode"];
+                };
+            };
+            401: components["responses"]["Error"];
+            /** @description support_read_only or subscription_read_only. */
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            /** @description not_pending (no claim waits for approval). */
+            409: components["responses"]["Error"];
+            /** @description tenant_maintenance. */
+            423: components["responses"]["Error"];
+            /** @description rate_limited, with Retry-After. */
+            429: components["responses"]["Error"];
+        };
+    };
+    streamScannerSessionEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The event stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description The session ended. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            /** @description rate_limited, with Retry-After. */
+            429: components["responses"]["Error"];
+            /** @description stream_limit (too many open streams) or server_restarting; retry after a short delay. */
+            503: components["responses"]["Error"];
+        };
+    };
+    resolveScannerScan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+                scanId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    outcome: "added" | "not_found" | "not_accepting" | "needs_desktop_edit" | "new_product" | "not_in_order";
+                    /**
+                     * Format: uuid
+                     * @description Required when added.
+                     */
+                    sku_id?: string;
+                    /**
+                     * Format: uuid
+                     * @description Required when added; a unit of the SKU.
+                     */
+                    unit_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The stored result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanResult"];
+                };
+            };
+            401: components["responses"]["Error"];
+            /** @description support_read_only or subscription_read_only. */
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            /** @description scan_expired (the scan outlived its 10 seconds unanswered, or its session ended). */
+            409: components["responses"]["Error"];
+            /** @description validation_failed (`fields.outcome` oneof; `fields.sku_id`, `fields.unit_id` required or not_found). */
+            422: components["responses"]["Error"];
+            /** @description tenant_maintenance. */
+            423: components["responses"]["Error"];
+        };
+    };
+    claimScannerSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Claimed; the scanner cookie is set. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        state: "pending";
+                        verify_code: string;
+                    };
+                };
+            };
+            /** @description csrf_failed or subscription_read_only. */
+            403: components["responses"]["Error"];
+            /** @description claim_invalid. */
+            410: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            /** @description tenant_maintenance. */
+            423: components["responses"]["Error"];
+            /** @description rate_limited, with Retry-After. */
+            429: components["responses"]["Error"];
+        };
+    };
+    getPhoneScannerSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhoneScannerSession"];
+                };
+            };
+            /** @description scan_session_ended. */
+            401: components["responses"]["Error"];
+        };
+    };
+    revokePhoneScannerSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ended; the scanner cookie is cleared. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description scan_session_ended (the cookie is cleared too). */
+            401: components["responses"]["Error"];
+            /** @description csrf_failed. */
+            403: components["responses"]["Error"];
+            /** @description rate_limited, with Retry-After. */
+            429: components["responses"]["Error"];
+        };
+    };
+    streamPhoneScannerEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The event stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description The session ended. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description scan_session_ended. */
+            401: components["responses"]["Error"];
+            /** @description rate_limited, with Retry-After. */
+            429: components["responses"]["Error"];
+            /** @description stream_limit (too many open streams) or server_restarting; retry after a short delay. */
+            503: components["responses"]["Error"];
+        };
+    };
+    sendPhoneScan: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description What the desktop did with the code. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanResult"];
+                };
+            };
+            /** @description scan_session_ended (no cookie, or the session was revoked, rejected or expired). */
+            401: components["responses"]["Error"];
+            /** @description csrf_failed or subscription_read_only. */
+            403: components["responses"]["Error"];
+            /**
+             * @description scan_pending_approval (the desktop has not approved this phone yet) or
+             *     idempotency_key_reused (the key was used for another code).
+             */
+            409: components["responses"]["Error"];
+            /**
+             * @description validation_failed (`fields.code` required, too_long or invalid_format),
+             *     idempotency_key_required or idempotency_key_invalid.
+             */
+            422: components["responses"]["Error"];
+            /** @description tenant_maintenance. */
+            423: components["responses"]["Error"];
+            /** @description rate_limited, with Retry-After. */
+            429: components["responses"]["Error"];
         };
     };
     listCustomers: {

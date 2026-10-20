@@ -19,12 +19,15 @@ interface ServiceWorkerScope {
 declare const self: ServiceWorkerScope;
 
 const API_PREFIX = /^\/api\//;
+// The phone scan page always comes from the network, so it gets the current shell and the camera
+// and WebAssembly headers the edge sends for /scan only, even on a phone with the app installed.
+const SCAN_PAGE = /^\/scan(?:\/|$)/;
 
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
 // Deep links (/sales/pos after a reload) open the SPA shell; API paths are never navigations.
-registerRoute(new NavigationRoute(createHandlerBoundToURL("/index.html"), { denylist: [API_PREFIX] }));
+registerRoute(new NavigationRoute(createHandlerBoundToURL("/index.html"), { denylist: [API_PREFIX, SCAN_PAGE] }));
 
 // Every method, so a POST is never answered from a cache either.
 for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE"] as const) {

@@ -493,6 +493,9 @@ export const posTileSchema = z.object({
   unit_name: z.string(),
   retail_price: moneySchema.nullable(),
   stock: z.array(z.object({ color_id: nid, qty: qtySchema })),
+  // A device bundle saved before tiles carried barcodes has none; readers still use `?? []`,
+  // because a saved bundle is read back without this schema.
+  barcodes: z.array(z.object({ code: z.string(), unit_id: id, unit_name: z.string() })).default([]),
 });
 export type PosTile = z.infer<typeof posTileSchema>;
 

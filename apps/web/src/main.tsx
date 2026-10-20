@@ -73,6 +73,14 @@ function dropManifestOffStoreHosts(kind: HostContext["kind"]): void {
   document.querySelectorAll('link[rel="manifest"]').forEach((link) => link.remove());
 }
 
+/**
+ * The phone scan page (/scan) is a page of its own on a store host: no service worker, no
+ * reachability heartbeat on /me (the phone has no login session) and no offline POS data.
+ */
+function isScanPage(): boolean {
+  return /^\/scan\/?$/.test(window.location.pathname);
+}
+
 let storeServicesStarted = false;
 
 /** Store hosts follow the API's reachability and apply the offline data wipe rules (once per page). */
@@ -93,7 +101,7 @@ async function boot(): Promise<void> {
     let context = loaded.context;
     let snapshot: BootSnapshot | null = null;
     if (loaded.unreachable) {
-      const start = await offlineStart();
+      const start = isScanPage() ? null : await offlineStart();
       if (start) ({ context, snapshot } = start);
       // No answer at all and nothing saved: the boot error screen offers a retry. A server error
       // without a saved start still opens the app, whose screens report the API errors.
@@ -104,7 +112,7 @@ async function boot(): Promise<void> {
     platform.queryClient.setQueryData(HOST_CONTEXT_KEY, context);
     // Anonymous requests (login, sign-up, password reset) need the host's CSRF token too.
     if (context.csrf_token) platform.client.setCsrfToken(context.csrf_token);
-    if (context.kind === "tenant") {
+    if (context.kind === "tenant" && !isScanPage()) {
       startStoreServices(platform.queryClient);
       if (snapshot) {
         seedBootSnapshot(platform.queryClient, HOST_CONTEXT_KEY, snapshot);
@@ -115,7 +123,7 @@ async function boot(): Promise<void> {
     root.render(
       <StrictMode>
         <App platform={platform} />
-        {context.kind === "tenant" ? <UpdatePrompt /> : null}
+        {context.kind === "tenant" && !isScanPage() ? <UpdatePrompt /> : null}
       </StrictMode>,
     );
   } catch (error) {

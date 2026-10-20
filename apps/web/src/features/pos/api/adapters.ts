@@ -22,8 +22,8 @@ export function tileAvailable(tile: PosTile): string {
   return toDecimalString(sumDec(tile.stock.map((s) => s.qty)));
 }
 
-/** Colors a tile can still be sold in, for its dots and the auto-pick of a single color. */
-export function tileColors(tile: PosTile, codeOf: ColorMaps["codeOf"]): ColorCode[] {
+/** Colors a tile (or a looked-up SKU's stock) can still be sold in, for its dots and the auto-pick of a single color. */
+export function tileColors(tile: Pick<PosTile, "stock">, codeOf: ColorMaps["codeOf"]): ColorCode[] {
   const out: ColorCode[] = [];
   for (const s of tile.stock) {
     if (s.color_id === null || !dec(s.qty).gt(0)) continue;

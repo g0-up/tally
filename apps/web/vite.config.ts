@@ -38,7 +38,9 @@ const pwa = VitePWA({
       { src: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
     ],
   },
-  injectManifest: { globPatterns: ["**/*.{js,css,html,png,svg,woff2}"] },
+  // The barcode reader (and its .wasm, which the patterns never match) is fetched by the phone scan
+  // page alone, so no store device downloads it with the precache.
+  injectManifest: { globPatterns: ["**/*.{js,css,html,png,svg,woff2}"], globIgnores: ["**/barcode-reader-*.js"] },
   // Unit tests never load the service worker.
   disable: Boolean(process.env.VITEST),
 });
@@ -47,6 +49,15 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), pwa],
   resolve: {
     alias: { "@": path.resolve(import.meta.dirname, "src") },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // The ZXing ponyfill and its loader in one lazy chunk with a stable name, kept out of the
+        // precache by globIgnores above.
+        manualChunks: (id) => (/[\\/]node_modules[\\/].*(barcode-detector|zxing-wasm)[\\/]/.test(id) ? "barcode-reader" : undefined),
+      },
+    },
   },
   server: {
     port: 5173,

@@ -10,6 +10,7 @@ import { useDebtDocOpeners } from "../../features/debt";
 import { useInventoryDocOpeners } from "../../features/inventory";
 import { useKitsDocOpeners } from "../../features/kits";
 import { useProcurementDocOpeners } from "../../features/procurement";
+import { ScannerProvider } from "../../features/scanner";
 import { TenantProvider } from "../providers/tenant-provider";
 import { SIDEBAR_ID, Sidebar } from "./sidebar";
 import { UtilBar } from "./util-bar";
@@ -20,7 +21,9 @@ export const SKIP_LINK_LABEL = "Bỏ qua tới nội dung";
 export function AppShell() {
   return (
     <TenantProvider>
-      <ShellFrame />
+      <ScannerProvider>
+        <ShellFrame />
+      </ScannerProvider>
     </TenantProvider>
   );
 }

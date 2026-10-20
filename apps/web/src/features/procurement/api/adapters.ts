@@ -49,6 +49,10 @@ export const PROCUREMENT_MESSAGES = {
   fundRequired: "Chọn quỹ chi.",
   invoiceRequired: "Nhập số hóa đơn.",
   supplierRequired: "Chọn nhà cung cấp.",
+  barcodeShared: (code: string) => `Mã vạch “${code}” bị trùng ở hai dòng hàng mới.`,
+  scanNotInOrder: (code: string) => `Mã “${code}” không có trong đơn nhập này.`,
+  scanNotBuyable: (code: string, name: string) => `Mã “${code}” là ${name}, không phải hàng nhập.`,
+  scanLookupFailed: (code: string, reason: string) => `Không tra được mã “${code}”: ${reason}`,
   orderCreatedAsSent: (docNo: string) =>
     `Đã lưu ${docNo} theo nội dung lần bấm trước, lần đó chưa nhận được trả lời. Thay đổi sau đó chưa được lưu và đơn chưa chốt: đóng hộp thoại rồi kiểm tra đơn ${docNo}.`,
   invoiceMatchedAsSent: (documentNo: string) =>

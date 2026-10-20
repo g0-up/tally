@@ -14,7 +14,7 @@ import { useColorDirectory } from "../../catalog";
 import { SupplierQuickDialog } from "../../partners";
 import { PROCUREMENT_MESSAGES } from "../api/adapters";
 import { useSaveOrder } from "../api/mutations";
-import { buyTotal, emptyBuyLine, newProductCount, orderLinesRequest, sellChanges, type BuyLine } from "../buy-lines";
+import { barcodeErrors, buyTotal, emptyBuyLine, newProductCount, orderLinesRequest, sellChanges, type BuyLine, type SentWrite } from "../buy-lines";
 import { BuyEditor } from "../components/buy-preset";
 import { SupplierField, type PickedSupplier } from "../components/supplier-field";
 
@@ -36,6 +36,8 @@ export function NewPoDialog({ supplier: preset = null, onClose }: NewPoDialogPro
   const [lines, setLines] = useState<BuyLine[]>(() => [emptyBuyLine()]);
   const [quick, setQuick] = useState(false);
   const save = useSaveOrder(onClose);
+  /** Lines of the last save, so a refused barcode shows under the row that sent it. */
+  const [sent, setSent] = useState<SentWrite | null>(null);
 
   const submit = (confirm: boolean) => {
     if (supplier === null) {
@@ -47,6 +49,7 @@ export function NewPoDialog({ supplier: preset = null, onClose }: NewPoDialogPro
       toast.commitError(built.message);
       return;
     }
+    setSent({ lines: built, before: save.error });
     void save.run({ supplierId: supplier.id, expectedDate: expected, lines: built.lines, sells: sellChanges(lines), confirm });
   };
 
@@ -84,7 +87,7 @@ export function NewPoDialog({ supplier: preset = null, onClose }: NewPoDialogPro
             <DatePicker value={expected} onChange={setExpected} />
           </Field>
         </FormGrid>
-        <BuyEditor lines={lines} onChange={setLines} />
+        <BuyEditor lines={lines} onChange={setLines} barcodeErrors={barcodeErrors(save.error, sent)} busy={save.pending} />
       </CommitDialog>
       {quick ? (
         <SupplierQuickDialog

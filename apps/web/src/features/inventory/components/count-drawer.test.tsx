@@ -4,26 +4,56 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { STALE_DATA_MESSAGE } from "../../../shared/api/api-error";
 import { COMMIT_FAILED } from "../../../shared/ui/toast-store";
-import { apiUrl } from "../../../test/msw/handlers";
+import { apiError, apiUrl } from "../../../test/msw/handlers";
+import { scannerServer } from "../../../test/msw/scanner";
 import { server } from "../../../test/msw/server";
 import { renderWithProviders } from "../../../test/render";
-import { etagOf } from "../../catalog";
-import { testSku } from "../../procurement/testing/fixtures";
+import { etagOf, type SkuListItem } from "../../catalog";
+import { UNIT_HOP, testSku } from "../../procurement/testing/fixtures";
+import { createFakeStreams } from "../../scanner/testing/fake-event-stream";
+import { memorySessionStore, pairedStream, withScanner } from "../../scanner/testing/scanner-harness";
 import type { Count } from "../schemas";
 import { testCount, testCountLine } from "../testing/fixtures";
 import { CountDrawer } from "./count-drawer";
 
-/** Serves the count as it stands and records each line save with the version it was sent at. */
-function countServer(initial: Count) {
+const SKU_BARCODE = "8935000000017";
+const SKU_SECOND_BARCODE = "8935000000024";
+const CARTON_BARCODE = "18935000000014";
+
+/** What GET /sku-lookup answers for code: the SKU by its code, its two hộp barcodes and its thùng-of-12 barcode. */
+function lookupOf(code: string, sku: SkuListItem = testSku()) {
+  const [hop, thung] = sku.units;
+  const byCode: Record<string, { unit: SkuListItem["units"][number] | undefined; matched_by: "barcode" | "sku_code" }> = {
+    [sku.code.toUpperCase()]: { unit: hop, matched_by: "sku_code" },
+    [SKU_BARCODE]: { unit: hop, matched_by: "barcode" },
+    [SKU_SECOND_BARCODE]: { unit: hop, matched_by: "barcode" },
+    [CARTON_BARCODE]: { unit: thung, matched_by: "barcode" },
+  };
+  const m = byCode[code.toUpperCase()];
+  if (!m?.unit) return null;
+  return { sku, unit_id: m.unit.unit_id, unit_name: m.unit.unit_name, factor: m.unit.factor, matched_by: m.matched_by };
+}
+
+/**
+ * Serves the count as it stands, applying each line save to its line, and records each save with
+ * the version it was sent at. GET /sku-lookup answers through lookup.
+ */
+function countServer(initial: Count, lookup: (code: string) => object | null = (code) => lookupOf(code)) {
   let current = initial;
   const saves: Array<{ body: unknown; ifMatch: string | null }> = [];
   server.use(
     http.get(apiUrl("/stock-counts/cnt-1"), () => HttpResponse.json(current)),
     http.get(apiUrl("/skus"), () => HttpResponse.json({ data: [testSku()], next_cursor: null })),
+    http.get(apiUrl("/sku-lookup"), ({ request }) => {
+      const match = lookup(new URL(request.url).searchParams.get("code") ?? "");
+      return match ? HttpResponse.json(match) : apiError(404, "code_not_found");
+    }),
     http.put(apiUrl("/stock-counts/cnt-1/lines"), async ({ request }) => {
-      const body = (await request.json()) as { lines: Array<{ counted_qty: string }> };
+      const body = (await request.json()) as { lines: Array<{ line_id: string; counted_qty: string }> };
       saves.push({ body, ifMatch: request.headers.get("If-Match") });
-      current = testCount({ version: current.version + 1, lines: [testCountLine({ counted_qty: body.lines[0]?.counted_qty })] });
+      const saved = new Map(body.lines.map((l) => [l.line_id, l.counted_qty]));
+      const lines = (current.lines ?? []).map((l) => (saved.has(l.id) ? { ...l, counted_qty: saved.get(l.id) } : l));
+      current = testCount({ version: current.version + 1, lines });
       return HttpResponse.json(current);
     }),
   );
@@ -36,6 +66,16 @@ function countServer(initial: Count) {
 }
 
 const renderDrawer = () => renderWithProviders(<CountDrawer id="cnt-1" categoryName={() => null} onClose={() => {}} />);
+
+/** The drawer with a phone paired to this tab (session ss-1, approved); returns the stream its scans arrive on. */
+async function renderDrawerWithPhone() {
+  const api = scannerServer({ "ss-1": { state: "claimed", device_label: "Pixel 8" } });
+  const streams = createFakeStreams();
+  renderWithProviders(withScanner(<CountDrawer id="cnt-1" categoryName={() => null} onClose={() => {}} />, streams, memorySessionStore("ss-1")));
+  const drawer = await screen.findByRole("dialog", { name: "Kiểm kê KK-0001" });
+  const stream = await pairedStream(streams, "Pixel 8");
+  return { api, stream, drawer };
+}
 
 describe("CountDrawer", () => {
   it("hides the books in a blind count, saves what is typed and finishes the count", async () => {
@@ -103,11 +143,13 @@ describe("CountDrawer", () => {
     const scan = within(drawer).getByRole("textbox", { name: "Quét mã vạch" });
     await user.type(scan, "XYZ{Enter}");
     expect(await screen.findByText("Không có mã XYZ trong phiên kiểm kê.")).toBeInTheDocument();
+    expect(scan).toHaveValue("XYZ");
 
     await user.clear(scan);
     await user.type(scan, "sp001{Enter}");
     await waitFor(() => expect(counts.saves).toHaveLength(1));
     expect(counts.saves[0]?.body).toEqual({ lines: [{ line_id: "cl-1", counted_qty: "1" }] });
+    expect(scan).toHaveValue("");
   });
 
   it("says which line a scan added to through a status region that is there before the first scan", async () => {
@@ -121,8 +163,111 @@ describe("CountDrawer", () => {
     expect(status).toBeEmptyDOMElement();
 
     await user.type(scan, "sp001{Enter}");
-    expect(status).toHaveTextContent("Đã cộng 1 – Bánh quy bơ, thực đếm 1");
+    await waitFor(() => expect(status).toHaveTextContent("Đã cộng 1 – Bánh quy bơ (hộp), thực đếm 1"));
     expect(within(drawer).getByRole("status")).toBe(status);
+  });
+
+  it("counts a SKU by any of its barcodes, not only the first", async () => {
+    const counts = countServer(testCount());
+    server.use(http.get(apiUrl("/skus"), () => HttpResponse.json({ data: [testSku({ barcode: SKU_BARCODE })], next_cursor: null })));
+    const user = userEvent.setup();
+    renderDrawer();
+
+    const drawer = await screen.findByRole("dialog", { name: "Kiểm kê KK-0001" });
+    await user.type(within(drawer).getByRole("textbox", { name: "Quét mã vạch" }), `${SKU_SECOND_BARCODE}{Enter}`);
+    await waitFor(() => expect(counts.saves).toHaveLength(1));
+    expect(counts.saves[0]?.body).toEqual({ lines: [{ line_id: "cl-1", counted_qty: "1" }] });
+  });
+
+  it("counts a SKU beyond the first 200 of a whole-store count", async () => {
+    // The ids sort so that the 201st SKU is the one left out of the SKU details (200 ids at most).
+    const n = (i: number) => String(i).padStart(3, "0");
+    const lines = Array.from({ length: 201 }, (_, i) => testCountLine({ id: `cl-${n(i + 1)}`, sku_id: `sku-${n(i + 1)}`, sku_code: `SP${n(i + 1)}`, sku_name: `Hàng ${n(i + 1)}` }));
+    const last = testSku({ id: "sku-201", code: "SP201", display_name: "Hàng 201" });
+    const counts = countServer(testCount({ lines }), (code) => lookupOf(code, last));
+    const user = userEvent.setup();
+    renderDrawer();
+
+    const drawer = await screen.findByRole("dialog", { name: "Kiểm kê KK-0001" });
+    await user.type(within(drawer).getByRole("textbox", { name: "Quét mã vạch" }), `${SKU_SECOND_BARCODE}{Enter}`);
+    await waitFor(() => expect(counts.saves).toHaveLength(1));
+    expect(counts.saves[0]?.body).toEqual({ lines: [{ line_id: "cl-201", counted_qty: "1" }] });
+  });
+
+  it("adds the base units of a carton to the count", async () => {
+    const counts = countServer(testCount({ lines: [testCountLine({ counted_qty: "3" })] }));
+    const user = userEvent.setup();
+    renderDrawer();
+
+    const drawer = await screen.findByRole("dialog", { name: "Kiểm kê KK-0001" });
+    await user.type(within(drawer).getByRole("textbox", { name: "Quét mã vạch" }), `${CARTON_BARCODE}{Enter}`);
+    await waitFor(() => expect(counts.saves).toHaveLength(1));
+    expect(counts.saves[0]?.body).toEqual({ lines: [{ line_id: "cl-1", counted_qty: "15" }] });
+    expect(within(drawer).getByRole("status")).toHaveTextContent("Đã cộng 12 – Bánh quy bơ (thùng), thực đếm 15");
+  });
+
+  it("adds up two scans that both answer before the drawer renders again", async () => {
+    // Both lookups are held until the second is asked, so both scans start from the same render.
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let asked = 0;
+    const counts = countServer(testCount());
+    server.use(
+      http.get(apiUrl("/sku-lookup"), async () => {
+        asked += 1;
+        if (asked === 2) release();
+        await held;
+        return HttpResponse.json(lookupOf("SP001"));
+      }),
+    );
+    const user = userEvent.setup();
+    renderDrawer();
+
+    const drawer = await screen.findByRole("dialog", { name: "Kiểm kê KK-0001" });
+    await user.type(within(drawer).getByRole("textbox", { name: "Quét mã vạch" }), "SP001{Enter}");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(counts.saves).toHaveLength(2));
+    expect(counts.saves.map((s) => s.body)).toEqual([{ lines: [{ line_id: "cl-1", counted_qty: "1" }] }, { lines: [{ line_id: "cl-1", counted_qty: "2" }] }]);
+    expect(within(drawer).getByRole("status")).toHaveTextContent("thực đếm 2");
+  });
+
+  it("counts three phone scans of one item that arrive back to back", async () => {
+    const counts = countServer(testCount());
+    const { api, stream, drawer } = await renderDrawerWithPhone();
+    expect(within(drawer).getByRole("region", { name: "Quét bằng điện thoại" })).toHaveTextContent("Điện thoại đã kết nối · Pixel 8");
+    const scan = within(drawer).getByRole("textbox", { name: "Quét mã vạch" });
+    await userEvent.type(scan, "SP0");
+
+    for (const id of ["scan-1", "scan-2", "scan-3"]) stream.emit("scan", { scan_id: id, code: SKU_BARCODE, ttl_ms: 10_000 });
+    await waitFor(() => expect(api.results).toHaveLength(3));
+    expect(api.results.map((r) => r.body)).toEqual(Array.from({ length: 3 }, () => ({ outcome: "added", sku_id: "sku-1", unit_id: UNIT_HOP })));
+    await waitFor(() => expect(counts.saves.at(-1)?.body).toEqual({ lines: [{ line_id: "cl-1", counted_qty: "3" }] }));
+    expect(within(drawer).getByRole("textbox", { name: "Thực đếm – Bánh quy bơ" })).toHaveValue("3");
+    expect(scan).toHaveValue("SP0");
+  });
+
+  it("tells the phone the count takes no codes while it is not being edited", async () => {
+    const counts = countServer(testCount({ status: "pending_post", lines: [testCountLine({ system_qty: "24", counted_qty: "20", variance_qty: "-4" })] }));
+    const { api, stream, drawer } = await renderDrawerWithPhone();
+    expect(within(drawer).queryByRole("region", { name: "Quét bằng điện thoại" })).not.toBeInTheDocument();
+    stream.emit("scan", { scan_id: "scan-1", code: SKU_BARCODE, ttl_ms: 10_000 });
+    await waitFor(() => expect(api.results).toHaveLength(1));
+    expect(api.results[0]?.body).toEqual({ outcome: "not_accepting" });
+    expect(counts.saves).toHaveLength(0);
+  });
+
+  it("says when a code cannot be looked up", async () => {
+    const counts = countServer(testCount());
+    server.use(http.get(apiUrl("/sku-lookup"), () => apiError(500, "internal", { message: "Máy chủ lỗi" })));
+    const user = userEvent.setup();
+    renderDrawer();
+
+    const drawer = await screen.findByRole("dialog", { name: "Kiểm kê KK-0001" });
+    await user.type(within(drawer).getByRole("textbox", { name: "Quét mã vạch" }), "SP001{Enter}");
+    expect(await screen.findByText(/^Không tra được mã SP001: /)).toBeInTheDocument();
+    expect(counts.saves).toHaveLength(0);
   });
 
   it("names each line's fields after its product, color and lot so two lines of one product differ", async () => {

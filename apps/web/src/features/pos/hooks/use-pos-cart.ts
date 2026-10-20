@@ -28,7 +28,7 @@ export interface PosCartState {
   cart: CartRef | null;
 }
 
-/** What a tile or a scan adds: the SKU in its base unit. */
+/** What a tile or a scan adds: the SKU in the unit tapped or scanned. */
 export interface PosProduct {
   skuId: string;
   skuLabel: string;
@@ -54,7 +54,7 @@ const items = (lines: readonly LineDraft[]): ItemDraft[] => lines.filter((l): l 
 const isZero = (qty: Qty | null) => qty !== null && dec(qty).lte(0);
 
 /**
- * Adding a product counts it on the line of the same SKU in the base unit that has no color yet or
+ * Adding a product counts it on the line of the same SKU and unit that has no color yet or
  * the color it would get anyway; otherwise it starts a new line (prototype `posAdd`).
  */
 function addProduct(lines: readonly ItemDraft[], p: PosProduct): ItemDraft[] {

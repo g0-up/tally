@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, type ReactNode } from "react";
 import { isApiError } from "../../../shared/api/api-error";
 import { useDebounce } from "../../../shared/hooks/use-debounce";
+import { hasBlockingLayer } from "../../../shared/hooks/use-hotkeys";
 import type { Money } from "../../../shared/domain/money";
 import { dec } from "../../../shared/lib/decimal";
 import { vnd } from "../../../shared/lib/format";
@@ -12,6 +13,7 @@ import { WALK_IN_NAME, useColorMaps } from "../../sales/api/queries";
 import { draftToInput, isPriceable } from "../../sales/components/line-items/draft";
 import { useLinePricing, type LinePricing } from "../../sales/components/line-items/use-line-pricing";
 import { priceSourceLabel } from "../../sales/api/adapters";
+import { NOT_ACCEPTING, useScanTarget, type ScanHandler } from "../../scanner";
 import type { PosPaymentMethod, PosTile } from "../../sales/schemas";
 import { CART_STATUS_LABELS, checkoutPayments, paymentFigures } from "../api/adapters";
 import { useCheckout, useHoldCart } from "../api/mutations";
@@ -35,6 +37,8 @@ export interface PosCartContainerProps {
   catalog: ReactNode;
   methods: readonly PosPaymentMethod[];
   onFocusScan: () => void;
+  /** Adds the line a paired phone's code names; the cart turns codes away while it cannot take them. */
+  onPhoneScan?: ScanHandler;
   /** Connectivity, saved catalog and outbox: without the API the cart sells into the outbox. */
   offline: Pick<OfflinePos, "offline" | "bundle">;
 }
@@ -70,7 +74,7 @@ function useSettledPricing(pricing: LinePricing) {
 }
 
 /** Right column of the POS screen: the cart, the customer, the money and the two commands. */
-export function PosCartContainer({ cart, catalog, methods, onFocusScan, offline }: PosCartContainerProps) {
+export function PosCartContainer({ cart, catalog, methods, onFocusScan, onPhoneScan, offline }: PosCartContainerProps) {
   const { state } = cart;
   const colors = useColorMaps();
   const isOffline = offline.offline;
@@ -179,6 +183,11 @@ export function PosCartContainer({ cart, catalog, methods, onFocusScan, offline 
   }, [isOffline, hold, settled, linesOf]);
 
   usePosHotkeys({ focusScan: onFocusScan, hold: park, pay });
+
+  // A paired phone's code is turned away while a sale is being saved (the cart is cleared once it
+  // is) and while a dialog or drawer covers the screen, the same rule as the POS keys.
+  const saving = checkout.pending || offlineCheckout.pending || hold.pending;
+  useScanTarget(saving || onPhoneScan === undefined ? null : (code) => (hasBlockingLayer() ? NOT_ACCEPTING : onPhoneScan(code)));
 
   const holdReasonId = useId();
   const canSell = state.lines.length > 0;

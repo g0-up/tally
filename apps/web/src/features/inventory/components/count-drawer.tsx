@@ -1,6 +1,9 @@
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useApiClient } from "../../../shared/api/api-context";
+import { errorMessage } from "../../../shared/api/api-error";
 import { colorLabel, isColorCode } from "../../../shared/domain/color";
 import { toQty, type Qty } from "../../../shared/domain/qty";
+import type { ScanOutcome } from "../../../shared/lib/barcode";
 import { dec } from "../../../shared/lib/decimal";
 import { fdt } from "../../../shared/lib/dates";
 import { num, vnd } from "../../../shared/lib/format";
@@ -15,7 +18,8 @@ import { ListLoading } from "../../../shared/ui/list-footer";
 import { QtyInput } from "../../../shared/ui/qty-input";
 import { StatusPill } from "../../../shared/ui/status-pill";
 import { toast } from "../../../shared/ui/toast-store";
-import { useSkusByIds } from "../../catalog";
+import { lookupSkuCode, useSkusByIds, type SkuCodeMatch } from "../../catalog";
+import { PhonePairingCard, useScanTarget } from "../../scanner";
 import { colorKeyOf, COUNT_STATUS_LABELS } from "../api/adapters";
 import { signedQty, useCountLineSaver, useFinishCount, usePostCount, useRecount, type CountLineEntry } from "../api/mutations";
 import { useCount } from "../api/queries";
@@ -38,9 +42,9 @@ function countLineName(l: CountLine): string {
 
 /**
  * Prototype `drawCount`: the lines of one count. While counting each typed quantity is saved when
- * the field is left; the scanner adds one to the line of the scanned code and says which line, for
- * a cashier who is looking at the goods rather than the screen. "Số hệ thống" reads "Ẩn khi đếm
- * mù" whenever the server leaves it out.
+ * the field is left; a scan adds the base units of the scanned code (24 for the barcode of a carton
+ * of 24) to the line of its SKU and says which line, for a cashier who is looking at the goods
+ * rather than the screen. "Số hệ thống" reads "Ẩn khi đếm mù" whenever the server leaves it out.
  */
 export function CountDrawer({ id, categoryName, onClose }: CountDrawerProps) {
   const query = useCount(id);
@@ -68,25 +72,54 @@ export function CountDrawer({ id, categoryName, onClose }: CountDrawerProps) {
     void saver.save([entry(l, edits[l.id] ?? null)]);
   };
 
+  // Scans resolve after the server answers, so two of them can land before React renders again:
+  // each adds to the latest lines and edits held here, not to the ones of the render it began in.
+  const client = useApiClient();
+  const latest = useRef({ lines, edits });
+  useLayoutEffect(() => {
+    latest.current = { lines, edits };
+  }, [lines, edits]);
+
+  /** Counts one scanned code, typed in the scan box or sent by a paired phone. */
+  const countScan = async (code: string): Promise<ScanOutcome> => {
+    const wanted = code.trim();
+    if (wanted === "") return { outcome: "not_found" };
+    let match: SkuCodeMatch | null;
+    try {
+      match = await lookupSkuCode(client, wanted);
+    } catch (e) {
+      setScanned("");
+      toast.error(`Không tra được mã ${wanted}: ${errorMessage(e)}`);
+      return { outcome: "not_found" };
+    }
+    const cur = latest.current;
+    const line = match ? cur.lines.find((l) => l.sku_id === match.sku.id) : undefined;
+    if (!match || !line) {
+      setScanned("");
+      toast.error(`Không có mã ${wanted} trong phiên kiểm kê.`);
+      return { outcome: "not_found" };
+    }
+    const counted = line.id in cur.edits ? (cur.edits[line.id] ?? null) : (line.counted_qty ?? null);
+    const next = toQty(dec(counted ?? 0).plus(match.factor));
+    latest.current = { ...cur, edits: { ...cur.edits, [line.id]: next } };
+    setEdits((prev) => ({ ...prev, [line.id]: next }));
+    setScanned(`Đã cộng ${num(match.factor)} – ${countLineName(line)} (${match.unit_name}), thực đếm ${num(next)}`);
+    void saver.save([entry(line, next)]);
+    return { outcome: "added", skuId: line.sku_id, unitId: match.unit_id };
+  };
+
+  // A paired phone counts only while the count is being edited; otherwise it is told so.
+  useScanTarget(editing ? countScan : null);
+
   const onScan = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter") return;
     e.preventDefault();
-    const code = scan.trim().toLowerCase();
+    const code = scan.trim();
     if (code === "") return;
-    const line = lines.find((l) => {
-      const sku = skus.data?.get(l.sku_id);
-      return l.sku_code.toLowerCase() === code || sku?.barcode?.toLowerCase() === code;
+    void countScan(code).then((r) => {
+      // Clears the box only for a code that counted, and only if nothing new was typed meanwhile.
+      if (r.outcome === "added") setScan((cur) => (cur.trim() === code ? "" : cur));
     });
-    if (!line) {
-      setScanned("");
-      toast.error(`Không có mã ${scan.trim()} trong phiên kiểm kê.`);
-      return;
-    }
-    const next = toQty(dec(valueOf(line) ?? 0).plus(1));
-    setEdits((cur) => ({ ...cur, [line.id]: next }));
-    setScanned(`Đã cộng 1 – ${countLineName(line)}, thực đếm ${num(next)}`);
-    setScan("");
-    void saver.save([entry(line, next)]);
   };
 
   const columns: Column<CountLine>[] = [
@@ -191,6 +224,7 @@ export function CountDrawer({ id, categoryName, onClose }: CountDrawerProps) {
         <>
           {actions(count)}
           {count.status === "pending_post" ? <p className="hint">Kiểm tra cột chênh lệch trước khi ghi sổ. Sau khi ghi, tồn kho được điều chỉnh theo số thực đếm.</p> : null}
+          {editing ? <PhonePairingCard /> : null}
           {editing ? (
             <div className="scan">
               <input value={scan} onChange={(e) => setScan(e.target.value)} onKeyDown={onScan} placeholder="Quét mã vạch hoặc gõ mã hàng rồi Enter" aria-label="Quét mã vạch" />

@@ -6,7 +6,7 @@ import { isColorCode, type ColorCode, type ColorKey } from "../../../shared/doma
 import { useCursorList } from "../../../shared/hooks/use-cursor-list";
 import type { ComboItem } from "../../../shared/ui/combobox";
 import { skuComboItem } from "./adapters";
-import { attributeSchema, attributeSetSchema, categorySchema, colorSchema, mixGroupSchema, skuListItemSchema, unitSchema, type ProductType, type SkuListItem, type Unit } from "../schemas";
+import { attributeSchema, attributeSetSchema, barcodeSchema, categorySchema, colorSchema, mixGroupSchema, skuListItemSchema, unitSchema, type ProductType, type SkuListItem, type Unit } from "../schemas";
 
 // Read side of the catalog screens. Every key starts with "catalog" so a posting that changes
 // prices, costs or stock refreshes product lists with one prefix.
@@ -20,6 +20,7 @@ export const skuKeys = {
   all: ["catalog", "skus"] as const,
   list: (params: Readonly<Record<string, string>>) => ["catalog", "skus", "list", params] as const,
   byIds: (ids: readonly string[]) => ["catalog", "skus", "by-id", ...ids] as const,
+  barcodes: (skuId: string) => ["catalog", "skus", "barcodes", skuId] as const,
 };
 
 export const mixGroupKeys = {
@@ -136,6 +137,16 @@ export function useSkusByIds(ids: readonly string[]) {
     queryFn: ({ signal }) => client.get("/skus", { query: { id: sorted, limit: MAX_SKU_IDS }, schema: listOf(skuListItemSchema), signal }),
     enabled: sorted.length > 0,
     select: (r) => new Map(r.data.map((s) => [s.id, s])),
+  });
+}
+
+/** `GET /skus/{id}/barcodes`: every barcode of the SKU with the unit a scan of it answers. */
+export function useSkuBarcodes(skuId: string) {
+  const client = useApiClient();
+  return useQuery({
+    queryKey: skuKeys.barcodes(skuId),
+    queryFn: ({ signal }) => client.get(`/skus/${skuId}/barcodes`, { schema: listOf(barcodeSchema), signal }),
+    select: (r) => r.data,
   });
 }
 

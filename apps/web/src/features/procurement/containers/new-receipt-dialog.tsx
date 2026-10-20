@@ -16,7 +16,18 @@ import { SupplierQuickDialog } from "../../partners";
 import { PROCUREMENT_MESSAGES } from "../api/adapters";
 import { usePostReceipt } from "../api/mutations";
 import { useReceivableLines } from "../api/queries";
-import { buyTotal, emptyBuyLine, newProductCount, orderBuyLine, overTolerance, receiptLinesRequest, sellChanges, type BuyLine } from "../buy-lines";
+import {
+  barcodeErrors,
+  buyTotal,
+  emptyBuyLine,
+  newProductCount,
+  orderBuyLine,
+  overTolerance,
+  receiptLinesRequest,
+  sellChanges,
+  type BuyLine,
+  type SentWrite,
+} from "../buy-lines";
 import { BuyEditor } from "../components/buy-preset";
 import { SupplierField, type PickedSupplier } from "../components/supplier-field";
 import type { Order } from "../schemas";
@@ -73,6 +84,8 @@ function ReceiptForm({ order, initial, onClose }: ReceiptFormProps) {
   const [lines, setLines] = useState<BuyLine[]>(initial);
   const [quick, setQuick] = useState(false);
   const post = usePostReceipt(onClose);
+  /** Lines of the last post, so a refused barcode shows under the row that sent it. */
+  const [sent, setSent] = useState<SentWrite | null>(null);
   const closeWarning = post.unsettled ? CLOSE_UNSETTLED_MESSAGE : hasEnteredLines(lines, initial) ? PROCUREMENT_MESSAGES.discardReceipt : null;
 
   const submit = () => {
@@ -89,6 +102,7 @@ function ReceiptForm({ order, initial, onClose }: ReceiptFormProps) {
       toast.commitError(built.message);
       return;
     }
+    setSent({ lines: built, before: post.error });
     void post.run({ orderId: order?.id ?? null, supplierId: order?.supplier_party_id ?? supplier?.id ?? null, lines: built.lines, sells: sellChanges(lines), invoiceNo, freight });
   };
 
@@ -124,7 +138,7 @@ function ReceiptForm({ order, initial, onClose }: ReceiptFormProps) {
             <MoneyInput value={freight} onChange={setFreight} />
           </Field>
         </FormGrid>
-        <BuyEditor lines={lines} onChange={setLines} receive fixed={order !== null} />
+        <BuyEditor lines={lines} onChange={setLines} receive fixed={order !== null} barcodeErrors={barcodeErrors(post.error, sent)} busy={post.pending} />
       </CommitDialog>
       {quick ? (
         <SupplierQuickDialog

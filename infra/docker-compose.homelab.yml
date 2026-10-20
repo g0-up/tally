@@ -11,7 +11,7 @@
 # /internal/* and /metrics are never routed: the api router only matches /api/.
 #
 # Priorities: Traefik ranks routers by rule length unless a priority is set. Tally's wildcard routers get
-# explicit low priorities (api 3, web 2) so the exact Host routers of other stacks on the same zone
+# explicit low priorities (scan page 4, api 3, web 2) so the exact Host routers of other stacks on the same zone
 # (e.g. tiendouong.sidecup.app) always win. Router and middleware names carry the `tally-` prefix because
 # the shared Traefik already holds routers of other stacks.
 
@@ -69,6 +69,27 @@ services:
       traefik.http.routers.tally-web.service: tally-web
       traefik.http.routers.tally-web.middlewares: tally-headers
       traefik.http.services.tally-web.loadbalancer.server.port: "8080"
+      # The phone scan page (/scan on a store host) gets a router of its own because it is the only
+      # document that opens the camera and compiles WebAssembly (the ZXing barcode reader): its
+      # headers are tally-headers plus camera=(self), script-src 'wasm-unsafe-eval' (WebAssembly
+      # only, never JS eval) and no-referrer, and every other path keeps camera=() and the plain CSP.
+      # EventSource needs nothing more than connect-src 'self'. Priority 4 beats tally-web (2) for
+      # this one path and still loses to the exact Host routers of other stacks (ranked by rule
+      # length). Safari ignores Permissions-Policy, so on iOS the browser's camera prompt is the gate.
+      traefik.http.middlewares.tally-headers-scan.headers.stsSeconds: "31536000"
+      traefik.http.middlewares.tally-headers-scan.headers.stsIncludeSubdomains: "true"
+      traefik.http.middlewares.tally-headers-scan.headers.forceSTSHeader: "true"
+      traefik.http.middlewares.tally-headers-scan.headers.contentTypeNosniff: "true"
+      traefik.http.middlewares.tally-headers-scan.headers.frameDeny: "true"
+      traefik.http.middlewares.tally-headers-scan.headers.referrerPolicy: no-referrer
+      traefik.http.middlewares.tally-headers-scan.headers.permissionsPolicy: "camera=(self), microphone=(), geolocation=()"
+      traefik.http.middlewares.tally-headers-scan.headers.contentSecurityPolicy: "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: ${OBJECT_STORE_ENDPOINT}; connect-src 'self' ${OBJECT_STORE_ENDPOINT}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+      traefik.http.middlewares.tally-headers-scan.headers.customResponseHeaders.Server: ""
+      traefik.http.routers.tally-web-scan.rule: "HostRegexp(`^[a-z0-9-]+[.]${DOMAIN}$$`) && Path(`/scan`)"
+      traefik.http.routers.tally-web-scan.priority: "4"
+      traefik.http.routers.tally-web-scan.entrypoints: web
+      traefik.http.routers.tally-web-scan.service: tally-web
+      traefik.http.routers.tally-web-scan.middlewares: tally-headers-scan
 
 networks:
   homelab:

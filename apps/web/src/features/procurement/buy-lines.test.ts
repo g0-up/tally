@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { ApiError } from "../../shared/api/api-error";
 import { toMoney } from "../../shared/domain/money";
 import { toQty } from "../../shared/domain/qty";
 import { PROCUREMENT_MESSAGES } from "./api/adapters";
 import {
+  addScan,
+  barcodeErrors,
   emptyBuyLine,
   newProductCount,
   newProductLine,
@@ -10,6 +13,7 @@ import {
   orderLinesRequest,
   overTolerance,
   receiptLinesRequest,
+  scannedNewLine,
   sellChanges,
   withSku,
   withUnit,
@@ -58,6 +62,7 @@ describe("orderLinesRequest", () => {
     const built = orderLinesRequest([line], noColor);
     expect(built).toEqual({
       ok: true,
+      keys: [line.key],
       lines: [
         {
           unit_id: THUNG,
@@ -75,6 +80,7 @@ describe("orderLinesRequest", () => {
     const built = orderLinesRequest([line], () => "color-do");
     expect(built).toEqual({
       ok: true,
+      keys: [line.key],
       lines: [{ sku_id: "sku-1", unit_id: THUNG, qty: "2", unit_price: "120000", discount_amount: "0", color_id: "color-do", spec_text: "24 gói" }],
     });
   });
@@ -103,6 +109,7 @@ describe("receiptLinesRequest", () => {
     expect(overTolerance(line)).toBe(false);
     expect(receiptLinesRequest([line], noColor)).toEqual({
       ok: true,
+      keys: [line.key, line.key],
       lines: [
         { purchase_order_line_id: "pol-1", qty: "2" },
         { purchase_order_line_id: "pol-1", qty: "0.1", condition: "excess" },
@@ -119,6 +126,138 @@ describe("receiptLinesRequest", () => {
   it("refuses a base quantity that does not convert to the order unit", () => {
     const line = { ...orderBuyLine(orderLine("24"), sku(), null), qty: toQty(5) };
     expect(receiptLinesRequest([line], noColor)).toEqual({ ok: false, message: "Bánh quy bơ: số lượng nhận không quy đổi đúng ra thùng của đơn nhập." });
+  });
+});
+
+describe("new products with a barcode", () => {
+  const scanned = (code: string, name: string): BuyLine => ({ ...named(scannedNewLine(code, unitIdByName), name, 9000), lotNo: "L01", expiry: "2027-06-30" });
+
+  it("opens a scanned code as a new product bought by its base unit, the code as its barcode", () => {
+    const line = scannedNewLine(" 8936000111222 ", unitIdByName);
+    expect(line).toMatchObject({ isNew: true, barcode: "8936000111222", baseUnitId: HOP, bigUnitId: THUNG, factor: "12", inBig: false, trackLot: true, qty: "1" });
+  });
+
+  it("sends the trimmed barcode of a new product, and none when it is blank", () => {
+    const built = orderLinesRequest([{ ...scanned("8936000111222", "Kẹo dẻo"), barcode: " 8936000111222 " }, scanned("  ", "Kẹo gừng")], noColor);
+    expect(built.ok && built.lines.map((l) => l.new_product)).toEqual([
+      { name: "Kẹo dẻo", base_unit_id: HOP, purchase_unit_id: THUNG, factor: "12", track_lot: true, barcode: "8936000111222" },
+      { name: "Kẹo gừng", base_unit_id: HOP, purchase_unit_id: THUNG, factor: "12", track_lot: true },
+    ]);
+  });
+
+  it("refuses two new products with one barcode before sending", () => {
+    const lines = [scanned("8936000111222", "Kẹo dẻo"), scanned("8936000111222 ", "Kẹo gừng")];
+    const refusal = { ok: false, message: "Mã vạch “8936000111222” bị trùng ở hai dòng hàng mới." };
+    expect(orderLinesRequest(lines, noColor)).toEqual(refusal);
+    expect(receiptLinesRequest(lines, noColor)).toEqual(refusal);
+  });
+
+  it("leaves forms of one UPC to the server", () => {
+    expect(orderLinesRequest([scanned("012345678905", "Kẹo dẻo"), scanned("0012345678905", "Kẹo gừng")], noColor).ok).toBe(true);
+  });
+
+  it("places a server barcode refusal on the row that sent the refused line", () => {
+    const lines = [withSku(emptyBuyLine(), sku()), scanned("012345678905", "Kẹo dẻo"), scanned("0012345678905", "Kẹo gừng")];
+    const sent = orderLinesRequest(lines, noColor);
+    if (!sent.ok) throw new Error(sent.message);
+    const write = { lines: sent, before: null };
+    const taken = new ApiError({ status: 409, code: "barcode_taken", message: "Mã vạch đã được dùng cho hàng khác.", fields: { "lines.2.new_product.barcode": "barcode_taken" } });
+    expect([...barcodeErrors(taken, write)]).toEqual([[lines[2]?.key, { code: "0012345678905", message: "Mã vạch đã được dùng cho hàng khác." }]]);
+    const format = new ApiError({ status: 422, code: "validation_failed", message: "x", fields: { "lines.1.new_product.barcode": "invalid_format" } });
+    expect([...barcodeErrors(format, write)]).toEqual([[lines[1]?.key, { code: "012345678905", message: "Sai định dạng." }]]);
+    expect(barcodeErrors(taken, null).size).toBe(0);
+  });
+
+  it("does not place the error of an earlier write on the lines sent after it", () => {
+    const lines = [scanned("012345678905", "Kẹo dẻo")];
+    const sent = orderLinesRequest(lines, noColor);
+    if (!sent.ok) throw new Error(sent.message);
+    const earlier = new ApiError({ status: 409, code: "barcode_taken", message: "Mã vạch đã được dùng cho hàng khác.", fields: { "lines.0.new_product.barcode": "barcode_taken" } });
+    expect(barcodeErrors(earlier, { lines: sent, before: earlier }).size).toBe(0);
+  });
+});
+
+describe("addScan", () => {
+  const opts = { fixed: false, unitIdByName };
+  const found = (unitId: string, factor: string, over: Parameters<typeof sku>[0] = {}) => ({ sku: sku(over), unit_id: unitId, factor });
+
+  it("puts a known code in the empty last row, then adds one to that row of the same unit", () => {
+    const first = addScan([emptyBuyLine()], "SP001", found(HOP, "1"), opts);
+    expect(first.outcome).toEqual({ outcome: "added", skuId: "sku-1", unitId: HOP });
+    expect(first.lines).toHaveLength(1);
+    expect(first.lines?.[0]).toMatchObject({ unitId: HOP, qty: "1", price: "10000" });
+    const again = addScan(first.lines ?? [], "SP001", found(HOP, "1"), opts);
+    expect(again.lines?.map((l) => l.qty)).toEqual(["2"]);
+    const carton = addScan(again.lines ?? [], "8936000999999", found(THUNG, "12"), opts);
+    expect(carton.lines?.map((l) => [l.unitId, l.qty])).toEqual([
+      [HOP, "2"],
+      [THUNG, "1"],
+    ]);
+  });
+
+  it("opens an unknown code as a new product and counts it again on the next scan", () => {
+    const opened = addScan([emptyBuyLine()], "8936000111222", null, opts);
+    expect(opened.outcome).toEqual({ outcome: "new_product" });
+    expect(opened.lines).toHaveLength(1);
+    expect(opened.created).toBe(opened.lines?.[0]?.key);
+    const again = addScan(opened.lines ?? [], " 8936000111222", null, opts);
+    expect(again).toMatchObject({ outcome: { outcome: "new_product" } });
+    expect(again.lines?.map((l) => l.qty)).toEqual(["2"]);
+    expect(again.created).toBeUndefined();
+  });
+
+  it("leaves a new product bought by its big unit to the desktop", () => {
+    const line = { ...scannedNewLine("8936000111222", unitIdByName), inBig: true };
+    expect(addScan([line], "8936000111222", null, opts)).toEqual({ lines: null, outcome: { outcome: "needs_desktop_edit" } });
+  });
+
+  it("does not buy a combo", () => {
+    const step = addScan([emptyBuyLine()], "SP009", found(HOP, "1", { product_type: "combo", display_name: "Hộp quà" }), opts);
+    expect(step).toEqual({ lines: null, outcome: { outcome: "not_found" }, notice: PROCUREMENT_MESSAGES.scanNotBuyable("SP009", "Hộp quà") });
+  });
+
+  it("receiving an order, counts the code's base units on the ordered row and nothing for a code outside it", () => {
+    const fixed = { fixed: true, unitIdByName };
+    const ordered = orderBuyLine(orderLine("24"), null, null);
+    expect(ordered).toMatchObject({ qty: "24", scanned: false });
+    // The first scan replaces the prefilled pending quantity; the next one adds.
+    const step = addScan([ordered], "8936000999999", found(THUNG, "12"), fixed);
+    expect(step.outcome).toEqual({ outcome: "added", skuId: "sku-1", unitId: THUNG });
+    expect(step.lines?.map((l) => [l.qty, l.scanned])).toEqual([["12", true]]);
+    const again = addScan(step.lines ?? [], "SP001", found(HOP, "1"), fixed);
+    expect(again.lines?.map((l) => l.qty)).toEqual(["13"]);
+    const outside = { lines: null, outcome: { outcome: "not_in_order" }, notice: "Mã “SP002” không có trong đơn nhập này." };
+    expect(addScan([ordered], "SP002", found(HOP, "1", { id: "sku-2" }), fixed)).toEqual(outside);
+    expect(addScan([ordered], " SP002 ", null, fixed)).toEqual(outside);
+  });
+
+  it("receiving an order, does not count a typed quantity as a scan", () => {
+    const fixed = { fixed: true, unitIdByName };
+    const typed = { ...orderBuyLine(orderLine("24"), null, null), qty: toQty(5) };
+    expect(addScan([typed], "SP001", found(HOP, "1"), fixed).lines?.map((l) => l.qty)).toEqual(["1"]);
+  });
+
+  it("receiving an order, fills the rows of one SKU in order, each up to what is pending, then adds to the first", () => {
+    const fixed = { fixed: true, unitIdByName };
+    const rows = [
+      orderBuyLine(testOrderLine({ id: "pol-1", pending_base_qty: "2" }), null, "do"),
+      orderBuyLine(testOrderLine({ id: "pol-2", sku_id: "sku-2", pending_base_qty: "5" }), null, null),
+      orderBuyLine(testOrderLine({ id: "pol-3", pending_base_qty: "2" }), null, "xanh"),
+    ];
+    let lines: BuyLine[] = rows;
+    const qtys: string[][] = [];
+    for (let n = 0; n < 5; n++) {
+      lines = addScan(lines, "SP001", found(HOP, "1"), fixed).lines ?? lines;
+      qtys.push(lines.map((l) => l.qty ?? ""));
+    }
+    expect(qtys).toEqual([
+      ["1", "5", "2"],
+      ["2", "5", "2"],
+      ["2", "5", "1"],
+      ["2", "5", "2"],
+      ["3", "5", "2"],
+    ]);
+    expect(lines.map((l) => l.scanned)).toEqual([true, false, true]);
   });
 });
 

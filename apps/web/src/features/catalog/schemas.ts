@@ -86,6 +86,10 @@ export const skuListItemSchema = z.object({
 });
 export type SkuListItem = z.infer<typeof skuListItemSchema>;
 
+/** A barcode of a SKU and the unit a scan of it answers. */
+export const barcodeSchema = z.object({ id, unit_id: id, code: z.string() });
+export type Barcode = z.infer<typeof barcodeSchema>;
+
 export const productDetailSchema = z.object({
   id,
   name: z.string(),
