@@ -10,7 +10,7 @@ const MAX_TABS = 120;
 /** Presses Tab until the target has focus; fails if the focus order never reaches it. */
 async function tabTo(page: Page, target: Locator): Promise<void> {
   for (let i = 0; i < MAX_TABS; i++) {
-    if (await target.evaluate("(el) => el === document.activeElement")) return;
+    if ((await target.and(page.locator(":focus")).count()) > 0) return;
     await page.keyboard.press("Tab");
   }
   throw new Error(`focus never reached ${target}`);
@@ -25,7 +25,10 @@ test("opens a sidebar group and reaches one of its screens with the keyboard", a
   const chevron = mainNav(page).getByRole("button", { name: "Mở rộng Kho", exact: true });
   await tabTo(page, chevron);
   await page.keyboard.press("Enter");
-  await expect(chevron).toHaveAccessibleName("Thu gọn Kho");
+  // The chevron's name flips with its state, so the check follows the focused button, not the old name.
+  const focused = page.locator(":focus");
+  await expect(focused).toHaveAccessibleName("Thu gọn Kho");
+  await expect(focused).toHaveAttribute("aria-expanded", "true");
 
   const stock = mainNav(page).getByRole("link", { name: "Tồn kho", exact: true });
   await tabTo(page, stock);

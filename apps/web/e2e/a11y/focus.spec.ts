@@ -4,6 +4,11 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 // which traps focus while open and restores it to the opener on close; these specs check that the
 // app keeps that behaviour where it matters, including when the opener leaves the page.
 
+/** The page globals the in-page checks read; the e2e files are typed without the DOM library. */
+interface PageGlobals {
+  getComputedStyle(el: unknown): { outlineStyle: string; outlineWidth: string; boxShadow: string };
+}
+
 const STOCK = "/inventory/stock";
 const ADJUST_BUTTON = "Điều chỉnh kho";
 
@@ -22,7 +27,7 @@ test("keeps keyboard focus inside the open dialog", async ({ page }) => {
   const dialog = await openAdjustDialog(page);
   for (let i = 0; i < 25; i++) {
     await page.keyboard.press("Tab");
-    expect(await dialog.evaluate("(el) => el.contains(document.activeElement)"), `focus after Tab ${i + 1}`).toBe(true);
+    expect(await dialog.locator(":focus").count(), `focus after Tab ${i + 1}`).toBe(1);
   }
 });
 
@@ -36,7 +41,8 @@ test("returns focus to the opener when the dialog closes", async ({ page }) => {
 test("moves focus into the page, not to the body, when the opener was removed while the dialog was open", async ({ page }) => {
   const dialog = await openAdjustDialog(page);
   // A refresh that drops the button that opened the dialog: the dialog is still open when it happens.
-  await adjustOpener(page).evaluate("(el) => el.remove()");
+  // The open modal hides the rest of the page from the accessibility tree, so the lookup includes it.
+  await page.getByRole("button", { name: ADJUST_BUTTON, exact: true, includeHidden: true }).evaluate((el) => el.remove());
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
 
@@ -51,8 +57,9 @@ test("gives keyboard focus a visible indicator", async ({ page }) => {
   await expect(page.locator("#view h1").first()).toBeVisible();
   const opener = adjustOpener(page);
   await opener.focus();
-  const visible = await opener.evaluate(
-    "(el) => { const s = getComputedStyle(el); return (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0) || s.boxShadow !== 'none'; }",
-  );
+  const visible = await opener.evaluate((el) => {
+    const s = (globalThis as unknown as PageGlobals).getComputedStyle(el);
+    return (s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0) || s.boxShadow !== "none";
+  });
   expect(visible, "focus outline or ring on the focused button").toBe(true);
 });
