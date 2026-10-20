@@ -9,6 +9,15 @@
 - Bật **Quản lý theo lô và hạn dùng** cho hàng cần theo dõi lô và hạn. Hàng loại này cần số lô và hạn dùng khi nhập, và
   bán theo lô hết hạn trước (FEFO).
 - Hệ số quy đổi được chụp trên từng dòng chứng từ. **Đổi hệ số không sửa lịch sử.**
+- Bấm **Mã vạch** trên dòng hàng để xem các mã vạch của hàng đó và đơn vị mỗi mã được tính khi quét. Chọn đơn vị khác
+  trong cột **Đơn vị khi quét** rồi bấm **Lưu**, ví dụ đổi mã in trên thùng sang đơn vị thùng. Ô chọn chỉ đưa ra các đơn
+  vị đang dùng. Nếu bị từ chối, ô chọn quay về đơn vị cũ và lý do hiện ngay bên dưới. Thêm hoặc xóa mã vạch không làm
+  trong ngăn này.
+- Sau khi lưu, Kiểm kê, Nhập hàng và POS (với hàng không có ô hàng bên trái màn POS) tính mã đó theo đơn vị mới ngay từ lần
+  quét sau. Với hàng có ô hàng trên POS, POS ở tab hay máy khác vẫn tính theo đơn vị cũ cho tới khi tải lại hàng bán: sau khi
+  ghi sổ một đơn bán, lưu hoặc xóa một giỏ, khi quay lại cửa sổ POS, khi có mạng trở lại, hoặc khi mở lại màn POS. Dữ
+  liệu bán khi mất mạng nhận đơn vị mới ở lần làm mới kế tiếp (khi mở POS lúc có mạng, khi có mạng trở lại, hoặc mỗi 30
+  phút).
 - Giá mua tham khảo không tự thành giá vốn. Giá vốn tính từ phiếu nhận đã ghi sổ (bình quân di động).
 
 ## Nhà cung cấp (Danh mục › Nhà cung cấp)

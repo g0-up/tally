@@ -10,14 +10,14 @@ Table design and rationale live in the design files; the migrations in `apps/api
 [sales & kits](../plans/261016-0854-tally-full-product-implementation/design/database-schema-sales-kits.md) ·
 [debt, cash, CRM, SaaS](../plans/261016-0854-tally-full-product-implementation/design/database-schema-debt-cash-crm-saas.md).
 
-Schema `tally`: 142 tables, 116 tenant tables (row-level security forced, policy
+Schema `tally`: 144 tables, 118 tenant tables (row-level security forced, policy
 `tenant_isolation` on `app.tenant_id`) and 26 platform tables.
 
 ## 000001 platform identity
 
 | Table | Columns | Isolation |
 |---|---:|---|
-| `tenants` | 16 | platform |
+| `tenants` | 18 | platform |
 | `retired_tenant_slugs` | 3 | platform |
 | `users` | 16 | platform |
 | `sessions` | 15 | platform |
@@ -25,7 +25,7 @@ Schema `tally`: 142 tables, 116 tenant tables (row-level security forced, policy
 | `mfa_totp_secrets` | 5 | platform |
 | `mfa_recovery_codes` | 5 | platform |
 | `login_attempts` | 5 | platform |
-| `platform_admins` | 9 | platform |
+| `platform_admins` | 12 | platform |
 | `platform_admin_sessions` | 7 | platform |
 
 ## 000002 org core
@@ -84,7 +84,7 @@ Schema `tally`: 142 tables, 116 tenant tables (row-level security forced, policy
 |---|---:|---|
 | `products` | 13 | tenant (RLS) |
 | `product_variant_axes` | 4 | tenant (RLS) |
-| `skus` | 21 | tenant (RLS) |
+| `skus` | 22 | tenant (RLS) |
 | `sku_variant_values` | 4 | tenant (RLS) |
 | `sku_units` | 10 | tenant (RLS) |
 | `sku_barcodes` | 6 | tenant (RLS) |
@@ -121,14 +121,14 @@ Schema `tally`: 142 tables, 116 tenant tables (row-level security forced, policy
 
 | Table | Columns | Isolation |
 |---|---:|---|
-| `reservations` | 16 | tenant (RLS) |
+| `reservations` | 17 | tenant (RLS) |
 
 ## 000012 inventory counts adjustments
 
 | Table | Columns | Isolation |
 |---|---:|---|
 | `stock_counts` | 18 | tenant (RLS) |
-| `stock_count_lines` | 11 | tenant (RLS) |
+| `stock_count_lines` | 13 | tenant (RLS) |
 | `stock_adjustments` | 15 | tenant (RLS) |
 | `stock_adjustment_lines` | 19 | tenant (RLS) |
 
@@ -171,7 +171,7 @@ Schema `tally`: 142 tables, 116 tenant tables (row-level security forced, policy
 |---|---:|---|
 | `stock_outs` | 13 | tenant (RLS) |
 | `stock_out_lines` | 7 | tenant (RLS) |
-| `sales_documents` | 25 | tenant (RLS) |
+| `sales_documents` | 27 | tenant (RLS) |
 | `sales_document_lines` | 32 | tenant (RLS) |
 
 ## 000017 sales pos
@@ -210,10 +210,10 @@ Schema `tally`: 142 tables, 116 tenant tables (row-level security forced, policy
 
 | Table | Columns | Isolation |
 |---|---:|---|
-| `obligations` | 16 | tenant (RLS) |
+| `obligations` | 19 | tenant (RLS) |
 | `obligation_schedules` | 6 | tenant (RLS) |
-| `payments` | 25 | tenant (RLS) |
-| `credit_notes` | 16 | tenant (RLS) |
+| `payments` | 28 | tenant (RLS) |
+| `credit_notes` | 17 | tenant (RLS) |
 | `debt_adjustments` | 17 | tenant (RLS) |
 | `debt_offsets` | 15 | tenant (RLS) |
 | `obligation_settlements` | 12 | tenant (RLS) |
@@ -222,7 +222,7 @@ Schema `tally`: 142 tables, 116 tenant tables (row-level security forced, policy
 
 | Table | Columns | Isolation |
 |---|---:|---|
-| `statements` | 13 | tenant (RLS) |
+| `statements` | 15 | tenant (RLS) |
 | `statement_versions` | 10 | tenant (RLS) |
 | `collection_notes` | 12 | tenant (RLS) |
 
@@ -251,11 +251,11 @@ Schema `tally`: 142 tables, 116 tenant tables (row-level security forced, policy
 
 | Table | Columns | Isolation |
 |---|---:|---|
-| `notifications` | 16 | tenant (RLS) |
+| `notifications` | 18 | tenant (RLS) |
 | `saved_reports` | 7 | tenant (RLS) |
-| `export_jobs` | 13 | tenant (RLS) |
+| `export_jobs` | 14 | tenant (RLS) |
 | `cost_recalculation_runs` | 11 | tenant (RLS) |
-| `onboarding_steps` | 4 | tenant (RLS) |
+| `onboarding_steps` | 6 | tenant (RLS) |
 | `analytics_queries` | 8 | tenant (RLS) |
 
 ## 000025 saas platform
@@ -264,8 +264,8 @@ Schema `tally`: 142 tables, 116 tenant tables (row-level security forced, policy
 |---|---:|---|
 | `plans` | 11 | platform |
 | `subscriptions` | 13 | platform |
-| `entitlements` | 8 | platform |
-| `saas_invoices` | 13 | platform |
+| `entitlements` | 9 | platform |
+| `saas_invoices` | 15 | platform |
 | `saas_payment_events` | 7 | platform |
 | `support_tickets` | 10 | platform |
 | `support_ticket_messages` | 7 | platform |
@@ -284,3 +284,10 @@ Schema `tally`: 142 tables, 116 tenant tables (row-level security forced, policy
 | Table | Columns | Isolation |
 |---|---:|---|
 | `exception_confirmation_uses` | 5 | tenant (RLS) |
+
+## 000060 scanner sessions
+
+| Table | Columns | Isolation |
+|---|---:|---|
+| `scanner_sessions` | 14 | tenant (RLS) |
+| `scanner_scans` | 10 | tenant (RLS) |

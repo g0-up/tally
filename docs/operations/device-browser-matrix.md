@@ -16,6 +16,7 @@ described in the [phase 20 plan](../../plans/261016-0854-tally-full-product-impl
 | Android, real phone | Chrome, current and previous major | none (no device in CI) | POS sale, stock count scan, offline banner (§3) |
 | iOS, real phone | Safari, current and previous major | none | VoiceOver pass on POS, invoice, exception, debt payment, offline banner (§4) |
 | Barcode scanner | USB or Bluetooth HID keyboard wedge | none | scan into the POS input and the stock count (§3) |
+| Paired phone as scanner | Android Chrome and iOS Safari, current and previous major | none (unit tests fake the camera and reader) | pairing, scans into POS, stock count and purchasing (§3) |
 | Receipt printer | 80 mm thermal, certified driver | none | print `/print/sales-documents/:id` (§3) |
 | A4/A5 printer | laser, system dialog | none | print a sales document (A5) and `/print/statements/:id` (A4) (§3) |
 
@@ -50,12 +51,29 @@ Run each row on the device, record the outcome, and note the device model, OS an
   that the menu and each dialog close with their on-screen close control.
 - **HID barcode scanner:** scan an item into the POS input and into the stock count. A scan must add one
   line per code without a click, and must not submit a half-typed code.
+- **Paired phone as scanner (Android Chrome and iOS Safari, each):**
+  - Pair from the POS card "Quét bằng điện thoại": the verify code is the same on both screens, the
+    phone cannot start its camera before "Cho phép", and "Từ chối" sends the phone to its refused
+    message while the desktop shows a new QR code.
+  - Scan an EAN-13, a UPC-A, a carton code (POS adds a carton line; the stock count adds the carton's
+    factor) and a code the catalog does not have (POS and the count refuse it; a purchase order opens a
+    new-product row carrying it). Each scan shows its line on the phone within about a second, with
+    vibration on Android and a beep plus screen flash on iOS after the "Bật camera" tap.
+  - Disconnect from each side ("Ngắt" on the desktop, "Ngắt kết nối" on the phone).
+  - Lock the phone screen and unlock it: the camera is off, "Bật camera" resumes without pairing again.
+  - Move from the POS to a stock count in the same tab: scans follow without pairing again.
+  - Restart `api` while paired: both sides show "Đang kết nối lại…" and scanning resumes without a new
+    QR scan; note how long it was interrupted.
+  - On a phone that still has the PWA of the previous release, open the QR code the first time and record
+    what appears; the user guide's reload steps must lead to a working scan page.
+  - Sign out on the desktop while paired: the phone reports the session ended within about 15 seconds.
 - **Receipt printer (80 mm):** print a sales document from `/print/sales-documents/:id` with "Giấy cuộn
   80mm". The text must not wrap or clip at the paper width.
 - **A4/A5 printer:** print a sales document on A5 ("Khổ A5") and a debt statement from
   `/print/statements/:id` on A4; the page breaks must not split a line of a document.
 
-Use a sandbox store for every manual run. Do not photograph customer data for the record.
+Use a sandbox store for every manual run. Do not photograph customer data for the record, and never
+record a pairing QR code, a verify code or a scanner cookie.
 
 ## 4. Screen-reader passes
 
@@ -82,8 +100,10 @@ The peripherals Tally supports for release. A model is listed only after it pass
 release build; the report of §5 that passed it is its evidence. Until a run, nothing is certified and
 owners are told to test their own device in a sandbox store first.
 
-Scanners must work as a keyboard (HID keyboard wedge) that ends each code with Enter; Tally has no
-scanner driver or serial connection. Printers print through the browser's print dialog, so the
+Handheld scanners must work as a keyboard (HID keyboard wedge) that ends each code with Enter; Tally has
+no scanner driver or serial connection. A phone paired from the desktop is the second way to scan: it
+reads codes with its camera in the browser and needs no driver, so the phone and browser versions that
+passed the §3 check are its record. Printers print through the browser's print dialog, so the
 operating system driver of the printer is what is certified with it.
 
 | Kind | Model | Connection | OS and browser | Paper | Report | Result |

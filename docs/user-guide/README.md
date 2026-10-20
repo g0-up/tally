@@ -23,11 +23,11 @@ Bạn cần biết trước các giới hạn sau:
 | Chủ đề | Nội dung |
 |---|---|
 | [Bắt đầu](bat-dau.md) | Đăng ký, đăng nhập, thiết lập cửa hàng và số dư đầu kỳ, các thao tác dùng chung |
-| [Bán hàng tại quầy (POS)](ban-hang-pos.md) | Giỏ hàng, chọn màu, thanh toán, giỏ đã lưu, bán khi mất mạng |
+| [Bán hàng tại quầy (POS)](ban-hang-pos.md) | Giỏ hàng, chọn màu, thanh toán, giỏ đã lưu, quét mã vạch bằng điện thoại, bán khi mất mạng |
 | [Báo giá, hóa đơn, trả và đổi hàng](hoa-don-bao-gia-tra-hang.md) | Bán sỉ, giữ hàng, xuất kho nhiều lần, trả hàng, đổi màu |
-| [Nhập hàng](nhap-hang.md) | Đơn nhập, nhận hàng nhiều đợt, đối chiếu hóa đơn NCC, trả NCC |
-| [Danh mục và bảng giá](danh-muc-bang-gia.md) | Hàng hóa, nhà cung cấp, bảng giá, nhóm mix vị |
-| [Kho, kiểm kê và giỏ quà](kho-kiem-ke-gio-qua.md) | Tồn theo màu, giữ hàng, lô và hạn dùng, kiểm kê, điều chỉnh, giỏ quà và combo |
+| [Nhập hàng](nhap-hang.md) | Đơn nhập, nhận hàng nhiều đợt, quét mã vạch bằng điện thoại, đối chiếu hóa đơn NCC, trả NCC |
+| [Danh mục và bảng giá](danh-muc-bang-gia.md) | Hàng hóa, đơn vị của mã vạch, nhà cung cấp, bảng giá, nhóm mix vị |
+| [Kho, kiểm kê và giỏ quà](kho-kiem-ke-gio-qua.md) | Tồn theo màu, giữ hàng, lô và hạn dùng, kiểm kê (cả quét bằng điện thoại), điều chỉnh, giỏ quà và combo |
 | [Công nợ và quỹ](cong-no-quy.md) | Thu tiền khách, trả NCC, ứng trước, bảng kê đối soát, giảm/xóa nợ |
 | [Chiến dịch và khách hàng](chien-dich-khach-hang.md) | Chiến dịch mùa vụ, kết mùa, hồ sơ khách và đồng ý nhận tin |
 | [Tổng quan, thông báo và báo cáo](bao-cao.md) | Thu–chi–công nợ, việc cần xử lý, các báo cáo và xuất CSV |

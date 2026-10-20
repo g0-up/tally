@@ -30,6 +30,13 @@ Hai máy cùng bán một mặt hàng sẽ không bán vượt số có thể b�
 1. **Bắt đầu phiên kiểm kê** → **Bắt đầu kiểm kê** cho cả cửa hàng hoặc một nhóm hàng. Hệ thống chụp số tồn tại thời điểm
    bắt đầu để đối chiếu.
 2. **Nhập số đếm** theo từng hàng và từng màu. Đây là kiểm kê mù: số trên sổ hiện "Ẩn khi đếm mù" cho tới khi đếm xong.
+   Trong lúc đang đếm, bạn cũng có thể quét mã vạch vào ô quét, hoặc quét bằng điện thoại đã ghép đôi qua ô
+   **Quét bằng điện thoại** của phiên (cách ghép đôi ở [Quét bằng điện thoại](ban-hang-pos.md#quét-bằng-điện-thoại)).
+   - Mỗi lần quét cộng vào số thực đếm theo hệ số của đơn vị mang mã đó: mã của hộp cộng 1, mã của thùng 24 hộp cộng 24.
+   - Tally tra mã trên máy chủ, nên khớp được mọi mã vạch của hàng (mã của hộp, mã của thùng) và cả mã hàng.
+   - Hàng không thuộc phiên kiểm kê thì không được cộng, và màn hình báo mã đó không có trong phiên.
+   - Khi phiên đã hoàn tất đếm, ô quét và ô ghép đôi ẩn đi. Điện thoại đã ghép đôi báo màn hình trên máy tính không
+     nhận mã quét.
 3. **Hoàn tất đếm**. Dòng nào lệch mà cần đếm lại thì bấm **Đếm lại**.
 4. **Xem & ghi sổ** → **Xác nhận & ghi sổ chênh lệch**. Chênh lệch được ghi tại thời điểm chụp số, và cần bạn xác nhận
    ngoại lệ.

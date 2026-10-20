@@ -143,8 +143,10 @@ recovery codes, and a new `APP_ENCRYPTION_KEY` makes the stored authenticator-ap
 ### Browser, device and peripheral checks
 
 Parity, accessibility and the browser/device matrix (Chrome, Edge, Firefox, Safari, real Android and iOS
-phones, HID scanner, 80 mm and A4 printers) are run as described in
-[`docs/operations/device-browser-matrix.md`](operations/device-browser-matrix.md).
+phones, HID scanner, a phone paired as a camera scanner, 80 mm and A4 printers) are run as described in
+[`docs/operations/device-browser-matrix.md`](operations/device-browser-matrix.md). The paired phone only
+works through a real store host, because the tenant comes from the subdomain; run it on a sandbox tenant
+of the production stack, not through a quick tunnel to a dev machine.
 
 ## 2. Database roles
 
@@ -328,8 +330,17 @@ no DNS token, and no published host port. Postgres stays on the project network 
      `content-security-policy`, `x-content-type-options: nosniff` and `x-frame-options: DENY`.
    - `curl -sI https://sidecup.app/` and `https://sidecup.app/sw.js` (once the service worker ships) show
      `cache-control: no-cache` and no `cf-cache-status: HIT`.
-   - `curl -sI https://tiendouong.sidecup.app` still answers from Sidecup (router priority check: Tally's
-     routers use priority 3 and 2, below every exact `Host` router).
+   - `curl -sI https://<tenant>.sidecup.app/scan` (the phone scan page) shows
+     `permissions-policy: camera=(self), …`, a `content-security-policy` with
+     `script-src 'self' 'wasm-unsafe-eval'`, and `referrer-policy: no-referrer`.
+   - `curl -sI https://<tenant>.sidecup.app/` and `https://<tenant>.sidecup.app/sales/pos` keep
+     `permissions-policy: camera=(), …` and a CSP without `script-src`.
+   - `curl -sI https://<tenant>.sidecup.app/assets/<file>.wasm` (the barcode reader; its hashed name is
+     in the web build's `assets/`) answers `content-type: application/wasm`, and with
+     `-H 'Accept-Encoding: gzip'` also `content-encoding: gzip`.
+   - `curl -sI https://tiendouong.sidecup.app` and `https://tiendouong.sidecup.app/scan` still answer from
+     Sidecup (router priority check: Tally's routers use priority 4, 3 and 2 — `tally-web-scan`,
+     `tally-api`, `tally-web` — below every exact `Host` router).
    - `docker ps --filter label=com.docker.compose.project=tally-prod --format '{{.Names}} {{.Ports}}'` shows
      no published host port.
 
@@ -352,6 +363,13 @@ make prod-logs SERVICE=api       # follow logs (JSON on stdout)
 make prod-migrate                # backup, then migrate up with --backup-file
 make db-backup STACK=prod        # ad-hoc backup
 make prod-down                   # stop the stack (volume tally-prod_pgdata stays)
+```
+
+A change to the compose files or the Traefik labels can be checked without a real env file, the way CI
+checks it:
+
+```sh
+docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.homelab.yml --env-file infra/.env.example config -q
 ```
 
 **Web-only redeploy.** A front-end change ships without restarting api, worker or postgres. Tag the running
@@ -388,6 +406,32 @@ The scanners are pinned in the Makefile and run from `go run` or their docker im
 to be installed; `SCAN_IMAGES=` skips the image scans when the images are not on the host. Load runs
 belong on a production-like stack, never on the live one: they create tenants and sell stock. Their
 settings and pass criteria are in [`load/README.md`](../load/README.md).
+
+### Phone scanner pairing
+
+A phone pairs with a desktop tab through server-sent event streams that the api holds open. The SSE
+hub that routes scans between the two streams lives in the api process's memory
+([`apps/api/internal/scanner/hub.go`](../apps/api/internal/scanner/hub.go)); the session rows live in
+Postgres. Constraints that follow:
+
+- **Run exactly one `api` replica.** A second replica would hold its own hub, so a phone and a desktop
+  landing on different replicas would never see each other. Scaling `api` out needs a shared hub first
+  (for example Postgres LISTEN/NOTIFY).
+- **An api restart is a short interruption, not a sign-out.** On shutdown the api sends `restarting`
+  to every pairing stream and closes it. Both sides show "Đang kết nối lại…" and reconnect by
+  themselves once the api answers again, so the phone does not scan the QR code again. The session
+  ends if the desktop stream stays away longer than its grace period (60 seconds after the last
+  `desktop_seen_at` refresh, which runs every 30 seconds), so a restart should take well under 30
+  seconds. The limits are constants in
+  [`apps/api/internal/scanner/model.go`](../apps/api/internal/scanner/model.go).
+- **A scanner session follows the login session that created it.** The desktop stream and the phone
+  stream each re-check that login session about every 10 seconds; once it is gone (sign-out, "Đăng xuất
+  các thiết bị khác" from another device, `tally maintenance revoke-sessions`, expiry or idle timeout) the
+  scanner session is revoked and the phone is told, also when the sign-out already closed the desktop
+  stream. Re-authenticating does not end it.
+- **Cleanup is the worker's.** The worker's existing purge run (`--purge-interval`, see
+  [`apps/api/internal/cli/worker.go`](../apps/api/internal/cli/worker.go)) deletes scanner sessions
+  revoked or abandoned more than 24 hours earlier, with their scans. There is no separate process.
 
 ### Upgrade and upgrade rehearsal
 
