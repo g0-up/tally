@@ -1,10 +1,13 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { dec } from "../src/shared/lib/decimal";
 import { OWNER, OWNER_PASSWORD_MISSING, OWNER_STATE_FILE, apiGet } from "./support/real-api";
+import { candyNames, candyUnits, pickUnit, unitOf, type UnitSkuRow } from "./support/units-data";
 
 // The purchasing journey on the seeded store's real session: an order that creates its product
 // and supplier on the fly, received in part with lot, expiry and color, a receipt over the 5%
 // tolerance refused, a lot returned to the supplier, the rest closed short. Stock and the
-// supplier payable are read back from the API. Every run uses fresh names, so runs never collide.
+// supplier payable are read back from the API. A second order creates a product with its own unit
+// table and receives it by the thùng. Every run uses fresh names, so runs never collide.
 
 interface Page_<T> {
   data: T[];
@@ -30,6 +33,9 @@ interface Reason {
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const labelled = (label: string, name: string) => new RegExp(`^${escapeRe(label)} – ${escapeRe(name)}`);
+
+/** The option a native select shows as chosen. */
+const selectedOption = (select: Locator) => select.locator("option:checked");
 
 /** Opens a store screen and waits until the shell and the screen header are rendered. */
 async function openScreen(page: Page, path: string): Promise<void> {
@@ -111,9 +117,12 @@ test.describe("with the real API", () => {
 
     await newPo.getByRole("button", { name: "+ Hàng hóa mới" }).click();
     await newPo.getByRole("textbox", { name: "Tên hàng mới" }).last().fill(productName);
-    await expect(newPo.getByRole("textbox", { name: labelled("Hệ số quy đổi", productName) })).toHaveValue("12");
+    // A new product starts counted in hộp and bought by the thùng of 12 hộp.
+    await expect(selectedOption(newPo.getByRole("combobox", { name: labelled("Đơn vị cơ sở", productName) }))).toHaveText("hộp");
+    await expect(selectedOption(newPo.getByRole("combobox", { name: labelled("Đơn vị tính", productName) }))).toHaveText("thùng");
     await expect(newPo.getByRole("checkbox", { name: labelled("Quản lý lô/hạn", productName) })).toBeChecked();
     await newPo.getByRole("textbox", { name: labelled("Số lượng", productName) }).fill("2");
+    await expect(newPo.getByRole("row").filter({ has: newPo.getByRole("textbox", { name: "Tên hàng mới" }).last() })).toContainText("= 24 hộp");
     await newPo.getByRole("textbox", { name: labelled("Đơn giá", productName) }).fill("120000");
     await newPo.getByRole("textbox", { name: labelled("Giá bán lẻ", productName) }).fill("15000");
     await newPo.getByRole("radiogroup", { name: labelled("Màu sắc", productName) }).getByRole("radio", { name: "Đỏ" }).click();
@@ -212,5 +221,76 @@ test.describe("with the real API", () => {
     await confirmStop.getByRole("button", { name: "Ngừng giao dịch", exact: true }).click();
     await expect(page.getByText("Đã ngừng giao dịch. NCC không còn hiện khi tạo đơn nhập.").first()).toBeVisible();
     await expect(confirmStop).toBeHidden();
+  });
+
+  test("orders a new product with its own units by the thùng and receives it as thùng × 500 cái", async ({ page }) => {
+    test.slow();
+    const stamp = Date.now().toString(36);
+    const supplierName = `NCC e2e ${stamp}`;
+    const { name: productName } = candyNames();
+
+    // The unit lists are drawn from the directory as it is once cái, dây and thùng are in it.
+    await openScreen(page, "/purchasing/orders");
+    await candyUnits(page);
+    await page.reload();
+    await expect(page.locator("#view .ph h1")).toBeVisible();
+
+    await page.getByRole("button", { name: "Tạo đơn nhập" }).click();
+    const newPo = page.getByRole("dialog", { name: "Tạo đơn nhập" });
+    const named = (label: string) => newPo.getByRole("textbox", { name: labelled(label, productName) });
+    await newPo.getByRole("button", { name: "+ NCC mới" }).click();
+    const quick = page.getByRole("dialog", { name: "Thêm nhà cung cấp mới" });
+    await quick.getByLabel(/^Tên nhà cung cấp/).fill(supplierName);
+    await quick.getByRole("button", { name: "Thêm & chọn" }).click();
+    await expect(quick).toBeHidden();
+
+    await newPo.getByRole("button", { name: "+ Hàng hóa mới" }).click();
+    await newPo.getByRole("textbox", { name: "Tên hàng mới" }).last().fill(productName);
+    await newPo.getByRole("combobox", { name: labelled("Đơn vị cơ sở", productName) }).selectOption({ label: "cái" });
+    await newPo.getByRole("checkbox", { name: labelled("Quản lý lô/hạn", productName) }).uncheck();
+
+    // The unit table of the row: thùng (the default second unit) becomes 500 cái, and dây = 50 cái is added.
+    await newPo.getByRole("button", { name: /^Đơn vị & giá… \(2 đơn vị\)$/ }).click();
+    const table = newPo.getByRole("group", { name: "Đơn vị tính & giá bán" });
+    await expect(table).toBeVisible();
+    await table.getByRole("textbox", { name: "Quy đổi: 1 thùng bằng bao nhiêu cái" }).fill("500");
+    await table.getByRole("button", { name: "+ Thêm đơn vị" }).click();
+    await pickUnit(table.getByRole("combobox", { name: "Tên đơn vị 3" }), "dây");
+    await table.getByRole("textbox", { name: "Quy đổi: 1 dây bằng bao nhiêu cái" }).fill("50");
+    await expect(table).toContainText("Đơn vị nhập mặc định.");
+    await expect(newPo.getByRole("button", { name: /^Đơn vị & giá… \(3 đơn vị\)$/ })).toBeVisible();
+
+    await expect(selectedOption(newPo.getByRole("combobox", { name: labelled("Đơn vị tính", productName) }))).toHaveText("thùng");
+    await named("Số lượng").fill("2");
+    await expect(newPo.getByRole("row").filter({ has: named("Số lượng") })).toContainText("= 1.000 cái");
+    await named("Đơn giá").fill("200000");
+    await named("Giá bán lẻ").fill("500");
+    await newPo.getByRole("button", { name: "Lưu & chốt đơn" }).click();
+    const poDoc = await toastDoc(page, /: Đã chốt\./);
+    expect(poDoc).toMatch(/^PO-/);
+    await expect(newPo).toBeHidden();
+
+    // Receiving counts base units: the 2 thùng ordered are 1.000 cái.
+    await openScreen(page, "/purchasing/orders");
+    await page.getByPlaceholder("Tìm số đơn, nhà cung cấp…").fill(poDoc);
+    const poRow = page.getByRole("row").filter({ hasText: poDoc });
+    await expect(poRow).toHaveCount(1);
+    await poRow.getByRole("button", { name: "Nhận hàng" }).click();
+    const receive = page.getByRole("dialog", { name: `Nhận hàng theo ${poDoc}` });
+    await expect(receive.getByRole("textbox", { name: labelled("Số lượng", productName) })).toHaveValue(/^1\.?000$/);
+    await receive.getByRole("button", { name: "Ghi sổ nhập kho" }).click();
+    const pnDoc = await toastDoc(page, /Tồn, nợ NCC và giá bán đã cập nhật\./);
+    expect(pnDoc).toMatch(/^PN-/);
+    await expect(receive).toBeHidden();
+
+    expect(await onHandOf(page, productName)).toBe(1000);
+    const listed = await apiGet<Page_<UnitSkuRow>>(page, `/skus?q=${encodeURIComponent(productName)}&limit=10`);
+    const sku = listed.data.find((s) => s.display_name === productName);
+    if (sku === undefined) throw new Error(`SKU ${productName} is not listed`);
+    expect(unitOf(sku, "cái").is_base).toBe(true);
+    expect(dec(unitOf(sku, "dây").factor).eq(50), "1 dây = 50 cái").toBe(true);
+    const thung = unitOf(sku, "thùng");
+    expect(dec(thung.factor).eq(500), "1 thùng = 500 cái").toBe(true);
+    expect(thung.is_default_purchase, "the thùng the order counted in is the default purchase unit").toBe(true);
   });
 });

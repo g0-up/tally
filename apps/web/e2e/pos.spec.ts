@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Request } from "@playwright/test";
+import { dec } from "../src/shared/lib/decimal";
 import { OWNER, OWNER_PASSWORD_MISSING, OWNER_STATE_FILE } from "./support/real-api";
 import {
   activeCustomers,
@@ -14,10 +15,12 @@ import {
   vndValue,
   type PosTile,
 } from "./support/sales-data";
+import { createCandy, receiveInUnits, skuByCode } from "./support/units-data";
 
 // POS checkout against the running API with the seeded store's owner. Each journey sells or parks a
 // real cart; the server answers that the browser cannot provoke on demand (a shift that changed
 // under the sale, a credit limit the owner must confirm) are injected on the checkout route only.
+// Goods sold in several units are created and stocked through the API for their own journey.
 
 test.use(OWNER.password === "" ? {} : { storageState: OWNER_STATE_FILE });
 
@@ -207,4 +210,46 @@ test("asks the owner to confirm a credit sale over the customer's limit and sell
   expect(sent).toHaveLength(1);
   await expect(saleToast(page)).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: `Số lượng – ${tileName(tile)}` })).toBeVisible();
+});
+
+test("sells a dây at its own price and a thùng at base price × factor, taking 550 cái off stock", async ({ page }) => {
+  await page.goto("/sales/pos");
+  const candy = await createCandy(page);
+  await receiveInUnits(page, candy.skuId, [{ unitId: candy.units.thung, qty: "2", unitPrice: "200000" }]);
+  await page.reload();
+  const before = dec((await skuByCode(page, candy.code)).on_hand);
+  expect(before.gte(550), "the 2 thùng received are on hand").toBe(true);
+
+  const unitSelects = page.getByRole("combobox", { name: new RegExp(`^Đơn vị – ${escapeRe(candy.name)}`) });
+  const lines = page.getByRole("row").filter({ has: unitSelects });
+  /** The cart line of the candy that is counted in this unit. */
+  const lineIn = (unit: string) => lines.filter({ has: page.locator("option:checked").filter({ hasText: new RegExp(`^${escapeRe(unit)}$`) }) });
+  const scan = async () => {
+    await page.getByLabel("Tìm hoặc quét hàng").fill(candy.code);
+    await page.getByLabel("Tìm hoặc quét hàng").press("Enter");
+  };
+
+  // A scan adds one cái; switching the line's unit prices it again for that unit.
+  await scan();
+  await expect(unitSelects).toHaveCount(1);
+  await expect(lineIn("cái")).toContainText(/500\s₫/);
+  await lineIn("cái").getByRole("combobox").selectOption({ label: "dây" });
+  await expect(lineIn("dây")).toContainText(/24\.000\s₫/);
+
+  // The next scan of a cái is a line of its own, since the first one is now counted in dây.
+  await scan();
+  await expect(unitSelects).toHaveCount(2);
+  await lineIn("cái").getByRole("combobox").selectOption({ label: "thùng" });
+  await expect(lineIn("thùng")).toContainText(/250\.000\s₫/);
+  await expect(lineIn("dây")).toContainText(/24\.000\s₫/);
+  await expect.poll(async () => vndValue(await page.locator(".cart-total").textContent())).toBe(274_000);
+
+  const sent = recordCheckouts(page);
+  await exactChip(page).click();
+  await payButton(page).click();
+  await expect(saleToast(page)).toBeVisible();
+  expect(sent).toHaveLength(1);
+  const body = sent[0]?.postDataJSON() as { lines: { sku_id: string; unit_id?: string; qty: string }[] };
+  expect(body.lines.map((l) => l.unit_id).sort()).toEqual([candy.units.day, candy.units.thung].sort());
+  await expect.poll(async () => dec((await skuByCode(page, candy.code)).on_hand).toFixed()).toBe(before.minus(550).toFixed());
 });

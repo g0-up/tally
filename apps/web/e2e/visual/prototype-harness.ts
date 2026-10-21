@@ -1,12 +1,12 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, type Locator, type Page } from "@playwright/test";
 
-// Opens the interactive prototype (docs/design/prototype-v6.14.html) the app is measured against.
+// Opens the interactive prototype (docs/design/prototype-v6.15.html) the app is measured against.
 // The prototype seeds its demo data on first load into localStorage; each Playwright test gets a
 // fresh browser context, so every visit starts from the same seed. The clock is pinned to the
 // seed's business date so nothing drifts with the real date.
 
-export const PROTOTYPE_FILE = fileURLToPath(new URL("../../../../docs/design/prototype-v6.14.html", import.meta.url));
+export const PROTOTYPE_FILE = fileURLToPath(new URL("../../../../docs/design/prototype-v6.15.html", import.meta.url));
 
 /** Business date of the prototype seed. */
 export const SEED_DATE = "2026-10-12";

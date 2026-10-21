@@ -38,12 +38,12 @@ export async function apiGet<T>(page: Page, path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** POST to the API of the page's host with the session cookies and the CSRF header. */
-export async function apiPost<T>(page: Page, path: string, body: unknown): Promise<T> {
+/** POST to the API of the page's host with the session cookies, the CSRF header and any extra headers (Idempotency-Key). */
+export async function apiPost<T>(page: Page, path: string, body: unknown, headers: Record<string, string> = {}): Promise<T> {
   const origin = new URL(page.url()).origin;
   const res = await page.request.post(`${origin}/api/v1${path}`, {
     data: body,
-    headers: { "X-CSRF-Token": await csrfToken(page.context(), origin) },
+    headers: { "X-CSRF-Token": await csrfToken(page.context(), origin), ...headers },
   });
   expect(res.ok(), `POST ${path} answered ${res.status()}: ${await res.text()}`).toBe(true);
   const text = await res.text();

@@ -15,8 +15,11 @@ export interface ParityState {
   host: Host;
   /** App path on the host; ":id" is filled from the environment variable named by `requires`. */
   path: string;
-  /** Environment variable that supplies a document id for the path; the state is skipped without it. */
-  requires?: "E2E_SALES_DOC_ID" | "E2E_STATEMENT_ID";
+  /**
+   * Environment variable that supplies the id of a seeded record (a document id, or the code of a SKU
+   * sold in several units); the state is skipped without it.
+   */
+  requires?: "E2E_SALES_DOC_ID" | "E2E_STATEMENT_ID" | "E2E_MULTI_UNIT_SKU_CODE";
   /**
    * Prototype view, the JavaScript that opens the same dialog there (prototype actions are global),
    * and a selector of prototype-only controls the app leaves out on purpose, masked in its capture.
@@ -48,7 +51,7 @@ export function stateURL(state: ParityState): string | null {
 
 /** Why a state cannot run in this environment, or undefined when it can. */
 export function skipReason(state: ParityState): string | undefined {
-  if (state.requires && !process.env[state.requires]) return `${state.requires} is not set: the state needs the id of a seeded document`;
+  if (state.requires && !process.env[state.requires]) return `${state.requires} is not set: the state needs the id of a seeded record`;
   return undefined;
 }
 
@@ -62,6 +65,38 @@ function clickOpens(button: string): (page: Page) => Promise<void> {
     await page.getByRole("button", { name: button, exact: true }).click();
     await expect(page.getByRole("dialog").first()).toBeVisible();
   };
+}
+
+/** Name of the unit table in the product dialogs; the dialog has loaded once it is on screen. */
+const UNIT_TABLE = "Đơn vị tính & giá bán";
+
+/**
+ * The prototype's product sold in several units (1 dây = 4 hộp, 1 thùng = 48 hộp). The app side opens
+ * the SKU named by E2E_MULTI_UNIT_SKU_CODE; the captures line up when it names the same product, as in
+ * a store holding the demo catalog.
+ */
+const PROTOTYPE_MULTI_UNIT_SKU = "TH-CD";
+
+function multiUnitSkuCode(): string {
+  const code = process.env.E2E_MULTI_UNIT_SKU_CODE;
+  if (!code) throw new Error("E2E_MULTI_UNIT_SKU_CODE is not set");
+  return code;
+}
+
+/** Opens the new-product dialog and waits for its unit table. */
+async function openNewProduct(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Thêm hàng hóa", exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("group", { name: UNIT_TABLE })).toBeVisible();
+}
+
+/** Narrows the product list to the multi-unit SKU and opens its "Đơn vị & giá" dialog. */
+async function openUnitsAndPrices(page: Page): Promise<void> {
+  const code = multiUnitSkuCode();
+  await page.getByPlaceholder("Tìm mã, tên, mã vạch…").fill(code);
+  const rows = page.getByRole("table", { name: "Hàng hóa" }).getByRole("row").filter({ has: page.getByRole("cell") });
+  await expect(rows.filter({ hasNotText: code })).toHaveCount(0);
+  await rows.filter({ hasText: code }).first().getByRole("button", { name: /^Đơn vị & giá / }).click();
+  await expect(page.getByRole("dialog").getByRole("group", { name: UNIT_TABLE })).toBeVisible();
 }
 
 /** Prototype-only controls per view: the store-setup page has no "Đặt lại onboarding" reset. */
@@ -112,6 +147,38 @@ const dialogStates: ParityState[] = [
     path: "/gift-baskets/assembly-orders",
     prototype: { viewId: "gio-qua.lenh-dong", open: "A.newASM()" },
     open: clickOpens("Tạo lệnh đóng"),
+  },
+  {
+    id: "danh-muc.hang-hoa.new-product-dialog",
+    kind: "dialog",
+    host: "tenant",
+    path: "/catalog/products",
+    prototype: { viewId: "danh-muc.hang-hoa", open: "A.newSKU()" },
+    open: openNewProduct,
+  },
+  {
+    id: "danh-muc.hang-hoa.units-dialog",
+    kind: "dialog",
+    host: "tenant",
+    path: "/catalog/products",
+    requires: "E2E_MULTI_UNIT_SKU_CODE",
+    prototype: {
+      viewId: "danh-muc.hang-hoa",
+      open: `UI.f.hq = '${PROTOTYPE_MULTI_UNIT_SKU}'; render(); A.editUnits('${PROTOTYPE_MULTI_UNIT_SKU}')`,
+    },
+    open: openUnitsAndPrices,
+  },
+];
+
+// Screens narrowed to the multi-unit SKU: Tồn kho with its unit line and the "= 2 thùng 5 dây" breakdown.
+const multiUnitStates: ParityState[] = [
+  {
+    id: "kho.ton.multi-unit",
+    kind: "route",
+    host: "tenant",
+    path: "/inventory/stock?q=:id",
+    requires: "E2E_MULTI_UNIT_SKU_CODE",
+    prototype: { viewId: "kho.ton", open: `UI.f.tq = '${PROTOTYPE_MULTI_UNIT_SKU}'; render()` },
   },
 ];
 
@@ -168,8 +235,11 @@ const additionStates: ParityState[] = [
   },
 ];
 
-/** Every state: 41 menu screens, the primary dialogs the prototype draws, and the additions. */
-export const PARITY_STATES: readonly ParityState[] = [...routeStates, ...dialogStates, ...additionStates];
+/**
+ * Every state: 41 menu screens, the primary dialogs the prototype draws (with the product dialogs and
+ * Tồn kho narrowed to a multi-unit SKU), and the additions.
+ */
+export const PARITY_STATES: readonly ParityState[] = [...routeStates, ...dialogStates, ...multiUnitStates, ...additionStates];
 
 /** Prototype-mapped states, compared with a prototype capture at run time. */
 export const PROTOTYPE_STATES: readonly ParityState[] = PARITY_STATES.filter((s) => s.prototype);
