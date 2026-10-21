@@ -5,7 +5,7 @@
 Menu **Thiết lập** có bốn màn hình: **Tài khoản & bảo mật**, **Khởi tạo cửa hàng**
 ([xem tiến độ thiết lập](bat-dau.md#thiết-lập-cửa-hàng-bắt-buộc-trước-khi-dùng)), **Thuê bao** và **Nhật ký**.
 
-Tally dành cho cửa hàng một người: **chỉ có tài khoản chủ cửa hàng**, toàn quyền mọi màn hình.
+Tally dành cho cửa hàng một người: chỉ có tài khoản chủ cửa hàng, với toàn quyền trên mọi màn hình.
 
 ## Tài khoản & bảo mật
 
@@ -107,17 +107,18 @@ Trạng thái yêu cầu: Đang mở, Chờ cửa hàng trả lời, Đang xử 
 
 ### Truy cập hỗ trợ
 
-Nhân viên hỗ trợ chỉ xem được dữ liệu cửa hàng khi bạn đồng ý, với phạm vi và thời hạn rõ ràng. Quyền này **chỉ đọc**.
+Nhân viên hỗ trợ chỉ xem được dữ liệu cửa hàng khi bạn cấp quyền, trong phạm vi bạn chọn và có thời hạn. Họ chỉ xem,
+không sửa được dữ liệu.
 
 1. Cần một yêu cầu hỗ trợ đang mở đã có nhân viên phụ trách.
 2. Bấm **Cấp quyền hỗ trợ 2 giờ (chỉ đọc)**, chọn yêu cầu hỗ trợ và **Phạm vi xem** (các phần nhân viên được xem), rồi bấm
    **Cấp quyền**.
 3. Thẻ hiện phiên hỗ trợ đang mở và giờ hết hạn. Bấm **Thu hồi** để kết thúc sớm bất cứ lúc nào.
 
-Nhân viên hỗ trợ không sửa được dữ liệu. Mỗi lần cấp, xem và thu hồi đều được ghi vào **Nhật ký**.
+Mỗi lần cấp, xem và thu hồi đều được ghi vào **Nhật ký**.
 
 ## Nhật ký
 
 **Thiết lập › Nhật ký** ghi lại tạo, sửa, duyệt, ghi sổ, đảo, xuất file và thay đổi quyền: ai làm, lúc nào, từ đâu (trình duyệt,
-máy bán hàng, đồng bộ ngoại tuyến, phiên hỗ trợ…). Nhật ký **chỉ ghi thêm, không sửa xóa**. Bạn tìm được theo số chứng từ, mã
+máy bán hàng, đồng bộ ngoại tuyến, phiên hỗ trợ…). Nhật ký chỉ ghi thêm, không ai sửa hay xóa được. Bạn tìm được theo số chứng từ, mã
 thao tác hoặc tên người.

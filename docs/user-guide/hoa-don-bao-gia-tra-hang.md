@@ -43,7 +43,7 @@ Bạn lọc danh sách theo trạng thái (**Nháp**, **Chưa xuất đủ**, **
 - **Tạo phiếu trả** → **Tạo phiếu trả hàng**. Bạn trả theo chứng từ bán gốc, và số trả không vượt số đã giao. Không có
   chứng từ gốc thì tích **Không có chứng từ gốc**.
 - Hàng trả có thể đưa vào **khu cách ly** để kiểm tra trước khi bán lại (xem [Lô & hạn dùng](kho-kiem-ke-gio-qua.md#lô--hạn-dùng)).
-- Bấm **Ghi sổ trả hàng**. Giá trị hàng trả **trừ vào công nợ của khách trước**. Phần dư thành khoản phải hoàn tiền cho
+- Bấm **Ghi sổ trả hàng**. Giá trị hàng trả được trừ vào công nợ của khách trước. Phần dư thành khoản phải hoàn tiền cho
   khách, và bạn chi bằng **Hoàn tiền** → **Ghi phiếu chi**.
 - Với khách lẻ, có thể chọn **Hoàn tiền từ quỹ** ngay trên phiếu trả.
 

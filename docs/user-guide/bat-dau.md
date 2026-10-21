@@ -43,35 +43,33 @@ Bước ghi **Tùy chọn** có nút **Bỏ qua bước này**. Bạn chuyển b
 | 6. Xác nhận và khóa số dư | Kiểm tra bảng tổng hợp: ngày chốt, giá trị tồn kho, khách nợ (phải thu), nợ nhà cung cấp (phải trả), từng quỹ, tổng tiền các quỹ và tồn kho theo màu. Tích ô đồng ý rồi bấm **Xác nhận số dư đầu kỳ**. Nếu bạn đăng nhập đã lâu, hệ thống hỏi lại mật khẩu. |
 | 7. Bán đơn đầu tiên (tùy chọn) | Mở sau khi xác nhận số dư. Bấm **Mở POS bán hàng** và bán thử một đơn. Bước này tự xong khi hóa đơn đầu tiên được ghi sổ. |
 
-Sau khi xác nhận số dư đầu kỳ:
+Hãy kiểm tra kỹ trước khi xác nhận, vì sau khi xác nhận số dư đầu kỳ:
 
-- Sổ sách bị **khóa đến hết ngày chốt**. Không ghi hay sửa được chứng từ nào có ngày từ ngày chốt trở về trước.
-- Ngày chốt và các số dư đầu kỳ **không đổi được nữa**. Sai lệch phát hiện sau đó thì xử lý bằng chứng từ điều chỉnh.
+- Sổ sách bị khóa đến hết ngày chốt. Không ghi hay sửa được chứng từ nào có ngày từ ngày chốt trở về trước.
+- Ngày chốt và các số dư đầu kỳ không đổi được nữa. Sai lệch phát hiện sau đó thì xử lý bằng chứng từ điều chỉnh.
 - POS và các màn bán hàng được mở. Màn hình chuyển sang bước **Bán đơn đầu tiên** và hiện thông báo **Cửa hàng đã sẵn sàng bán**.
   Bấm **Vào cửa hàng** để vào màn chính.
-
-Bạn nên kiểm tra kỹ trước khi xác nhận.
 
 Sau này, bạn xem lại tiến độ các bước ở **Thiết lập › Khởi tạo cửa hàng**. Bấm **Mở màn onboarding** để quay lại màn thiết lập.
 
 ## Màn hình và thao tác dùng chung
 
-- **Menu bên trái**: Tổng quan, Bán hàng, Nhập hàng, Kho, Giỏ quà, Công nợ, Chiến dịch & khách, Báo cáo, Danh mục và
+- Menu bên trái gồm Tổng quan, Bán hàng, Nhập hàng, Kho, Giỏ quà, Công nợ, Chiến dịch & khách, Báo cáo, Danh mục và
   Thiết lập. Gói thuê bao chưa bật module nào thì màn hình của module đó không dùng được.
-- **Màu hàng**: Tally theo dõi tồn theo 7 màu: Xanh, Đỏ, Tím, Vàng, Nâu, Đen, Trắng. Hàng không phân màu hiện là
+- Tally theo dõi tồn theo 7 màu: Xanh, Đỏ, Tím, Vàng, Nâu, Đen, Trắng. Hàng không phân màu hiện là
   **Chưa gán màu**. Khi bán, xuất hay đếm hàng có màu, bạn luôn phải chọn đúng màu. Hệ thống không tự lấy màu khác thay.
-- **Số chứng từ** có tiền tố cho biết loại chứng từ. Ví dụ: `HD` bán tại quầy, `SO` hóa đơn, `BG` báo giá,
+- Số chứng từ có tiền tố cho biết loại chứng từ. Ví dụ: `HD` bán tại quầy, `SO` hóa đơn, `BG` báo giá,
   `PX` phiếu xuất kho, `TH` phiếu trả hàng, `DH` đổi hàng, `PO` đơn nhập, `PN` phiếu nhận, `XT` xuất trả NCC,
   `PT`/`PC` phiếu thu/chi, `KK` kiểm kê, `DC` điều chỉnh kho, `LD` lệnh đóng giỏ, `TG` tháo giỏ, `DS` bảng kê đối soát,
   `DN` điều chỉnh công nợ, `BT` biên bản bù trừ.
-- **Chứng từ đã ghi sổ không sửa được.** Muốn sửa sai thì lập chứng từ trả, điều chỉnh hoặc đảo. Mọi thao tác đều được
+- Chứng từ đã ghi sổ không sửa được. Muốn sửa sai thì lập chứng từ trả, điều chỉnh hoặc đảo. Mọi thao tác đều được
   ghi vào **Nhật ký**.
-- **Xác nhận lại mật khẩu**: một số thao tác nhạy cảm hỏi lại mật khẩu trước khi làm. Đó là bật/tắt xác thực 2 lớp,
+- Một số thao tác nhạy cảm hỏi lại mật khẩu trước khi làm: bật/tắt xác thực 2 lớp,
   xuất toàn bộ dữ liệu, mở lại kỳ đã khóa, chuyển quyền chủ cửa hàng và đóng tài khoản.
-- **Xác nhận ngoại lệ**: khi thao tác vượt kiểm soát, hệ thống hỏi bạn xác nhận. Ví dụ: vượt hạn mức nợ, bán dưới giá
-  tối thiểu, tiêu hủy hàng, chênh lệch kiểm kê, xóa nợ, giải phóng hàng cách ly, mở lại kỳ. Bạn là người quyết định, và
-  lựa chọn được ghi vào nhật ký.
-- **Bấm hai lần không tạo hai chứng từ.** Nếu mạng chập chờn và màn hình báo "Chưa rõ đã ghi sổ hay chưa", bấm lại để
-  kiểm tra. Hệ thống không tạo thêm chứng từ mới.
-- **Chế độ chỉ xem**: khi thuê bao hết hạn, cửa hàng chuyển sang chỉ xem. Bạn vẫn xem và xuất được dữ liệu nhưng không
+- Khi thao tác vượt kiểm soát, hệ thống hỏi bạn xác nhận ngoại lệ, ví dụ khi vượt hạn mức nợ, bán dưới giá
+  tối thiểu, tiêu hủy hàng, chênh lệch kiểm kê, xóa nợ, giải phóng hàng cách ly hay mở lại kỳ. Lựa chọn của bạn được
+  ghi vào nhật ký.
+- Bấm hai lần không tạo hai chứng từ. Nếu mạng chập chờn và màn hình báo "Chưa rõ đã ghi sổ hay chưa", cứ bấm lại để
+  kiểm tra.
+- Khi thuê bao hết hạn, cửa hàng chuyển sang chế độ chỉ xem. Bạn vẫn xem và xuất được dữ liệu nhưng không
   ghi sổ được cho tới khi gia hạn (xem [Thuê bao](cai-dat-goi-bao-mat.md#thuê-bao-và-hóa-đơn)).

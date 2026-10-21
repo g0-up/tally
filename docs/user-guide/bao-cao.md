@@ -32,13 +32,13 @@ Trên mỗi thông báo, bạn có thể:
 | Báo cáo | Cách tính |
 |---|---|
 | Nhập–xuất–tồn | Đầu kỳ + nhập − xuất = cuối kỳ, tính từ sổ kho theo đơn vị cơ sở. Bấm mã hàng để mở thẻ kho. |
-| Bán hàng | Doanh thu **thực hiện** theo chứng từ đã ghi sổ (xuất giao và POS), sau trả hàng. Hóa đơn chưa giao không tính là doanh thu. |
+| Bán hàng | Doanh thu thực hiện theo chứng từ đã ghi sổ (xuất giao và POS), sau trả hàng. Hóa đơn chưa giao không tính là doanh thu. |
 | Lãi gộp & kết quả quản trị | Giá vốn bình quân di động, chụp lúc ghi sổ xuất. Combo ghi doanh thu cho combo, giá vốn là tổng thành phần. |
 | Tuổi nợ | Tính tại một ngày, theo hạn của phần chưa thanh toán. Ứng trước nằm ở màn hình riêng, không gộp thành nợ âm. |
 | Dòng tiền | Tiền thực vào/ra quỹ theo phân loại. Thu bán hàng và tiền cọc được tách riêng. |
 | Giỏ quà | Doanh thu giỏ ghi cho giỏ. Thành phần đã tiêu hao lúc đóng giỏ nên không cộng doanh thu hay xuất kho lần nữa. |
 
-Số liệu báo cáo là **số tạm tính để quản trị, không phải báo cáo tài chính đã kiểm toán**.
+Số liệu báo cáo là số tạm tính để quản trị, không phải báo cáo tài chính đã kiểm toán.
 
 Thao tác trên mọi báo cáo:
 
@@ -46,4 +46,4 @@ Thao tác trên mọi báo cáo:
   thì xuất lại.
 - **Lưu bộ lọc**: lưu bộ lọc đang dùng. Mở lại ở **Bộ lọc đã lưu**. Bạn **Đổi tên** hoặc **Xóa** được bộ lọc đã lưu.
 
-Muốn lấy **toàn bộ dữ liệu** cửa hàng, xem [Xuất toàn bộ dữ liệu](cai-dat-goi-bao-mat.md#xuất-toàn-bộ-dữ-liệu).
+Muốn lấy toàn bộ dữ liệu cửa hàng, xem [Xuất toàn bộ dữ liệu](cai-dat-goi-bao-mat.md#xuất-toàn-bộ-dữ-liệu).

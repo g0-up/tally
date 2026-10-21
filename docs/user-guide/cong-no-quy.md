@@ -9,13 +9,12 @@ Một đối tác vừa là khách vừa là NCC có **hai sổ nợ riêng**. H
 
 ## Khách còn nợ
 
-- **Thu tiền khách** → **Ghi phiếu thu**. Hệ thống gợi ý phân bổ vào khoản đến hạn **cũ nhất trước**. Bạn không phân bổ được
+- **Thu tiền khách** → **Ghi phiếu thu**. Hệ thống gợi ý phân bổ vào khoản đến hạn cũ nhất trước. Bạn không phân bổ được
   quá số còn nợ. Phần tiền chưa phân bổ thành **tiền khách ứng trước**.
 - Mở một khách để xem chứng từ còn nợ và làm các việc sau:
   - **Lập bảng kê**;
   - **Ghi chú nhắc nợ**, có thể kèm **Khách hẹn trả ngày**;
-  - **Giảm/xóa nợ** → **Ghi giảm nợ** trên từng chứng từ. Đây là quyết định của chủ cửa hàng, cần xác nhận ngoại lệ và được
-    ghi nhật ký.
+  - **Giảm/xóa nợ** → **Ghi giảm nợ** trên từng chứng từ. Thao tác này cần xác nhận ngoại lệ và được ghi vào nhật ký.
 
 ## Cửa hàng còn nợ NCC
 
