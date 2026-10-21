@@ -13,8 +13,8 @@ dist/
 coverage/
 test-results/
 playwright-report/
-# prototype captures are taken on every parity run and never committed
-apps/web/e2e/visual/parity.spec.ts-snapshots/prototype/
+# visual parity snapshots are generated locally and never committed
+apps/web/e2e/visual/parity.spec.ts-snapshots/
 # acceptance evidence (traces, screenshots) of each dated run
 apps/web/e2e/acceptance/evidence/
 blob-report/
