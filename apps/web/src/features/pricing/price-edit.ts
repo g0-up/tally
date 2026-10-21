@@ -1,5 +1,7 @@
 import { dec } from "../../shared/lib/decimal";
 import type { Money } from "../../shared/domain/money";
+import type { Qty } from "../../shared/domain/qty";
+import { autoPrice } from "../catalog";
 import type { PriceChange, PriceChangeSource, PriceListItem } from "./schemas";
 
 // Rules of the sell-price dialog and the price-history table: the prototype `setPrice` checks, the
@@ -9,6 +11,8 @@ export const PRICE_MESSAGES = {
   retailPositive: "Giá bán lẻ phải lớn hơn 0.",
   wholesaleAboveRetail: "Giá sỉ không được cao hơn giá bán lẻ.",
   unchanged: "Giá không thay đổi.",
+  unitPositive: (unit: string) => `Giá theo ${unit} phải lớn hơn 0; bỏ trống để tự tính theo hệ số.`,
+  unitWholesaleAboveRetail: (unit: string) => `Giá sỉ / ${unit} không được cao hơn giá bán lẻ / ${unit}.`,
   belowMin: "Giá sỉ thấp hơn giá tối thiểu: hóa đơn dùng giá này sẽ hiện cảnh báo khi xác nhận.",
 } as const;
 
@@ -27,17 +31,40 @@ export interface PriceDraft {
   wholesale: Money | null;
   /** "Áp dụng cho tất cả màu": also drop every color price. */
   allColors: boolean;
+  /** Own prices of the SKU's other units by unit id; a unit left out keeps its prices. */
+  units?: Readonly<Record<string, UnitPriceDraft>>;
+}
+
+/** Own prices of a non-base unit; null sells it at the base price × factor. */
+export interface UnitPriceDraft {
+  retail: Money | null;
+  wholesale: Money | null;
+}
+
+/** A unit of the SKU with its own prices (catalog `SkuUnit`). */
+export interface UnitPrices {
+  unit_id: string;
+  unit_name: string;
+  factor: string;
+  is_base: boolean;
+  active: boolean;
+  retail_price: Money | null;
+  wholesale_price: Money | null;
 }
 
 export interface CurrentPrices {
   retail_price: Money | null;
   wholesale_price: Money | null;
+  units?: readonly UnitPrices[];
 }
 
 export interface SalePriceRequest {
   kind: "retail" | "wholesale";
-  price: Money;
-  apply_all_colors: boolean;
+  /** Null removes the own price of `unit_id`. */
+  price: Money | null;
+  /** A non-base unit; absent prices the base unit. */
+  unit_id?: string;
+  apply_all_colors?: boolean;
   source: PriceChangeSource;
 }
 
@@ -60,17 +87,59 @@ export function wholesaleBelowMin(draft: PriceDraft, current: CurrentPrices, min
   return minPrice !== null && whole !== null && dec(whole).gt(0) && dec(whole).lt(minPrice);
 }
 
-/** The prototype `setPrice` checks, in order; null when the draft can be saved. */
+/** Units whose own prices the dialog edits: the active units other than the base one. */
+export function priceableUnits(current: CurrentPrices): UnitPrices[] {
+  return (current.units ?? []).filter((u) => !u.is_base && u.active);
+}
+
+/** The draft of the units' own prices as they are now. */
+export function unitPriceDrafts(current: CurrentPrices): Record<string, UnitPriceDraft> {
+  return Object.fromEntries(priceableUnits(current).map((u) => [u.unit_id, { retail: u.retail_price, wholesale: u.wholesale_price }]));
+}
+
+/** What one unit sells at with the draft: its own price, else the draft's base price × factor. */
+export function unitAutoPrices(draft: PriceDraft, current: CurrentPrices, unit: UnitPrices): UnitPriceDraft {
+  const factor = unit.factor as Qty;
+  return { retail: autoPrice(draft.retail, factor), wholesale: autoPrice(effectiveWholesale(draft, current), factor) };
+}
+
+/** Units with a draft whose own prices differ from the current ones. */
+function changedUnits(draft: PriceDraft, current: CurrentPrices): { unit: UnitPrices; next: UnitPriceDraft }[] {
+  return priceableUnits(current).flatMap((unit) => {
+    const next = draft.units?.[unit.unit_id];
+    if (next === undefined || (same(next.retail, unit.retail_price) && same(next.wholesale, unit.wholesale_price))) return [];
+    return [{ unit, next }];
+  });
+}
+
+/** The first problem of the units' own prices: a zero price, or an own wholesale above the own retail (as in the unit table). */
+function unitPriceError(draft: PriceDraft, current: CurrentPrices): string | null {
+  for (const unit of priceableUnits(current)) {
+    const next = draft.units?.[unit.unit_id];
+    if (next === undefined) continue;
+    if ((next.retail !== null && !dec(next.retail).gt(0)) || (next.wholesale !== null && !dec(next.wholesale).gt(0))) {
+      return PRICE_MESSAGES.unitPositive(unit.unit_name);
+    }
+    if (next.retail !== null && next.wholesale !== null && dec(next.wholesale).gt(next.retail)) return PRICE_MESSAGES.unitWholesaleAboveRetail(unit.unit_name);
+  }
+  return null;
+}
+
+/** The prototype `setPrice` checks, in order, then the units' own prices; null when the draft can be saved. */
 export function validatePriceDraft(draft: PriceDraft, current: CurrentPrices): string | null {
   if (draft.retail === null || !dec(draft.retail).gt(0)) return PRICE_MESSAGES.retailPositive;
   if (wholesaleAboveRetail(draft, current)) return PRICE_MESSAGES.wholesaleAboveRetail;
-  if (!draft.allColors && same(draft.retail, current.retail_price) && same(effectiveWholesale(draft, current), current.wholesale_price)) return PRICE_MESSAGES.unchanged;
+  const unitError = unitPriceError(draft, current);
+  if (unitError !== null) return unitError;
+  const baseSame = same(draft.retail, current.retail_price) && same(effectiveWholesale(draft, current), current.wholesale_price);
+  if (!draft.allColors && baseSame && changedUnits(draft, current).length === 0) return PRICE_MESSAGES.unchanged;
   return null;
 }
 
 /**
  * `POST /skus/{id}/sale-price` bodies of one save: a request per base list whose general price
- * changes, or both when every color price is dropped. Call only with a draft that validated.
+ * changes, or both when every color price is dropped, then one per changed own price of a unit
+ * (null removes it, so the unit sells at base price × factor). Call only with a draft that validated.
  */
 export function salePriceRequests(draft: PriceDraft, current: CurrentPrices, source: PriceChangeSource): SalePriceRequest[] {
   const out: SalePriceRequest[] = [];
@@ -81,6 +150,10 @@ export function salePriceRequests(draft: PriceDraft, current: CurrentPrices, sou
   const whole = effectiveWholesale(draft, current);
   if (whole !== null && (all || !same(whole, current.wholesale_price))) {
     out.push({ kind: "wholesale", price: whole, apply_all_colors: all, source });
+  }
+  for (const { unit, next } of changedUnits(draft, current)) {
+    if (!same(next.retail, unit.retail_price)) out.push({ kind: "retail", price: next.retail, unit_id: unit.unit_id, source });
+    if (!same(next.wholesale, unit.wholesale_price)) out.push({ kind: "wholesale", price: next.wholesale, unit_id: unit.unit_id, source });
   }
   return out;
 }

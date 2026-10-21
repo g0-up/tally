@@ -7,13 +7,21 @@ import { Button } from "../../../shared/ui/button";
 import { apiError } from "../../../test/msw/handlers";
 import { server } from "../../../test/msw/server";
 import { renderWithProviders } from "../../../test/render";
-import type { PriceDraft } from "../price-edit";
+import type { CurrentPrices, PriceDraft } from "../price-edit";
 import { useSaveSalePrice } from "./mutations";
 
 const sku = { id: "sku-1", retail_price: toMoney(15000), wholesale_price: toMoney(13000) };
+/** The same SKU sold by the thùng of 12 at its own 170.000 (sỉ 150.000). */
+const PACKED = {
+  ...sku,
+  units: [
+    { unit_id: "hop", unit_name: "hộp", factor: "1", is_base: true, active: true, retail_price: toMoney(15000), wholesale_price: toMoney(13000) },
+    { unit_id: "thung", unit_name: "thùng", factor: "12", is_base: false, active: true, retail_price: toMoney(170000), wholesale_price: toMoney(150000) },
+  ],
+};
 
-function PriceForm({ draft, after }: { draft: () => PriceDraft; after: () => void }) {
-  const { save, pending } = useSaveSalePrice({ sku, source: "catalog", after });
+function PriceForm({ draft, after, current = sku }: { draft: () => PriceDraft; after: () => void; current?: CurrentPrices & { id: string } }) {
+  const { save, pending } = useSaveSalePrice({ sku: current, source: "catalog", after });
   return (
     <Button variant="primary" pending={pending} onClick={() => save(draft())}>
       Lưu giá
@@ -21,15 +29,15 @@ function PriceForm({ draft, after }: { draft: () => PriceDraft; after: () => voi
   );
 }
 
-type Write = { key: string | null; kind: string; price: string | null };
+type Write = { key: string | null; kind: string; price: string | null; unit_id?: string };
 
 /** Records every price write; `answer` decides the response of each. */
 function serve(answer: (w: Write, n: number) => Response | undefined) {
   const writes: Write[] = [];
   server.use(
     http.post(/\/skus\/sku-1\/sale-price$/, async ({ request }) => {
-      const body = (await request.json()) as { kind: string; price: string | null };
-      const w = { key: request.headers.get("Idempotency-Key"), kind: body.kind, price: body.price };
+      const body = (await request.json()) as { kind: string; price: string | null; unit_id?: string };
+      const w: Write = { key: request.headers.get("Idempotency-Key"), kind: body.kind, price: body.price, ...(body.unit_id === undefined ? {} : { unit_id: body.unit_id }) };
       writes.push(w);
       return answer(w, writes.filter((x) => x.kind === w.kind).length) ?? HttpResponse.json({});
     }),
@@ -91,5 +99,23 @@ describe("useSaveSalePrice", () => {
     const retailWrites = writes.filter((w) => w.kind === "retail");
     expect(retailWrites.map((w) => w.price)).toEqual(["18000", "20000", "18000"]);
     expect(new Set(retailWrites.map((w) => w.key)).size).toBe(3);
+  });
+
+  it("removes a cleared unit price with null under the unit's own key, naming the unit when it fails", async () => {
+    const writes = serve((w) => (w.unit_id === "thung" && w.kind === "wholesale" ? apiError(422, "validation_failed") : undefined));
+    const after = vi.fn();
+    const draft = (): PriceDraft => ({ retail: toMoney(16000), wholesale: null, allColors: false, units: { thung: { retail: null, wholesale: toMoney(140000) } } });
+    renderWithProviders(<PriceForm draft={draft} after={after} current={PACKED} />);
+
+    await click();
+    expect(await screen.findByText(/^Đã lưu một phần giá nhưng chưa lưu giá sỉ \/ thùng: .* Bấm lại để lưu tiếp\.$/)).toBeInTheDocument();
+    expect(after).not.toHaveBeenCalled();
+
+    const intent = writes[0]?.key?.split(":sale-price:")[0] ?? "";
+    expect(writes).toEqual([
+      { key: `${intent}:sale-price:sku-1:retail:general:catalog:16000:1`, kind: "retail", price: "16000" },
+      { key: `${intent}:sale-price:sku-1:retail:general:unit-thung:catalog:none:1`, kind: "retail", price: null, unit_id: "thung" },
+      { key: `${intent}:sale-price:sku-1:wholesale:general:unit-thung:catalog:140000:1`, kind: "wholesale", price: "140000", unit_id: "thung" },
+    ]);
   });
 });

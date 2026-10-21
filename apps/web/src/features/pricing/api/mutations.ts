@@ -15,15 +15,17 @@ import { pricingKeys } from "./queries";
 /** One `POST /skus/{id}/sale-price` body. */
 export interface SalePriceBody {
   kind: "retail" | "wholesale";
-  /** Null removes the own price of `color_id`. */
+  /** Null removes the own price of `color_id` or of the non-base `unit_id`. */
   price: Money | null;
   color_id?: string;
+  /** A non-base unit; absent prices the base unit. */
+  unit_id?: string;
   apply_all_colors?: boolean;
   source: PriceChangeSource;
 }
 
 /**
- * What one intent has sent to one sale-price slot (SKU, list, color scope). Each value the intent
+ * What one intent has sent to one sale-price slot (SKU, list, color scope, unit). Each value the intent
  * moves the slot to is a write of its own with the next number, so the key never names the value
  * alone: going back to an earlier price after another one is a new write, not a replay of the first.
  */
@@ -48,7 +50,7 @@ const priceValue = (price: Money | null) => (price === null ? "none" : toDecimal
  */
 export async function postSalePrice(client: HttpClient, intentKey: string, skuId: string, body: SalePriceBody, writes: SalePriceWrites): Promise<void> {
   const scope = body.color_id ?? (body.apply_all_colors ? "all-colors" : "general");
-  const slotId = `${skuId}:${body.kind}:${scope}`;
+  const slotId = `${skuId}:${body.kind}:${scope}${body.unit_id === undefined ? "" : `:unit-${body.unit_id}`}`;
   const value = priceValue(body.price);
   const slot = writes.get(slotId) ?? { n: 0, sent: null, written: null };
   writes.set(slotId, slot);
@@ -77,9 +79,15 @@ export interface SaveSalePriceOptions {
 
 const LIST_LABEL = { retail: "giá bán lẻ", wholesale: "giá sỉ" } as const;
 
+/** "giá sỉ", or "giá sỉ / thùng" for the own price of a unit. */
+function priceLabel(body: SalePriceBody, sku: CurrentPrices): string {
+  const unit = body.unit_id === undefined ? undefined : sku.units?.find((u) => u.unit_id === body.unit_id);
+  return unit === undefined ? LIST_LABEL[body.kind] : `${LIST_LABEL[body.kind]} / ${unit.unit_name}`;
+}
+
 /**
  * "Lưu giá": checks the draft like the prototype, then writes the retail and wholesale base prices,
- * one request per list. A retry skips the list that went through and sends the one still missing;
+ * one request per list, and the changed own prices of the other units, one request each. A retry skips the list that went through and sends the one still missing;
  * once one list is stored, a failure says so instead of "Chưa ghi sổ.".
  */
 export function useSaveSalePrice({ sku, source, after }: SaveSalePriceOptions) {
@@ -97,15 +105,17 @@ export function useSaveSalePrice({ sku, source, after }: SaveSalePriceOptions) {
           if (!wrote || isReauthRequired(e) || isSessionExpired(e)) throw e;
           throw new PartialCommitError(
             outcomeUnknown(e)
-              ? `Đã lưu một phần giá nhưng chưa rõ đã lưu ${LIST_LABEL[body.kind]} hay chưa. Bấm lại để kiểm tra và lưu tiếp.`
-              : `Đã lưu một phần giá nhưng chưa lưu ${LIST_LABEL[body.kind]}: ${errorMessage(e)} Bấm lại để lưu tiếp.`,
+              ? `Đã lưu một phần giá nhưng chưa rõ đã lưu ${priceLabel(body, sku)} hay chưa. Bấm lại để kiểm tra và lưu tiếp.`
+              : `Đã lưu một phần giá nhưng chưa lưu ${priceLabel(body, sku)}: ${errorMessage(e)} Bấm lại để lưu tiếp.`,
           );
         }
       }
       return null;
     },
     success: (_, draft) => (draft.allColors ? "Đã cập nhật giá cho sản phẩm và tất cả màu." : "Đã cập nhật giá chung."),
-    invalidate: [skuKeys.all, pricingKeys.all],
+    // POS tiles and the unit pickers of sales and POS lines show the prices too; those features
+    // import pricing, so their keys are written out.
+    invalidate: [skuKeys.all, pricingKeys.all, ["pos"], ["sales", "lookup", "sku"]],
     after,
   });
   return {
