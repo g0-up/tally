@@ -242,6 +242,39 @@ func TestOpenAPIAttachmentOwnerTypes(t *testing.T) {
 	}
 }
 
+// TestOpenAPISkuUnitLockReasons checks that SkuUnit.locked_by documents exactly the reasons the
+// catalog gives, in the order they are checked, plus null.
+func TestOpenAPISkuUnitLockReasons(t *testing.T) {
+	raw, err := os.ReadFile(tenantSpecPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Enum []*string `yaml:"enum"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(raw, &spec); err != nil {
+		t.Fatal(err)
+	}
+	var documented []string
+	for _, v := range spec.Components.Schemas["SkuUnit"].Properties["locked_by"].Enum {
+		if v == nil {
+			documented = append(documented, "null")
+			continue
+		}
+		documented = append(documented, *v)
+	}
+	want := []string{catalog.UnitLockedByDocuments, catalog.UnitLockedByPriceHistory, catalog.UnitLockedByBarcodes, "null"}
+	if !slices.Equal(documented, want) {
+		t.Errorf("SkuUnit.locked_by enum = %v, want %v", documented, want)
+	}
+}
+
 func TestNormalizeGinPath(t *testing.T) {
 	cases := map[string]string{
 		"/api/v1/invoices":                   "/api/v1/invoices",

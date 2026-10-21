@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/shopspring/decimal"
 
+	"github.com/g0-up/tally/apps/api/internal/platform/apperr"
 	"github.com/g0-up/tally/apps/api/internal/platform/audit"
 	"github.com/g0-up/tally/apps/api/internal/platform/db"
 	"github.com/g0-up/tally/apps/api/internal/platform/ids"
@@ -289,8 +292,85 @@ func readAxes(ctx context.Context, q db.Querier, productID uuid.UUID) ([]AxisDet
 	return out, nil
 }
 
+// readSkuUnits returns the units of the SKUs, base first then by factor, with their own prices
+// and lock reasons.
+func (s *Service) readSkuUnits(ctx context.Context, q db.Querier, skuIDs []uuid.UUID) ([]SkuUnit, error) {
+	var units []SkuUnit
+	if err := sqlx.SelectContext(ctx, q, &units, skuUnitSelect+` WHERE su.sku_id = ANY($1) ORDER BY su.sku_id, su.is_base DESC, su.factor, u.name`,
+		skuIDs); err != nil {
+		return nil, fmt.Errorf("catalog: read sku units: %w", err)
+	}
+	if err := s.fillSkuUnits(ctx, q, units); err != nil {
+		return nil, err
+	}
+	return units, nil
+}
+
+// fillSkuUnits sets the own retail and wholesale prices (general color, no tier, base lists) and
+// the lock reason of each unit, with one query per source for all of them.
+func (s *Service) fillSkuUnits(ctx context.Context, q db.Querier, units []SkuUnit) error {
+	if len(units) == 0 {
+		return nil
+	}
+	skuIDs := make([]uuid.UUID, 0, len(units))
+	seen := map[uuid.UUID]bool{}
+	var nonBase []SkuUnitKey
+	for _, u := range units {
+		if !seen[u.SkuID] {
+			seen[u.SkuID] = true
+			skuIDs = append(skuIDs, u.SkuID)
+		}
+		if !u.IsBase {
+			nonBase = append(nonBase, SkuUnitKey{SkuID: u.SkuID, UnitID: u.UnitID})
+		}
+	}
+	var prices []struct {
+		SkuID  uuid.UUID   `db:"sku_id"`
+		UnitID uuid.UUID   `db:"unit_id"`
+		Kind   string      `db:"kind"`
+		Price  money.Money `db:"price"`
+	}
+	// A row without unit_id prices the base unit; it wins over a row naming the base unit.
+	if err := sqlx.SelectContext(ctx, q, &prices, `
+		SELECT i.sku_id, COALESCE(i.unit_id, s.base_unit_id) AS unit_id, l.kind, i.price
+		FROM price_list_items i
+		JOIN price_lists l ON l.id = i.price_list_id
+		JOIN skus s ON s.id = i.sku_id
+		WHERE l.kind IN ('retail', 'wholesale') AND i.sku_id = ANY($1) AND i.color_id IS NULL AND i.min_qty = 0
+		ORDER BY i.unit_id IS NULL`, skuIDs); err != nil {
+		return fmt.Errorf("catalog: read unit prices: %w", err)
+	}
+	locks, err := s.usage.UnitLocks(ctx, q, nonBase)
+	if err != nil {
+		return err
+	}
+	byKey := make(map[SkuUnitKey]*SkuUnit, len(units))
+	for i := range units {
+		u := &units[i]
+		u.RetailPrice, u.WholesalePrice, u.LockedBy = nil, nil, nil
+		byKey[SkuUnitKey{SkuID: u.SkuID, UnitID: u.UnitID}] = u
+		if reason, ok := locks[SkuUnitKey{SkuID: u.SkuID, UnitID: u.UnitID}]; ok && !u.IsBase {
+			u.LockedBy = &reason
+		}
+	}
+	for _, p := range prices {
+		u, ok := byKey[SkuUnitKey{SkuID: p.SkuID, UnitID: p.UnitID}]
+		if !ok {
+			continue
+		}
+		price := p.Price
+		switch p.Kind {
+		case PriceRetail:
+			u.RetailPrice = &price
+		case PriceWholesale:
+			u.WholesalePrice = &price
+		}
+	}
+	return nil
+}
+
 // readSkuDetails returns the SKUs with their units, barcodes and variant options, in skuIDs order.
-func readSkuDetails(ctx context.Context, q db.Querier, skuIDs []uuid.UUID) ([]SkuDetail, error) {
+func (s *Service) readSkuDetails(ctx context.Context, q db.Querier, skuIDs []uuid.UUID) ([]SkuDetail, error) {
 	if len(skuIDs) == 0 {
 		return []SkuDetail{}, nil
 	}
@@ -298,9 +378,9 @@ func readSkuDetails(ctx context.Context, q db.Querier, skuIDs []uuid.UUID) ([]Sk
 	if err := sqlx.SelectContext(ctx, q, &skus, `SELECT `+skuColumns+` FROM skus WHERE id = ANY($1)`, skuIDs); err != nil {
 		return nil, fmt.Errorf("catalog: read skus: %w", err)
 	}
-	var units []SkuUnit
-	if err := sqlx.SelectContext(ctx, q, &units, skuUnitSelect+` WHERE su.sku_id = ANY($1) ORDER BY su.is_base DESC, su.factor, u.name`, skuIDs); err != nil {
-		return nil, fmt.Errorf("catalog: read sku units: %w", err)
+	units, err := s.readSkuUnits(ctx, q, skuIDs)
+	if err != nil {
+		return nil, err
 	}
 	var barcodes []Barcode
 	if err := sqlx.SelectContext(ctx, q, &barcodes, `SELECT `+barcodeColumns+` FROM sku_barcodes WHERE sku_id = ANY($1) ORDER BY created_at, code`, skuIDs); err != nil {
@@ -353,8 +433,8 @@ func lockSku(ctx context.Context, q db.Querier, id uuid.UUID) (Sku, error) {
 	return sku, nil
 }
 
-func readSkuDetail(ctx context.Context, q db.Querier, id uuid.UUID) (SkuDetail, error) {
-	list, err := readSkuDetails(ctx, q, []uuid.UUID{id})
+func (s *Service) readSkuDetail(ctx context.Context, q db.Querier, id uuid.UUID) (SkuDetail, error) {
+	list, err := s.readSkuDetails(ctx, q, []uuid.UUID{id})
 	if err != nil {
 		return SkuDetail{}, err
 	}
@@ -369,7 +449,7 @@ func (s *Service) Sku(ctx context.Context, scope Scope, id uuid.UUID) (SkuDetail
 	var d SkuDetail
 	err := s.read(ctx, scope, func(q db.Querier) error {
 		var err error
-		d, err = readSkuDetail(ctx, q, id)
+		d, err = s.readSkuDetail(ctx, q, id)
 		return err
 	})
 	return d, err
@@ -479,7 +559,7 @@ func (s *Service) UpdateSku(ctx context.Context, actor audit.Actor, id uuid.UUID
 				return err
 			}
 		}
-		if d, err = readSkuDetail(ctx, q, id); err != nil {
+		if d, err = s.readSkuDetail(ctx, q, id); err != nil {
 			return err
 		}
 		return s.record(ctx, q, actor, "sku.update", "sku", id, before, d.Sku)
@@ -684,7 +764,12 @@ func (s *Service) AddSkuUnit(ctx context.Context, actor audit.Actor, skuID uuid.
 		if err := restoreDefaults(ctx, q, skuID); err != nil {
 			return err
 		}
-		out = su
+		if err := touchSku(ctx, q, skuID, s.clock.Now()); err != nil {
+			return err
+		}
+		if out, err = s.readFilledSkuUnit(ctx, q, skuID, in.UnitID); err != nil {
+			return err
+		}
 		return s.record(ctx, q, actor, "sku.unit_add", "sku", skuID, nil, su)
 	})
 	return out, err
@@ -714,6 +799,15 @@ func restoreDefaults(ctx context.Context, q db.Querier, skuID uuid.UUID) error {
 	return nil
 }
 
+// touchSku moves the SKU's version with a change to its units, so a unit table read before the
+// change is refused on save (412) instead of deleting or overwriting it.
+func touchSku(ctx context.Context, q db.Querier, skuID uuid.UUID, now time.Time) error {
+	if _, err := q.ExecContext(ctx, `UPDATE skus SET version = version + 1, updated_at = $2 WHERE id = $1`, skuID, now); err != nil {
+		return fmt.Errorf("catalog: touch sku: %w", err)
+	}
+	return nil
+}
+
 func readSkuUnit(ctx context.Context, q db.Querier, skuID, unitID uuid.UUID) (SkuUnit, error) {
 	var su SkuUnit
 	err := q.QueryRowxContext(ctx, skuUnitSelect+` WHERE su.sku_id = $1 AND su.unit_id = $2`, skuID, unitID).StructScan(&su)
@@ -724,6 +818,19 @@ func readSkuUnit(ctx context.Context, q db.Querier, skuID, unitID uuid.UUID) (Sk
 		return SkuUnit{}, fmt.Errorf("catalog: read sku unit: %w", err)
 	}
 	return su, nil
+}
+
+// readFilledSkuUnit reads a SKU unit with its own prices and lock reason.
+func (s *Service) readFilledSkuUnit(ctx context.Context, q db.Querier, skuID, unitID uuid.UUID) (SkuUnit, error) {
+	su, err := readSkuUnit(ctx, q, skuID, unitID)
+	if err != nil {
+		return SkuUnit{}, err
+	}
+	units := []SkuUnit{su}
+	if err := s.fillSkuUnits(ctx, q, units); err != nil {
+		return SkuUnit{}, err
+	}
+	return units[0], nil
 }
 
 // UpdateSkuUnit changes the factor, active flag or default flags of a SKU unit. The base unit's
@@ -775,7 +882,10 @@ func (s *Service) UpdateSkuUnit(ctx context.Context, actor audit.Actor, skuID, u
 		if err := restoreDefaults(ctx, q, skuID); err != nil {
 			return err
 		}
-		if out, err = readSkuUnit(ctx, q, skuID, unitID); err != nil {
+		if err := touchSku(ctx, q, skuID, s.clock.Now()); err != nil {
+			return err
+		}
+		if out, err = s.readFilledSkuUnit(ctx, q, skuID, unitID); err != nil {
 			return err
 		}
 		return s.record(ctx, q, actor, "sku.unit_update", "sku", skuID, before, out)
@@ -819,8 +929,242 @@ func (s *Service) DeleteSkuUnit(ctx context.Context, actor audit.Actor, skuID, u
 		if err := restoreDefaults(ctx, q, skuID); err != nil {
 			return err
 		}
+		if err := touchSku(ctx, q, skuID, s.clock.Now()); err != nil {
+			return err
+		}
 		return s.record(ctx, q, actor, "sku.unit_remove", "sku", skuID, su, nil)
 	})
+}
+
+// SkuUnitRow is one non-base row of a SKU's unit table: Factor base units per unit, whether it is
+// in use for new documents, and its own prices per unit (nil sells it at base price × factor).
+type SkuUnitRow struct {
+	UnitID         uuid.UUID
+	Factor         *string
+	Active         bool
+	RetailPrice    *money.Money
+	WholesalePrice *money.Money
+}
+
+// SkuUnitsInput is the whole unit table of a SKU: the base unit's prices (nil keeps the current
+// one) and every other unit; a unit of the SKU missing from Units is deleted.
+type SkuUnitsInput struct {
+	RetailPrice    *money.Money
+	WholesalePrice *money.Money
+	Units          []SkuUnitRow
+}
+
+// ReplaceSkuUnits saves the unit table of a SKU in one transaction guarded by the SKU's version:
+// it adds the new units, changes the factor and active flag of the others, sets or removes their
+// own prices and deletes the units missing from in. A unit that documents, price history or
+// barcodes reference cannot be deleted (409 unit_in_use naming each such unit); it can be made
+// inactive. When the default purchase unit becomes inactive, the active unit with the largest
+// factor above 1 takes over, else the base unit; the default sale unit falls back to the base unit.
+// Factors may change at any time because document lines keep the factor they were written with.
+func (s *Service) ReplaceSkuUnits(ctx context.Context, actor audit.Actor, skuID uuid.UUID, expected int, in SkuUnitsInput) (SkuDetail, error) {
+	var d SkuDetail
+	err := s.write(ctx, actor, func(q db.Querier) error {
+		sku, err := lockSku(ctx, q, skuID)
+		if err != nil {
+			return err
+		}
+		if sku.Version != expected {
+			return apperr.NewPreconditionFailed("The record was changed by someone else; reload it and try again")
+		}
+		var before []SkuUnit
+		if err := sqlx.SelectContext(ctx, q, &before, skuUnitSelect+` WHERE su.sku_id = $1 ORDER BY su.is_base DESC, su.factor, u.name
+			FOR UPDATE OF su`, skuID); err != nil {
+			return fmt.Errorf("catalog: lock sku units: %w", err)
+		}
+		if err := s.fillSkuUnits(ctx, q, before); err != nil {
+			return err
+		}
+		current := make(map[uuid.UUID]SkuUnit, len(before))
+		for _, u := range before {
+			current[u.UnitID] = u
+		}
+		factors, err := checkUnitRows(ctx, q, sku.BaseUnitID, current, in)
+		if err != nil {
+			return err
+		}
+		kept := make(map[uuid.UUID]bool, len(in.Units))
+		for _, r := range in.Units {
+			kept[r.UnitID] = true
+		}
+		locked := fieldErrors{}
+		var removed []SkuUnit
+		for _, u := range before {
+			if u.IsBase || kept[u.UnitID] {
+				continue
+			}
+			if u.LockedBy != nil {
+				locked["units["+u.UnitID.String()+"]"] = *u.LockedBy
+			}
+			removed = append(removed, u)
+		}
+		if len(locked) > 0 {
+			return errUnitsLocked(locked)
+		}
+		now := s.clock.Now()
+		for _, u := range removed {
+			// Only a current price row without history can be left on an unlocked unit.
+			for _, stmt := range []string{
+				`DELETE FROM price_list_items WHERE sku_id = $1 AND unit_id = $2`,
+				`DELETE FROM sku_units WHERE sku_id = $1 AND unit_id = $2`,
+			} {
+				if _, err := q.ExecContext(ctx, stmt, skuID, u.UnitID); err != nil {
+					if db.IsForeignKeyViolation(err, "") {
+						return errSkuUnitInUse()
+					}
+					return fmt.Errorf("catalog: delete sku unit: %w", err)
+				}
+			}
+		}
+		// Every row is active while its prices are written: the price writer only prices active units.
+		for i, r := range in.Units {
+			if _, ok := current[r.UnitID]; ok {
+				if _, err := q.ExecContext(ctx, `UPDATE sku_units SET factor = $3, active = true, updated_at = $4
+					WHERE sku_id = $1 AND unit_id = $2`, skuID, r.UnitID, factors[i], now); err != nil {
+					return fmt.Errorf("catalog: update sku unit: %w", err)
+				}
+				continue
+			}
+			if err := insertSkuUnit(ctx, q, actor.TenantID, SkuUnit{SkuID: skuID, UnitID: r.UnitID, Factor: factors[i], Active: true},
+				now); err != nil {
+				return err
+			}
+		}
+		base := current[sku.BaseUnitID]
+		if err := s.replaceUnitPrices(ctx, q, actor, skuID, sku.BaseUnitID, base, in.RetailPrice, in.WholesalePrice, true); err != nil {
+			return err
+		}
+		for _, r := range in.Units {
+			if err := s.replaceUnitPrices(ctx, q, actor, skuID, r.UnitID, current[r.UnitID], r.RetailPrice, r.WholesalePrice,
+				false); err != nil {
+				return err
+			}
+		}
+		var inactive []uuid.UUID
+		for _, r := range in.Units {
+			if !r.Active {
+				inactive = append(inactive, r.UnitID)
+			}
+		}
+		if len(inactive) > 0 {
+			if _, err := q.ExecContext(ctx, `UPDATE sku_units SET active = false, is_default_sale = false, is_default_purchase = false,
+				updated_at = $3 WHERE sku_id = $1 AND unit_id = ANY($2)`, skuID, inactive, now); err != nil {
+				return fmt.Errorf("catalog: deactivate sku units: %w", err)
+			}
+		}
+		if err := movePurchaseDefault(ctx, q, skuID); err != nil {
+			return err
+		}
+		if err := restoreDefaults(ctx, q, skuID); err != nil {
+			return err
+		}
+		// The version moves with the unit table so another editor's stale table is refused.
+		if _, err := db.UpdateWithVersion(ctx, q, "skus", skuID, expected, now,
+			db.Set{Column: "base_unit_id", Value: sku.BaseUnitID}); err != nil {
+			return err
+		}
+		if d, err = s.readSkuDetail(ctx, q, skuID); err != nil {
+			return err
+		}
+		return s.record(ctx, q, actor, "sku.units_replace", "sku", skuID, before, d.Units)
+	})
+	return d, err
+}
+
+// checkUnitRows checks the rows of a unit table against the SKU's base unit and current units and
+// returns the parsed factor of each row. Field errors name the row: units[1].unit_id is
+// required, is_base, duplicate or unknown_unit (a new unit missing or inactive in the store);
+// units[1].factor is required or why it is not a positive factor; prices must not be negative.
+func checkUnitRows(ctx context.Context, q db.Querier, baseUnitID uuid.UUID, current map[uuid.UUID]SkuUnit,
+	in SkuUnitsInput) ([]money.Factor, error) {
+	if len(in.Units) > maxUnitRows {
+		return nil, errInvalid(map[string]string{"units": "too_many"})
+	}
+	f := fieldErrors{}
+	checkPrices(f, "", in.RetailPrice, in.WholesalePrice)
+	factors := make([]money.Factor, len(in.Units))
+	seen := make(map[uuid.UUID]bool, len(in.Units))
+	var added []uuid.UUID
+	for i, r := range in.Units {
+		at := fmt.Sprintf("units[%d].", i)
+		switch {
+		case r.UnitID == uuid.Nil:
+			f[at+"unit_id"] = "required"
+		case r.UnitID == baseUnitID:
+			f[at+"unit_id"] = "is_base"
+		case seen[r.UnitID]:
+			f[at+"unit_id"] = "duplicate"
+		default:
+			if _, ok := current[r.UnitID]; !ok {
+				added = append(added, r.UnitID)
+			}
+		}
+		seen[r.UnitID] = true
+		var reason string
+		if factors[i], reason = factorOf(r.Factor); reason != "" {
+			f[at+"factor"] = reason
+		}
+		checkPrices(f, at, r.RetailPrice, r.WholesalePrice)
+	}
+	if len(added) > 0 {
+		var active []uuid.UUID
+		if err := sqlx.SelectContext(ctx, q, &active, `SELECT id FROM units WHERE id = ANY($1) AND active`, added); err != nil {
+			return nil, fmt.Errorf("catalog: read units: %w", err)
+		}
+		for i, r := range in.Units {
+			if slices.Contains(added, r.UnitID) && !slices.Contains(active, r.UnitID) {
+				f[fmt.Sprintf("units[%d].unit_id", i)] = "unknown_unit"
+			}
+		}
+	}
+	if err := f.err(); err != nil {
+		return nil, err
+	}
+	return factors, nil
+}
+
+// replaceUnitPrices writes the retail and wholesale prices of one unit that differ from its
+// current ones. A nil price removes the own price of a non-base unit; on the base unit it keeps
+// the current price, which cannot be removed. Without a price writer nothing is stored.
+func (s *Service) replaceUnitPrices(ctx context.Context, q db.Querier, actor audit.Actor, skuID, unitID uuid.UUID, current SkuUnit,
+	retail, wholesale *money.Money, isBase bool) error {
+	if s.prices == nil {
+		return nil
+	}
+	for _, p := range []struct {
+		kind      string
+		now, next *money.Money
+	}{{PriceRetail, current.RetailPrice, retail}, {PriceWholesale, current.WholesalePrice, wholesale}} {
+		switch {
+		case p.next == nil && (isBase || p.now == nil):
+			continue
+		case p.next != nil && p.now != nil && p.next.Equal(*p.now):
+			continue
+		}
+		if err := s.prices.SetSalePrice(ctx, q, actor, SalePrice{SkuID: skuID, UnitID: unitID, Kind: p.kind, Price: p.next}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// movePurchaseDefault gives a SKU without a default purchase unit the active unit with the
+// largest factor above 1, else its base unit.
+func movePurchaseDefault(ctx context.Context, q db.Querier, skuID uuid.UUID) error {
+	if _, err := q.ExecContext(ctx, `
+		UPDATE sku_units SET is_default_purchase = true
+		WHERE sku_id = $1
+		  AND NOT EXISTS (SELECT 1 FROM sku_units d WHERE d.sku_id = $1 AND d.is_default_purchase)
+		  AND unit_id = (SELECT su.unit_id FROM sku_units su JOIN units u ON u.id = su.unit_id
+		                 WHERE su.sku_id = $1 AND su.active AND (su.is_base OR su.factor > 1)
+		                 ORDER BY su.factor DESC, u.name LIMIT 1)`, skuID); err != nil {
+		return fmt.Errorf("catalog: move default purchase unit: %w", err)
+	}
+	return nil
 }
 
 // Barcodes returns the barcodes of a SKU.

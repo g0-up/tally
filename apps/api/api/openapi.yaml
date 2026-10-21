@@ -1887,8 +1887,17 @@ paths:
                         purchase_unit_id:
                           type: [string, 'null']
                           format: uuid
-                          description: Default purchase unit; the base unit or null adds none.
+                          description: Default purchase unit; the base unit or null adds none. Not allowed with `units`.
                         factor: {type: [string, 'null'], description: 'Base units per purchase unit, a positive decimal.'}
+                        units:
+                          type: array
+                          maxItems: 20
+                          items: {$ref: '#/components/schemas/NewSkuUnit'}
+                          description: |
+                            Conversion units of the SKU; the one with the largest factor above 1 is the default
+                            purchase unit. Not allowed with `factor` (422 `sku.units` with_purchase_unit). Row
+                            errors name the row: `sku.units[1].unit_id` required, is_base, duplicate or
+                            unknown_unit; `sku.units[1].factor` required or why it is not a positive factor.
                         retail_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}], description: Retail price per base unit.}
                         wholesale_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}], description: Wholesale price per base unit.}
       responses:
@@ -1927,9 +1936,22 @@ paths:
                 code: {type: [string, 'null'], pattern: '^[A-Za-z0-9][A-Za-z0-9._/-]{0,39}$'}
                 category_id: {type: [string, 'null'], format: uuid}
                 base_unit_id: {type: string, format: uuid}
-                purchase_unit_id: {type: [string, 'null'], format: uuid}
+                purchase_unit_id:
+                  type: [string, 'null']
+                  format: uuid
+                  description: With `units`, the base unit or one of them (422 not_a_unit), and the default purchase unit.
                 factor: {type: [string, 'null'], description: 'Base units per purchase unit, a positive decimal.'}
-                purchase_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}]}
+                units:
+                  type: array
+                  maxItems: 20
+                  items: {$ref: '#/components/schemas/NewSkuUnit'}
+                  description: |
+                    Conversion units of the SKU; without `purchase_unit_id` the one with the largest factor above 1
+                    is the default purchase unit. Not allowed with `factor` (422 `units` with_purchase_unit). Row
+                    errors name the row: `units[1].unit_id`, `units[1].factor`.
+                purchase_price:
+                  oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}]
+                  description: Price per default purchase unit, kept as the reference cost per base unit.
                 sale_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}], description: Retail price per base unit.}
                 wholesale_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}], description: Wholesale price per base unit.}
                 track_lot: {type: boolean, description: Track lots and expiry dates.}
@@ -2392,6 +2414,43 @@ paths:
           $ref: '#/components/responses/Error'
         '422':
           description: validation_failed (`unit_id` already_a_unit_of_sku) or factor_not_positive.
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [catalog]
+      operationId: replaceSkuUnits
+      summary: Save the whole unit table of a SKU with its unit prices
+      description: |
+        Adds, updates, deactivates and deletes units and sets or removes their prices in one
+        transaction, so a refused row leaves the table unchanged. Bumps the SKU version.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkuUnitsRequest'
+      responses:
+        '200':
+          description: SKU; `ETag` carries the version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkuDetail'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: unit_in_use (`fields.units[<unit_id>]` documents, price_history or barcodes) or sku_unit_in_use.
+          $ref: '#/components/responses/Error'
+        '412':
+          $ref: '#/components/responses/Error'
+        '428':
+          $ref: '#/components/responses/Error'
+        '422':
+          description: validation_failed with the row fields.
           $ref: '#/components/responses/Error'
   /skus/{id}/units/{unitId}:
     patch:
@@ -12161,7 +12220,7 @@ components:
             option_ids: {type: array, items: {type: string, format: uuid}}
     SkuUnit:
       type: object
-      required: [unit_id, unit_name, factor, is_base, active, is_default_sale, is_default_purchase]
+      required: [unit_id, unit_name, factor, is_base, active, is_default_sale, is_default_purchase, retail_price, wholesale_price, locked_by]
       properties:
         unit_id: {type: string, format: uuid}
         unit_name: {type: string}
@@ -12170,6 +12229,56 @@ components:
         active: {type: boolean}
         is_default_sale: {type: boolean}
         is_default_purchase: {type: boolean}
+        retail_price:
+          oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}]
+          description: The unit's own retail list price (general color, no tier); null on a non-base unit sells at base price × factor.
+        wholesale_price:
+          oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}]
+          description: The unit's own wholesale list price; null as for retail_price.
+        locked_by:
+          type: [string, 'null']
+          enum: [documents, price_history, barcodes, null]
+          description: |
+            Why the unit cannot be deleted, only deactivated, checked in this order: a document line or kit
+            recipe uses it, it had its own price (kept in the price history), or a barcode scans to it.
+            Null when it can be deleted; always null on the base unit.
+    NewSkuUnit:
+      type: object
+      required: [unit_id, factor]
+      properties:
+        unit_id: {type: string, format: uuid, description: An active unit other than the base unit.}
+        factor: {type: string, description: 'Base units per unit, a positive decimal.'}
+        retail_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}], description: Null sells at base price × factor.}
+        wholesale_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}], description: Null sells at base price × factor.}
+    SkuUnitsRequest:
+      type: object
+      required: [units]
+      description: |
+        The whole unit table of a SKU. The base unit is not a row; its prices are the top-level ones and
+        null keeps them. A current unit missing from `units` is deleted, unless it is locked (see
+        SkuUnit.locked_by): then nothing is saved and the answer is 409 unit_in_use with
+        `fields.units[<unit_id>]` the reason, and the unit must be sent with `active: false` instead.
+        Deactivating the default purchase unit moves the default to the active unit with the largest
+        factor above 1, else the base unit. `units` is required (an empty array deletes every unlocked
+        unit) and holds at most 20 rows. If-Match is the SKU version, which unit and SKU edits move;
+        prices set elsewhere (purchasing, the price list) do not, so the prices sent here win.
+        Row errors (422) name the row: `units[1].unit_id`
+        required, is_base, duplicate or unknown_unit; `units[1].factor`; prices must not be negative.
+      properties:
+        retail_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}], description: Base unit retail price; null keeps it.}
+        wholesale_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}], description: Base unit wholesale price; null keeps it.}
+        units:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [unit_id, factor]
+            properties:
+              unit_id: {type: string, format: uuid}
+              factor: {type: string, description: 'Base units per unit, a positive decimal.'}
+              active: {type: boolean, description: Defaults to true.}
+              retail_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}], description: 'Omitted or null removes the unit''s own price (the table is replaced whole).'}
+              wholesale_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}], description: 'Omitted or null removes the unit''s own price (the table is replaced whole).'}
     SkuBarcodeRef:
       type: object
       required: [code, unit_id, unit_name]
@@ -12595,7 +12704,9 @@ components:
         unit_id: {type: [string, 'null'], format: uuid, description: Defaults to the base unit.}
         apply_all_colors: {type: boolean, description: Not allowed with color_id.}
         price:
-          description: Null removes the price of color_id.
+          description: |
+            Null removes the price of color_id, or the own price of a non-base unit_id, which then sells
+            at base price × factor. Null with apply_all_colors and a unit is 422 requires_price.
           oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}]
         source: {$ref: '#/components/schemas/PriceChangeSource'}
         source_doc_id: {type: [string, 'null'], format: uuid}
@@ -13687,8 +13798,18 @@ components:
         name: {type: string, maxLength: 200}
         category_id: {type: [string, 'null'], format: uuid}
         base_unit_id: {type: string, format: uuid}
-        purchase_unit_id: {type: [string, 'null'], format: uuid}
+        purchase_unit_id:
+          type: [string, 'null']
+          format: uuid
+          description: With `units`, the base unit or one of them; the line buys in it.
         factor: {type: [string, 'null'], description: 'Base units per purchase unit, a positive decimal.'}
+        units:
+          type: array
+          maxItems: 20
+          items: {$ref: '#/components/schemas/NewSkuUnit'}
+          description: |
+            Conversion units with their own prices; not allowed with `factor`. Without `purchase_unit_id`
+            the line's unit becomes the default purchase unit, so the line price is its reference cost.
         track_lot: {type: boolean, description: Track lots and expiry dates.}
         retail_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}]}
         wholesale_price: {oneOf: [{$ref: '#/components/schemas/Money'}, {type: 'null'}]}

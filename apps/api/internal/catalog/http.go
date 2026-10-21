@@ -86,6 +86,7 @@ func (h *Handler) Register(r Routes) {
 	g.DELETE("/skus/:id", h.deleteSku)
 	g.GET("/skus/:id/units", h.listSkuUnits)
 	g.POST("/skus/:id/units", h.addSkuUnit)
+	g.PUT("/skus/:id/units", h.replaceSkuUnits)
 	g.PATCH("/skus/:id/units/:unitId", h.updateSkuUnit)
 	g.DELETE("/skus/:id/units/:unitId", h.deleteSkuUnit)
 	g.GET("/skus/:id/barcodes", h.listBarcodes)
@@ -882,6 +883,28 @@ func (h *Handler) listSkuUnits(c *gin.Context) {
 	}
 	out, err := h.svc.SkuUnits(c.Request.Context(), scope, id)
 	respond(c, http.StatusOK, 0, listOf(mapSlice(out, toSkuUnitDTO)), err)
+}
+
+// replaceSkuUnits saves the whole unit table of a SKU guarded by the SKU's version.
+func (h *Handler) replaceSkuUnits(c *gin.Context) {
+	actor, ok := actorFor(c)
+	if !ok {
+		return
+	}
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	expected, ok := ifMatch(c)
+	if !ok {
+		return
+	}
+	req, ok := bind[skuUnitsRequest](c)
+	if !ok {
+		return
+	}
+	d, err := h.svc.ReplaceSkuUnits(c.Request.Context(), actor, id, expected, req.input())
+	respond(c, http.StatusOK, d.Sku.Version, toSkuDetailDTO(d), err)
 }
 
 func (h *Handler) addSkuUnit(c *gin.Context) {

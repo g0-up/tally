@@ -261,11 +261,15 @@ type skuUnitDTO struct {
 	Active            bool         `json:"active"`
 	IsDefaultSale     bool         `json:"is_default_sale"`
 	IsDefaultPurchase bool         `json:"is_default_purchase"`
+	RetailPrice       *money.Money `json:"retail_price"`
+	WholesalePrice    *money.Money `json:"wholesale_price"`
+	LockedBy          *string      `json:"locked_by"`
 }
 
 func toSkuUnitDTO(u SkuUnit) skuUnitDTO {
 	return skuUnitDTO{UnitID: u.UnitID, UnitName: u.UnitName, Factor: u.Factor, IsBase: u.IsBase, Active: u.Active,
-		IsDefaultSale: u.IsDefaultSale, IsDefaultPurchase: u.IsDefaultPurchase}
+		IsDefaultSale: u.IsDefaultSale, IsDefaultPurchase: u.IsDefaultPurchase, RetailPrice: u.RetailPrice,
+		WholesalePrice: u.WholesalePrice, LockedBy: u.LockedBy}
 }
 
 type barcodeDTO struct {
@@ -394,14 +398,25 @@ func (r skuFieldsRequest) input() SkuInput {
 		RefCost: r.RefCost, MinPrice: r.MinPrice, MinStock: r.MinStock, TaxRateID: r.TaxRateID, SpecText: r.SpecText, Status: r.Status}
 }
 
-type skuCreateRequest struct {
-	skuFieldsRequest
-	Code           string       `json:"code"`
-	Barcode        *string      `json:"barcode"`
-	PurchaseUnitID *uuid.UUID   `json:"purchase_unit_id"`
+// unitPriceRequest is a conversion unit of a new SKU with its own prices.
+type unitPriceRequest struct {
+	UnitID         uuid.UUID    `json:"unit_id"`
 	Factor         *string      `json:"factor"`
 	RetailPrice    *money.Money `json:"retail_price"`
 	WholesalePrice *money.Money `json:"wholesale_price"`
+}
+
+func (r unitPriceRequest) input() UnitPriceInput { return UnitPriceInput(r) }
+
+type skuCreateRequest struct {
+	skuFieldsRequest
+	Code           string             `json:"code"`
+	Barcode        *string            `json:"barcode"`
+	PurchaseUnitID *uuid.UUID         `json:"purchase_unit_id"`
+	Factor         *string            `json:"factor"`
+	Units          []unitPriceRequest `json:"units"`
+	RetailPrice    *money.Money       `json:"retail_price"`
+	WholesalePrice *money.Money       `json:"wholesale_price"`
 }
 
 type productCreateRequest struct {
@@ -422,8 +437,8 @@ func (r productCreateRequest) input() ProductInput {
 		sku := r.Sku.input()
 		sku.Code, sku.Barcode = r.Sku.Code, r.Sku.Barcode
 		in.Sku = &sku
-		in.SkuExtras = SkuExtras{PurchaseUnitID: r.Sku.PurchaseUnitID, Factor: r.Sku.Factor, RetailPrice: r.Sku.RetailPrice,
-			WholesalePrice: r.Sku.WholesalePrice}
+		in.SkuExtras = SkuExtras{PurchaseUnitID: r.Sku.PurchaseUnitID, Factor: r.Sku.Factor,
+			Units: mapSlice(r.Sku.Units, unitPriceRequest.input), RetailPrice: r.Sku.RetailPrice, WholesalePrice: r.Sku.WholesalePrice}
 	}
 	return in
 }
@@ -527,6 +542,31 @@ func (r skuUnitPatchRequest) input(unitID uuid.UUID) SkuUnitInput {
 		IsDefaultPurchase: r.IsDefaultPurchase}
 }
 
+// skuUnitRowRequest is a non-base row of a SKU's unit table; active defaults to true.
+type skuUnitRowRequest struct {
+	UnitID         uuid.UUID    `json:"unit_id"`
+	Factor         *string      `json:"factor"`
+	Active         *bool        `json:"active"`
+	RetailPrice    *money.Money `json:"retail_price"`
+	WholesalePrice *money.Money `json:"wholesale_price"`
+}
+
+// skuUnitsRequest is the whole unit table of a SKU (PUT /skus/{id}/units). Units is required, so
+// a body without it never deletes the table; a row's omitted price is no own price, as null is.
+type skuUnitsRequest struct {
+	RetailPrice    *money.Money        `json:"retail_price"`
+	WholesalePrice *money.Money        `json:"wholesale_price"`
+	Units          []skuUnitRowRequest `json:"units" validate:"required"`
+}
+
+func (r skuUnitsRequest) input() SkuUnitsInput {
+	return SkuUnitsInput{RetailPrice: r.RetailPrice, WholesalePrice: r.WholesalePrice,
+		Units: mapSlice(r.Units, func(u skuUnitRowRequest) SkuUnitRow {
+			return SkuUnitRow{UnitID: u.UnitID, Factor: u.Factor, Active: u.Active == nil || *u.Active, RetailPrice: u.RetailPrice,
+				WholesalePrice: u.WholesalePrice}
+		})}
+}
+
 type barcodeRequest struct {
 	Code   string     `json:"code"`
 	UnitID *uuid.UUID `json:"unit_id"`
@@ -605,23 +645,25 @@ func (r mixGroupRequest) input() MixGroupInput {
 }
 
 type quickCreateRequest struct {
-	Name           string       `json:"name"`
-	Code           *string      `json:"code"`
-	CategoryID     *uuid.UUID   `json:"category_id"`
-	BaseUnitID     uuid.UUID    `json:"base_unit_id"`
-	PurchaseUnitID *uuid.UUID   `json:"purchase_unit_id"`
-	Factor         *string      `json:"factor"`
-	PurchasePrice  *money.Money `json:"purchase_price"`
-	SalePrice      *money.Money `json:"sale_price"`
-	WholesalePrice *money.Money `json:"wholesale_price"`
-	Barcode        *string      `json:"barcode"`
-	TrackLot       bool         `json:"track_lot"`
+	Name           string             `json:"name"`
+	Code           *string            `json:"code"`
+	CategoryID     *uuid.UUID         `json:"category_id"`
+	BaseUnitID     uuid.UUID          `json:"base_unit_id"`
+	PurchaseUnitID *uuid.UUID         `json:"purchase_unit_id"`
+	Factor         *string            `json:"factor"`
+	Units          []unitPriceRequest `json:"units"`
+	PurchasePrice  *money.Money       `json:"purchase_price"`
+	SalePrice      *money.Money       `json:"sale_price"`
+	WholesalePrice *money.Money       `json:"wholesale_price"`
+	Barcode        *string            `json:"barcode"`
+	TrackLot       bool               `json:"track_lot"`
 }
 
 func (r quickCreateRequest) input() QuickCreateInput {
 	return QuickCreateInput{Name: r.Name, Code: r.Code, CategoryID: r.CategoryID, BaseUnitID: r.BaseUnitID,
-		PurchaseUnitID: r.PurchaseUnitID, Factor: r.Factor, PurchasePrice: r.PurchasePrice, SalePrice: r.SalePrice,
-		WholesalePrice: r.WholesalePrice, Barcode: r.Barcode, TrackLot: r.TrackLot}
+		PurchaseUnitID: r.PurchaseUnitID, Factor: r.Factor, Units: mapSlice(r.Units, unitPriceRequest.input),
+		PurchasePrice: r.PurchasePrice, SalePrice: r.SalePrice, WholesalePrice: r.WholesalePrice, Barcode: r.Barcode,
+		TrackLot: r.TrackLot}
 }
 
 type quickCreateDTO struct {

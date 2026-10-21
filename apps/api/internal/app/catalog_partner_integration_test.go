@@ -5,10 +5,12 @@ package app_test
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -261,6 +263,7 @@ func idRoutesOf(st catalogStore, own catalogStore) []idRoute {
 		{method: "POST", path: "/skus/{id}/units", args: u(st.sku), body: map[string]any{"unit_id": own.units["lốc"], "factor": "6"}},
 		{method: "PATCH", path: "/skus/{id}/units/{unitId}", args: u(st.sku, thung), body: map[string]any{"active": false}},
 		{method: "DELETE", path: "/skus/{id}/units/{unitId}", args: u(st.sku, thung)},
+		{method: "PUT", path: "/skus/{id}/units", args: u(st.sku), body: map[string]any{"units": []any{}}, ifMatch: true},
 		{method: "GET", path: "/skus/{id}/barcodes", args: u(st.sku)},
 		{method: "POST", path: "/skus/{id}/barcodes", args: u(st.sku), body: map[string]any{"code": "8930000000031"}},
 		{method: "PATCH", path: "/skus/{id}/barcodes/{barcodeId}", args: u(st.sku, st.barcode), body: map[string]any{"unit_id": own.units["thùng"]}},
@@ -457,5 +460,235 @@ func TestCatalogAndPartnersOverHTTP(t *testing.T) {
 				t.Errorf("%s %s %v = %d %s", c.method, c.path, c.body, rec.Code, rec.Body)
 			}
 		}
+	})
+}
+
+type skuUnitOut struct {
+	UnitID            uuid.UUID `json:"unit_id"`
+	Factor            string    `json:"factor"`
+	Active            bool      `json:"active"`
+	IsDefaultPurchase bool      `json:"is_default_purchase"`
+	RetailPrice       *string   `json:"retail_price"`
+	WholesalePrice    *string   `json:"wholesale_price"`
+	LockedBy          *string   `json:"locked_by"`
+}
+
+type skuUnitsOut struct {
+	ID      uuid.UUID    `json:"id"`
+	Version int          `json:"version"`
+	Units   []skuUnitOut `json:"units"`
+}
+
+func (d skuUnitsOut) unit(t *testing.T, unitID uuid.UUID) skuUnitOut {
+	t.Helper()
+	for _, u := range d.Units {
+		if u.UnitID == unitID {
+			return u
+		}
+	}
+	t.Fatalf("units %+v lack %s", d.Units, unitID)
+	return skuUnitOut{}
+}
+
+func strOr(p *string) string {
+	if p == nil {
+		return "null"
+	}
+	return *p
+}
+
+// A SKU is created with any number of units priced each, and its whole unit table is saved in one
+// request: locked units can only go inactive, prices fall back to base × factor when removed and
+// the reads of stock and barcodes follow the active units.
+func TestSkuUnitTableOverHTTP(t *testing.T) {
+	s, _, _ := newProcurementStack(t)
+	owner := s.signUp(t)
+	a := s.signIn(t, owner)
+	store := buildPurchaseStore(t, a)
+	cai, day, thung, loc := store.units["cái"], store.units["dây"], store.units["thùng"], store.units["lốc"]
+
+	created := send[productRef](t, a, http.MethodPost, "/products", map[string]any{"type": "goods", "name": "Kẹo sữa", "sku": map[string]any{
+		"code": "KEO-1", "base_unit_id": cai, "retail_price": "500", "units": []map[string]any{
+			{"unit_id": day, "factor": "50", "retail_price": "24000"}, {"unit_id": thung, "factor": "500"}}}})
+	sku := created.Skus[0].ID
+	skuPath := "/skus/" + sku.String()
+	read := func() skuUnitsOut { return send[skuUnitsOut](t, a, http.MethodGet, skuPath, nil) }
+	put := func(version int, body map[string]any) *httptest.ResponseRecorder {
+		return a.doWith(http.MethodPut, v1+skuPath+"/units", body, ifMatchOf(version))
+	}
+	quote := func(unit uuid.UUID) string {
+		t.Helper()
+		return send[dataOf[struct {
+			Amount string `json:"amount"`
+		}]](t, a, http.MethodPost, "/pricing/quote", map[string]any{"lines": []map[string]any{
+			{"sku_id": sku, "unit_id": unit, "qty": "1"}}}).Data[0].Amount
+	}
+
+	t.Run("create prices each unit and buys by the biggest", func(t *testing.T) {
+		d := read()
+		if len(d.Units) != 3 || !d.unit(t, thung).IsDefaultPurchase || strOr(d.unit(t, day).RetailPrice) != "24000" ||
+			d.unit(t, thung).RetailPrice != nil || strOr(d.unit(t, cai).RetailPrice) != "500" {
+			t.Fatalf("units = %+v", d.Units)
+		}
+		if n := countRows(t, store.tenant, `SELECT count(*) FROM price_list_items WHERE sku_id = $1`, sku); n != 2 {
+			t.Errorf("price rows = %d, want cái and dây only", n)
+		}
+		if got := quote(day); got != "24000" {
+			t.Errorf("1 dây = %s, want its own 24000", got)
+		}
+		if got := quote(thung); got != "250000" {
+			t.Errorf("1 thùng = %s, want 500 × 500", got)
+		}
+	})
+
+	t.Run("create names the bad unit row", func(t *testing.T) {
+		for _, c := range []struct {
+			units []map[string]any
+			field string
+		}{
+			{[]map[string]any{{"unit_id": day, "factor": "50"}, {"unit_id": day, "factor": "60"}}, `"sku.units[1].unit_id":"duplicate"`},
+			{[]map[string]any{{"unit_id": cai, "factor": "1"}}, `"sku.units[0].unit_id":"is_base"`},
+			{[]map[string]any{{"unit_id": day, "factor": "50"}, {"unit_id": thung, "factor": "0"}}, `"sku.units[1].factor":"not_positive"`},
+		} {
+			rec := a.do(http.MethodPost, v1+"/products", map[string]any{"name": "Kẹo lỗi", "sku": map[string]any{
+				"code": "KEO-X", "base_unit_id": cai, "units": c.units}})
+			if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), c.field) {
+				t.Errorf("units %v = %d %s, want 422 %s", c.units, rec.Code, rec.Body, c.field)
+			}
+		}
+	})
+
+	// 11 dây received: 550 cái, which the stock card writes with the thùng while it is active.
+	postReceipt(t, a, map[string]any{"supplier_party_id": store.supplier, "lines": []map[string]any{
+		{"sku_id": sku, "unit_id": day, "qty": "11", "unit_price": "20000"}}})
+	const code = "8936000999018"
+	send[withID](t, a, http.MethodPost, skuPath+"/barcodes", map[string]any{"code": code, "unit_id": thung})
+	dayRow := map[string]any{"unit_id": day, "factor": "50", "retail_price": "24000"}
+	thungRow := map[string]any{"unit_id": thung, "factor": "500"}
+
+	t.Run("each unit says why it cannot be deleted", func(t *testing.T) {
+		d := read()
+		rec := put(d.Version, map[string]any{"units": []map[string]any{dayRow, thungRow, {"unit_id": loc, "factor": "10"}}})
+		expect(t, rec, http.StatusOK, "")
+		d = testkit.DecodeJSON[skuUnitsOut](t, rec)
+		if etag := rec.Header().Get("ETag"); etag != `"`+strconv.Itoa(d.Version)+`"` {
+			t.Errorf("ETag %s, version %d", etag, d.Version)
+		}
+		for unit, want := range map[uuid.UUID]string{cai: "null", day: "documents", thung: "barcodes", loc: "null"} {
+			if got := strOr(d.unit(t, unit).LockedBy); got != want {
+				t.Errorf("unit %s locked by %s, want %s", unit, got, want)
+			}
+		}
+		// A unit that had its own price keeps its history and is locked by it.
+		priced := put(d.Version, map[string]any{"units": []map[string]any{dayRow, thungRow,
+			{"unit_id": loc, "factor": "10", "wholesale_price": "4500"}}})
+		expect(t, priced, http.StatusOK, "")
+		d = testkit.DecodeJSON[skuUnitsOut](t, priced)
+		if got := strOr(d.unit(t, loc).LockedBy); got != "price_history" || strOr(d.unit(t, loc).WholesalePrice) != "4500" {
+			t.Errorf("priced lốc = %+v, want locked by price_history", d.unit(t, loc))
+		}
+	})
+
+	t.Run("a stale version is refused", func(t *testing.T) {
+		d := read()
+		expect(t, put(d.Version-1, map[string]any{"units": []map[string]any{dayRow, thungRow}}), http.StatusPreconditionFailed, "")
+	})
+
+	t.Run("deleting a used unit refuses the whole table", func(t *testing.T) {
+		d := read()
+		rec := put(d.Version, map[string]any{"retail_price": "600", "units": []map[string]any{
+			{"unit_id": thung, "factor": "400"}, {"unit_id": loc, "factor": "10", "wholesale_price": "4500"}}})
+		expect(t, rec, http.StatusConflict, "unit_in_use")
+		if !strings.Contains(rec.Body.String(), `"units[`+day.String()+`]":"documents"`) {
+			t.Errorf("refusal = %s, want the dây named with documents", rec.Body)
+		}
+		after := read()
+		if after.Version != d.Version || len(after.Units) != 4 || after.unit(t, thung).Factor != "500" ||
+			strOr(after.unit(t, cai).RetailPrice) != "500" {
+			t.Errorf("after the refused table = %+v", after)
+		}
+		// A unit with price history cannot be deleted either.
+		expect(t, put(d.Version, map[string]any{"units": []map[string]any{dayRow, thungRow}}), http.StatusConflict, "price_history")
+	})
+
+	t.Run("the table names the bad row", func(t *testing.T) {
+		d := read()
+		rec := put(d.Version, map[string]any{"units": []map[string]any{dayRow, dayRow, {"unit_id": cai, "factor": "1"},
+			{"unit_id": loc, "factor": "0"}}})
+		expect(t, rec, http.StatusUnprocessableEntity, "validation_failed")
+		for _, field := range []string{`"units[1].unit_id":"duplicate"`, `"units[2].unit_id":"is_base"`, `"units[3].factor":"not_positive"`} {
+			if !strings.Contains(rec.Body.String(), field) {
+				t.Errorf("refusal = %s, want %s", rec.Body, field)
+			}
+		}
+	})
+
+	t.Run("an inactive thùng leaves the stock card, the scanner and the purchase default", func(t *testing.T) {
+		onHand := func() string {
+			return send[struct {
+				OnHand struct {
+					Display string `json:"display"`
+				} `json:"on_hand"`
+			}](t, a, http.MethodGet, "/stock-card?unit_mode=auto&sku_id="+sku.String(), nil).OnHand.Display
+		}
+		if got := onHand(); !strings.Contains(got, "thùng") {
+			t.Fatalf("on hand with the thùng active = %q", got)
+		}
+		lookup := send[struct {
+			UnitID uuid.UUID `json:"unit_id"`
+		}](t, a, http.MethodGet, "/sku-lookup?code="+code, nil)
+		if lookup.UnitID != thung {
+			t.Fatalf("lookup = %+v, want the thùng", lookup)
+		}
+
+		d := read()
+		rec := put(d.Version, map[string]any{"units": []map[string]any{dayRow, {"unit_id": thung, "factor": "500", "active": false},
+			{"unit_id": loc, "factor": "10", "active": false, "wholesale_price": "4500"}}})
+		expect(t, rec, http.StatusOK, "")
+		d = testkit.DecodeJSON[skuUnitsOut](t, rec)
+		if th, dy := d.unit(t, thung), d.unit(t, day); th.Active || th.IsDefaultPurchase || !dy.IsDefaultPurchase {
+			t.Errorf("thùng %+v, dây %+v, want dây the purchase unit", th, dy)
+		}
+		if got := onHand(); strings.Contains(got, "thùng") || !strings.Contains(got, "11 dây") {
+			t.Errorf("on hand with the thùng inactive = %q, want 11 dây", got)
+		}
+		expect(t, a.do(http.MethodGet, v1+"/sku-lookup?code="+code, nil), http.StatusNotFound, "code_not_found")
+	})
+
+	t.Run("removing the dây price sells it at base × factor", func(t *testing.T) {
+		d := read()
+		rec := put(d.Version, map[string]any{"units": []map[string]any{{"unit_id": day, "factor": "50", "retail_price": nil},
+			{"unit_id": thung, "factor": "500", "active": false}, {"unit_id": loc, "factor": "10", "active": false, "wholesale_price": "4500"}}})
+		expect(t, rec, http.StatusOK, "")
+		if got := testkit.DecodeJSON[skuUnitsOut](t, rec).unit(t, day); got.RetailPrice != nil || strOr(got.LockedBy) != "documents" {
+			t.Errorf("dây = %+v, want no own price and still locked", got)
+		}
+		if got := quote(day); got != "25000" {
+			t.Errorf("1 dây = %s, want 500 × 50", got)
+		}
+	})
+
+	t.Run("a purchase order line creates a product with units", func(t *testing.T) {
+		order := confirmedOrder(t, a, map[string]any{"supplier_party_id": store.supplier,
+			"lines": []map[string]any{{"qty": "2", "unit_price": "240000", "new_product": map[string]any{
+				"name": "Kẹo dừa", "base_unit_id": cai, "purchase_unit_id": thung, "retail_price": "500", "units": []map[string]any{
+					{"unit_id": day, "factor": "50", "retail_price": "24000"}, {"unit_id": thung, "factor": "500"}}}}}})
+		if order.Lines[0].BaseQty != "1000" {
+			t.Fatalf("order line = %+v, want 2 thùng of 500", order.Lines[0])
+		}
+		receiveOrder(t, a, order, "2")
+		row := skuNamed(t, a, "Kẹo dừa")
+		if got := stockOf(t, store.tenant, row.ID).OnHand.String(); got != "1000" {
+			t.Errorf("on hand = %s, want 1000 cái", got)
+		}
+		d := send[skuUnitsOut](t, a, http.MethodGet, "/skus/"+row.ID.String(), nil)
+		if len(d.Units) != 3 || !d.unit(t, thung).IsDefaultPurchase || strOr(d.unit(t, day).RetailPrice) != "24000" {
+			t.Errorf("units = %+v", d.Units)
+		}
+		expect(t, a.do(http.MethodPost, v1+"/purchase-orders", map[string]any{"supplier_party_id": store.supplier,
+			"lines": []map[string]any{{"qty": "1", "unit_price": "1000", "new_product": map[string]any{
+				"name": "Kẹo lạc", "base_unit_id": cai, "purchase_unit_id": loc, "units": []map[string]any{
+					{"unit_id": day, "factor": "50"}}}}}}),
+			http.StatusUnprocessableEntity, "lines.0.new_product.purchase_unit_id")
 	})
 }

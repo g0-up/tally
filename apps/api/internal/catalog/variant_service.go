@@ -288,7 +288,7 @@ func (s *Service) GenerateVariants(ctx context.Context, actor audit.Actor, produ
 			}
 			created = append(created, sku.ID)
 		}
-		if res.Created, err = readSkuDetails(ctx, q, created); err != nil {
+		if res.Created, err = s.readSkuDetails(ctx, q, created); err != nil {
 			return err
 		}
 		codes := make([]string, len(res.Created))

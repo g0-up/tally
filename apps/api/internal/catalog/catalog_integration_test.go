@@ -633,3 +633,148 @@ func TestMixGroupsCarryTheirUsage(t *testing.T) {
 	_, err = h.svc.Skus(ctx, scopeOfActor(a), SkuFilter{IDs: make([]uuid.UUID, maxSkuIDs+1)})
 	wantField(t, err, "id", "too_long")
 }
+
+// unitOf finds the unit of a SKU detail, failing the test when the SKU lacks it.
+func unitOf(t *testing.T, d SkuDetail, unitID uuid.UUID) SkuUnit {
+	t.Helper()
+	for _, u := range d.Units {
+		if u.UnitID == unitID {
+			return u
+		}
+	}
+	t.Fatalf("units %+v lack %s", d.Units, unitID)
+	return SkuUnit{}
+}
+
+func TestSkuUnitTableSavesAtomically(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	a := h.tenant(t)
+	cai, day, thung, loc := h.unitID(t, a, "cái"), h.unitID(t, a, "dây"), h.unitID(t, a, "thùng"), h.unitID(t, a, "lốc")
+
+	_, err := h.svc.CreateProduct(ctx, a, ProductInput{Name: "Kẹo lỗi", Sku: &SkuInput{Code: "KEO-0", BaseUnitID: cai},
+		SkuExtras: SkuExtras{Units: []UnitPriceInput{{UnitID: day, Factor: ptr2("50")}, {UnitID: day, Factor: ptr2("60")},
+			{UnitID: cai, Factor: ptr2("1")}, {UnitID: thung, Factor: ptr2("0")}}}})
+	for field, reason := range map[string]string{"sku.units[1].unit_id": "duplicate", "sku.units[2].unit_id": "is_base",
+		"sku.units[3].factor": "not_positive"} {
+		wantField(t, err, field, reason)
+	}
+	_, err = h.svc.CreateProduct(ctx, a, ProductInput{Name: "Kẹo lạ", Sku: &SkuInput{Code: "KEO-0", BaseUnitID: cai},
+		SkuExtras: SkuExtras{Units: []UnitPriceInput{{UnitID: ids.New(), Factor: ptr2("50")}}}})
+	wantField(t, err, "sku.units[0].unit_id", "unknown_unit")
+	_, err = h.svc.CreateProduct(ctx, a, ProductInput{Name: "Kẹo đôi", Sku: &SkuInput{Code: "KEO-0", BaseUnitID: cai},
+		SkuExtras: SkuExtras{PurchaseUnitID: &thung, Factor: ptr2("500"), Units: []UnitPriceInput{{UnitID: day, Factor: ptr2("50")}}}})
+	wantField(t, err, "sku.units", "with_purchase_unit")
+	if n := h.count(t, a, "products"); n != 0 {
+		t.Fatalf("refused creates left %d products", n)
+	}
+
+	p, err := h.svc.CreateProduct(ctx, a, ProductInput{Name: "Kẹo sữa", Sku: &SkuInput{Code: "KEO-1", BaseUnitID: cai},
+		SkuExtras: SkuExtras{Units: []UnitPriceInput{{UnitID: day, Factor: ptr2("50")}, {UnitID: thung, Factor: ptr2("500")}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sku := p.Skus[0]
+	if len(sku.Units) != 3 || !unitOf(t, sku, thung).IsDefaultPurchase || unitOf(t, sku, day).IsDefaultPurchase ||
+		!unitOf(t, sku, day).Factor.Equal(money.MustFactor("50")) {
+		t.Fatalf("created units = %+v, want cái, dây×50 and thùng×500 bought by the thùng", sku.Units)
+	}
+	for _, u := range sku.Units {
+		if u.LockedBy != nil {
+			t.Errorf("fresh unit %s locked by %s", u.UnitName, *u.LockedBy)
+		}
+	}
+
+	table := func(rows ...SkuUnitRow) SkuUnitsInput { return SkuUnitsInput{Units: rows} }
+	dayRow := SkuUnitRow{UnitID: day, Factor: ptr2("50"), Active: true}
+	thungRow := SkuUnitRow{UnitID: thung, Factor: ptr2("500"), Active: true}
+	locRow := SkuUnitRow{UnitID: loc, Factor: ptr2("10"), Active: true}
+
+	_, err = h.svc.ReplaceSkuUnits(ctx, a, sku.Sku.ID, sku.Sku.Version+1, table(dayRow, thungRow, locRow))
+	if apperr.KindOf(err) != apperr.PreconditionFailed {
+		t.Fatalf("stale version = %v, want precondition failed", err)
+	}
+	_, err = h.svc.ReplaceSkuUnits(ctx, a, sku.Sku.ID, sku.Sku.Version, table(dayRow, dayRow,
+		SkuUnitRow{UnitID: cai, Factor: ptr2("1"), Active: true}, SkuUnitRow{UnitID: loc, Factor: ptr2("0"), Active: true}))
+	for field, reason := range map[string]string{"units[1].unit_id": "duplicate", "units[2].unit_id": "is_base",
+		"units[3].factor": "not_positive"} {
+		wantField(t, err, field, reason)
+	}
+
+	d, err := h.svc.ReplaceSkuUnits(ctx, a, sku.Sku.ID, sku.Sku.Version, table(dayRow, thungRow, locRow))
+	if err != nil || len(d.Units) != 4 || d.Sku.Version != sku.Sku.Version+1 || unitOf(t, d, loc).LockedBy != nil {
+		t.Fatalf("add lốc = %+v, %v", d, err)
+	}
+	if _, err := h.svc.AddBarcode(ctx, a, sku.Sku.ID, BarcodeInput{Code: "8936000999018", UnitID: &thung}); err != nil {
+		t.Fatal(err)
+	}
+	if d, err = h.svc.Sku(ctx, scopeOfActor(a), sku.Sku.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := unitOf(t, d, thung).LockedBy; got == nil || *got != UnitLockedByBarcodes {
+		t.Errorf("thùng with a barcode locked by %v, want barcodes", got)
+	}
+
+	// Deleting the thùng with its barcode refuses the whole table: the dây factor stays.
+	_, err = h.svc.ReplaceSkuUnits(ctx, a, sku.Sku.ID, d.Sku.Version, table(SkuUnitRow{UnitID: day, Factor: ptr2("40"), Active: true}))
+	wantCode(t, err, "unit_in_use")
+	wantField(t, err, "units["+thung.String()+"]", UnitLockedByBarcodes)
+	after, err := h.svc.Sku(ctx, scopeOfActor(a), sku.Sku.ID)
+	if err != nil || after.Sku.Version != d.Sku.Version || len(after.Units) != 4 || !unitOf(t, after, day).Factor.Equal(money.MustFactor("50")) {
+		t.Fatalf("after the refused table = %+v, %v", after, err)
+	}
+
+	// An unlocked unit is deleted; the default thùng goes inactive and dây becomes the purchase unit.
+	thungRow.Active = false
+	d, err = h.svc.ReplaceSkuUnits(ctx, a, sku.Sku.ID, d.Sku.Version, table(dayRow, thungRow))
+	if err != nil || len(d.Units) != 3 {
+		t.Fatalf("drop lốc, deactivate thùng = %+v, %v", d, err)
+	}
+	if th, dy := unitOf(t, d, thung), unitOf(t, d, day); th.Active || th.IsDefaultPurchase || !dy.IsDefaultPurchase {
+		t.Errorf("thùng %+v, dây %+v, want dây the purchase unit", th, dy)
+	}
+	if _, err := h.svc.LookupCode(ctx, scopeOfActor(a), "8936000999018"); apperr.KindOf(err) != apperr.NotFound {
+		t.Errorf("barcode of the inactive thùng = %v, want not found", err)
+	}
+	var events int
+	testkit.InTenant(t, h.d, a.TenantID, func(q db.Querier) error {
+		return q.QueryRowxContext(ctx, `SELECT count(*) FROM audit_events WHERE action = 'sku.units_replace' AND entity_id = $1`,
+			sku.Sku.ID).Scan(&events)
+	})
+	if events != 2 {
+		t.Errorf("sku.units_replace events = %d, want one per saved table", events)
+	}
+
+	// Without units the dây goes back to base: the base unit is the purchase unit.
+	dayRow.Active = false
+	if d, err = h.svc.ReplaceSkuUnits(ctx, a, sku.Sku.ID, d.Sku.Version, table(dayRow, thungRow)); err != nil {
+		t.Fatal(err)
+	}
+	if !unitOf(t, d, cai).IsDefaultPurchase || unitOf(t, d, day).IsDefaultPurchase {
+		t.Errorf("all units inactive = %+v, want the base unit as purchase unit", d.Units)
+	}
+
+	// A unit added on its own moves the version, so a table read before it cannot delete it.
+	if _, err := h.svc.AddSkuUnit(ctx, a, sku.Sku.ID, SkuUnitInput{UnitID: loc, Factor: ptr2("10")}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = h.svc.ReplaceSkuUnits(ctx, a, sku.Sku.ID, d.Sku.Version, table(dayRow, thungRow))
+	if apperr.KindOf(err) != apperr.PreconditionFailed {
+		t.Errorf("table read before the lốc was added = %v, want precondition failed", err)
+	}
+
+	// Quick-create takes units too; a chosen purchase unit must be one of them.
+	_, err = h.svc.QuickCreateProduct(ctx, a, QuickCreateInput{Name: "Kẹo dừa", BaseUnitID: cai, PurchaseUnitID: &loc,
+		Units: []UnitPriceInput{{UnitID: day, Factor: ptr2("50")}}})
+	wantField(t, err, "purchase_unit_id", "not_a_unit")
+	price := money.MustMoney("200000")
+	res, err := h.svc.QuickCreateProduct(ctx, a, QuickCreateInput{Name: "Kẹo dừa", BaseUnitID: cai, PurchasePrice: &price,
+		Units: []UnitPriceInput{{UnitID: day, Factor: ptr2("50")}, {UnitID: thung, Factor: ptr2("500")}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := res.Product.Skus[0]
+	if len(q.Units) != 3 || !unitOf(t, q, thung).IsDefaultPurchase || q.Sku.RefCost == nil || q.Sku.RefCost.String() != "400" {
+		t.Errorf("quick create = %+v / %+v, want thùng bought at 200000 / 500", q.Sku, q.Units)
+	}
+}

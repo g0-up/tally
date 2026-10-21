@@ -171,6 +171,13 @@ type SkuUnit struct {
 	Active            bool         `db:"active"`
 	IsDefaultSale     bool         `db:"is_default_sale"`
 	IsDefaultPurchase bool         `db:"is_default_purchase"`
+	// RetailPrice and WholesalePrice are the unit's own base list prices (general color, no tier);
+	// nil on a non-base unit means the price is the base price × factor.
+	RetailPrice    *money.Money `db:"-"`
+	WholesalePrice *money.Money `db:"-"`
+	// LockedBy is why the unit cannot be deleted (UnitLockedBy…), nil when it can; always nil on
+	// the base unit, which is never deleted.
+	LockedBy *string `db:"-"`
 }
 
 // Barcode is a scannable code of one unit of a SKU.

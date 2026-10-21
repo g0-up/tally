@@ -197,13 +197,13 @@ func (s *Service) Product(ctx context.Context, scope Scope, id uuid.UUID) (Produ
 	var d ProductDetail
 	err := s.read(ctx, scope, func(q db.Querier) error {
 		var err error
-		d, err = readProductDetail(ctx, q, id)
+		d, err = s.readProductDetail(ctx, q, id)
 		return err
 	})
 	return d, err
 }
 
-func readProductDetail(ctx context.Context, q db.Querier, id uuid.UUID) (ProductDetail, error) {
+func (s *Service) readProductDetail(ctx context.Context, q db.Querier, id uuid.UUID) (ProductDetail, error) {
 	p, err := readProduct(ctx, q, id)
 	if err != nil {
 		return ProductDetail{}, err
@@ -216,7 +216,7 @@ func readProductDetail(ctx context.Context, q db.Querier, id uuid.UUID) (Product
 	if err := sqlx.SelectContext(ctx, q, &skuIDs, `SELECT id FROM skus WHERE product_id = $1 ORDER BY code`, id); err != nil {
 		return ProductDetail{}, fmt.Errorf("catalog: list product skus: %w", err)
 	}
-	if d.Skus, err = readSkuDetails(ctx, q, skuIDs); err != nil {
+	if d.Skus, err = s.readSkuDetails(ctx, q, skuIDs); err != nil {
 		return ProductDetail{}, err
 	}
 	if err := sqlx.SelectContext(ctx, q, &d.Images, `SELECT `+imageColumns+` FROM product_images WHERE product_id = $1
@@ -237,15 +237,17 @@ type ProductInput struct {
 	Description    *string
 	Status         string
 	Sku            *SkuInput
-	// SkuExtras adds a purchase unit and base sale prices to Sku; ignored without Sku.
+	// SkuExtras adds conversion units and sale prices to Sku; ignored without Sku.
 	SkuExtras SkuExtras
 }
 
-// SkuExtras completes a product's first SKU: an optional purchase unit holding Factor base
-// units, and retail/wholesale prices per base unit.
+// SkuExtras completes a product's first SKU: its conversion units with their own prices, or
+// instead a single purchase unit holding Factor base units, and retail/wholesale prices per base
+// unit. With Units, PurchaseUnitID alone picks the default purchase unit (see planUnits).
 type SkuExtras struct {
 	PurchaseUnitID *uuid.UUID
 	Factor         *string
+	Units          []UnitPriceInput
 	RetailPrice    *money.Money
 	WholesalePrice *money.Money
 }
@@ -289,15 +291,16 @@ func (s *Service) CreateProduct(ctx context.Context, actor audit.Actor, in Produ
 	if x.WholesalePrice != nil && x.WholesalePrice.IsNegative() {
 		f["sku.wholesale_price"] = "negative"
 	}
+	var plan unitPlan
+	var unitErr error
+	if in.Sku != nil {
+		plan, unitErr = planUnits(f, "sku.", in.Sku.BaseUnitID, x.PurchaseUnitID, x.Factor, x.Units)
+	}
 	if err := f.err(); err != nil {
 		return ProductDetail{}, err
 	}
-	purchaseUnit, factor := uuid.Nil, money.FactorOne
-	if in.Sku != nil {
-		var err error
-		if purchaseUnit, factor, err = purchaseUnitOf(in.Sku.BaseUnitID, x.PurchaseUnitID, x.Factor); err != nil {
-			return ProductDetail{}, err
-		}
+	if unitErr != nil {
+		return ProductDetail{}, unitErr
 	}
 	now := s.clock.Now()
 	p := Product{ID: ids.New(), Type: in.Type, Name: in.Name, NameKey: nameKey(in.Name), CategoryID: in.CategoryID,
@@ -335,16 +338,14 @@ func (s *Service) CreateProduct(ctx context.Context, actor audit.Actor, in Produ
 			if err != nil {
 				return err
 			}
-			if purchaseUnit != uuid.Nil {
-				if err := addPurchaseUnit(ctx, q, actor.TenantID, sku.ID, purchaseUnit, factor, now); err != nil {
-					return err
-				}
+			if err := addUnits(ctx, q, actor.TenantID, sku.ID, plan, now); err != nil {
+				return err
 			}
-			if _, err := s.setBasePrices(ctx, q, actor, sku.ID, in.Sku.BaseUnitID, x.RetailPrice, x.WholesalePrice, ""); err != nil {
+			if _, err := s.setNewSkuPrices(ctx, q, actor, sku.ID, in.Sku.BaseUnitID, x.RetailPrice, x.WholesalePrice, plan, ""); err != nil {
 				return err
 			}
 		}
-		if d, err = readProductDetail(ctx, q, p.ID); err != nil {
+		if d, err = s.readProductDetail(ctx, q, p.ID); err != nil {
 			return err
 		}
 		return s.record(ctx, q, actor, "product.create", "product", p.ID, nil, d)
@@ -475,7 +476,7 @@ func (s *Service) UpdateProduct(ctx context.Context, actor audit.Actor, id uuid.
 		if err != nil {
 			return err
 		}
-		if d, err = readProductDetail(ctx, q, id); err != nil {
+		if d, err = s.readProductDetail(ctx, q, id); err != nil {
 			return err
 		}
 		return s.record(ctx, q, actor, "product.update", "product", id, before, d.Product)

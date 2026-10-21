@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/g0-up/tally/apps/api/internal/platform/apperr"
 	"github.com/g0-up/tally/apps/api/internal/platform/db"
+	"github.com/g0-up/tally/apps/api/internal/platform/httpx"
 	"github.com/g0-up/tally/apps/api/internal/platform/ids"
 	"github.com/g0-up/tally/apps/api/internal/platform/money"
 )
@@ -378,6 +380,9 @@ func (u usageStub) SkuInUse(context.Context, db.Querier, uuid.UUID) (bool, error
 func (u usageStub) SkuUnitInUse(context.Context, db.Querier, uuid.UUID, uuid.UUID) (bool, error) {
 	return false, nil
 }
+func (u usageStub) UnitLocks(context.Context, db.Querier, []SkuUnitKey) (map[SkuUnitKey]string, error) {
+	return map[SkuUnitKey]string{}, nil
+}
 func (u usageStub) ProductInUse(context.Context, db.Querier, uuid.UUID) (bool, error) {
 	return false, nil
 }
@@ -482,5 +487,93 @@ func TestSearchIndexerFoldsEverySearchableText(t *testing.T) {
 		if !strings.Contains(text, part) {
 			t.Errorf("search text %q lacks %q", text, part)
 		}
+	}
+}
+
+func TestPlanUnitsChecksEachRowAndPicksTheBiggestPurchaseUnit(t *testing.T) {
+	piece, pack, carton, box := ids.New(), ids.New(), ids.New(), ids.New()
+	str := func(s string) *string { return &s }
+	price := money.MustMoney("24000")
+	negative := money.MustMoney("-1")
+
+	f := fieldErrors{}
+	plan, err := planUnits(f, "sku.", piece, nil, nil, []UnitPriceInput{
+		{UnitID: pack, Factor: str("50"), RetailPrice: &price},
+		{UnitID: carton, Factor: str("500")},
+	})
+	if err != nil || len(f) > 0 {
+		t.Fatalf("valid units: err = %v, fields = %v", err, f)
+	}
+	if len(plan.units) != 2 || plan.purchase != carton || plan.purchaseFactor().String() != "500" {
+		t.Errorf("plan = %+v, want two units with the carton as purchase unit", plan)
+	}
+
+	f = fieldErrors{}
+	if _, err := planUnits(f, "sku.", piece, nil, str("12"), []UnitPriceInput{
+		{UnitID: pack, Factor: str("50")},
+		{UnitID: pack, Factor: str("0")},
+		{UnitID: piece, Factor: str("1"), WholesalePrice: &negative},
+		{Factor: str("abc")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"sku.units":                    "with_purchase_unit",
+		"sku.units[1].unit_id":         "duplicate",
+		"sku.units[1].factor":          "not_positive",
+		"sku.units[2].unit_id":         "is_base",
+		"sku.units[2].wholesale_price": "negative",
+		"sku.units[3].unit_id":         "required",
+		"sku.units[3].factor":          "invalid",
+	}
+	if !maps.Equal(f, fieldErrors(want)) {
+		t.Errorf("fields = %v, want %v", f, want)
+	}
+
+	f = fieldErrors{}
+	units := []UnitPriceInput{{UnitID: pack, Factor: str("50")}, {UnitID: carton, Factor: str("500")}}
+	if plan, _ := planUnits(f, "", piece, &pack, nil, units); plan.purchase != pack || len(f) > 0 {
+		t.Errorf("chosen purchase unit = %v (fields %v), want the pack", plan.purchase, f)
+	}
+	if plan, _ := planUnits(f, "", piece, &piece, nil, units); plan.purchase != uuid.Nil || len(f) > 0 {
+		t.Errorf("base purchase unit = %v (fields %v), want none", plan.purchase, f)
+	}
+	if planUnits(f, "", piece, &box, nil, units); f["purchase_unit_id"] != "not_a_unit" {
+		t.Errorf("fields = %v, want purchase_unit_id not_a_unit", f)
+	}
+
+	f = fieldErrors{}
+	plan, err = planUnits(f, "sku.", piece, &carton, str("24"), nil)
+	if err != nil || len(plan.units) != 1 || plan.purchase != carton || plan.units[0].field != "purchase_unit_id" {
+		t.Errorf("legacy pair: plan = %+v, err = %v", plan, err)
+	}
+	if _, err := planUnits(f, "sku.", piece, &carton, nil, nil); err == nil {
+		t.Error("legacy pair without a factor must fail")
+	}
+}
+
+func TestUnitTablesAreCapped(t *testing.T) {
+	piece := uuid.New()
+	many := make([]UnitPriceInput, maxUnitRows+1)
+	rows := make([]SkuUnitRow, maxUnitRows+1)
+	for i := range many {
+		factor := fmt.Sprint(i + 2)
+		many[i] = UnitPriceInput{UnitID: uuid.New(), Factor: &factor}
+		rows[i] = SkuUnitRow{UnitID: many[i].UnitID, Factor: many[i].Factor}
+	}
+	f := fieldErrors{}
+	if _, err := planUnits(f, "sku.", piece, nil, nil, many); err != nil || f["sku.units"] != "too_many" {
+		t.Errorf("planUnits = %v (fields %v), want sku.units too_many", err, f)
+	}
+	_, err := checkUnitRows(context.Background(), nil, piece, nil, SkuUnitsInput{Units: rows})
+	wantField(t, err, "units", "too_many")
+}
+
+func TestUnitTableRequestNeedsUnits(t *testing.T) {
+	var r skuUnitsRequest
+	err := httpx.DecodeJSON([]byte(`{"retail_price":"600"}`), &r)
+	wantField(t, err, "units", "required")
+	if err := httpx.DecodeJSON([]byte(`{"units":[]}`), &r); err != nil {
+		t.Errorf("an empty table = %v, want accepted", err)
 	}
 }

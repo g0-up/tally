@@ -102,6 +102,53 @@ func (SQLUsageReader) SkuUnitInUse(ctx context.Context, q db.Querier, skuID, uni
 	return exists(ctx, q, strings.Join(parts, " UNION ALL "), skuID, unitID)
 }
 
+// UnitLocks implements UsageReader. The document tables are skuUnitReferences without the price
+// tables: a current price row alone does not lock a unit (deleting the unit deletes it), while its
+// price_changes rows are history that stays. Each asked pair is checked on its own with EXISTS, in
+// the order of the reasons, so a check stops at the first row it finds.
+func (SQLUsageReader) UnitLocks(ctx context.Context, q db.Querier, units []SkuUnitKey) (map[SkuUnitKey]string, error) {
+	out := map[SkuUnitKey]string{}
+	if len(units) == 0 {
+		return out, nil
+	}
+	skuIDs, unitIDs := make([]uuid.UUID, len(units)), make([]uuid.UUID, len(units))
+	for i, u := range units {
+		skuIDs[i], unitIDs[i] = u.SkuID, u.UnitID
+	}
+	onLine := func(table string) string {
+		return fmt.Sprintf("EXISTS (SELECT 1 FROM %s t WHERE t.sku_id = k.sku_id AND t.unit_id = k.unit_id)", table)
+	}
+	docs := make([]string, 0, len(skuUnitReferences))
+	for _, table := range skuUnitReferences {
+		if table != "price_changes" && table != "price_list_items" {
+			docs = append(docs, onLine(table))
+		}
+	}
+	query := fmt.Sprintf(`SELECT sku_id, unit_id, reason FROM (
+		SELECT k.sku_id, k.unit_id, CASE
+			WHEN %s THEN '%s'
+			WHEN %s THEN '%s'
+			WHEN %s THEN '%s'
+		END AS reason
+		FROM unnest($1::uuid[], $2::uuid[]) AS k(sku_id, unit_id)) locks
+		WHERE reason IS NOT NULL`,
+		strings.Join(docs, " OR "), UnitLockedByDocuments,
+		onLine("price_changes"), UnitLockedByPriceHistory,
+		onLine("sku_barcodes"), UnitLockedByBarcodes)
+	var found []struct {
+		SkuID  uuid.UUID `db:"sku_id"`
+		UnitID uuid.UUID `db:"unit_id"`
+		Reason string    `db:"reason"`
+	}
+	if err := sqlx.SelectContext(ctx, q, &found, query, skuIDs, unitIDs); err != nil {
+		return nil, fmt.Errorf("catalog: read unit locks: %w", err)
+	}
+	for _, f := range found {
+		out[SkuUnitKey{SkuID: f.SkuID, UnitID: f.UnitID}] = f.Reason
+	}
+	return out, nil
+}
+
 // SkuOnHand implements UsageReader.
 func (SQLUsageReader) SkuOnHand(ctx context.Context, q db.Querier, skuID uuid.UUID) (money.Qty, error) {
 	var total money.Qty

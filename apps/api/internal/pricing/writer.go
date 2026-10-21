@@ -314,7 +314,8 @@ type SalePriceCommand struct {
 	// ApplyAllColors ("Áp dụng cho tất cả màu") also removes every color price of the SKU in the
 	// list, so all colors fall back to the general price. Only with a general price.
 	ApplyAllColors bool
-	// Price nil removes the color price ("Bỏ giá riêng"); it needs a ColorID.
+	// Price nil removes the price of a color ("Bỏ giá riêng") or the own price of a non-base unit,
+	// which then sells at base price × factor; the general base price cannot be removed.
 	Price *money.Money
 	// Source is the screen the edit came from (catalog, purchase_order, product_list, inventory,
 	// price_list) and SourceDocID the document it was made on, if any.
@@ -331,13 +332,16 @@ func (c SalePriceCommand) validate() error {
 		f.add("source", "invalid")
 	}
 	switch {
-	case c.Price == nil && c.ColorID == nil:
+	case c.Price == nil && c.ColorID == nil && c.UnitID == nil:
 		f.add("price", "required")
 	case c.Price != nil && c.Price.IsNegative():
 		f.add("price", "negative")
 	}
-	if c.ApplyAllColors && c.ColorID != nil {
+	switch {
+	case c.ApplyAllColors && c.ColorID != nil:
 		f.add("apply_all_colors", "not_allowed_with_color")
+	case c.ApplyAllColors && c.Price == nil && c.UnitID != nil:
+		f.add("apply_all_colors", "requires_price")
 	}
 	return f.err()
 }
@@ -373,6 +377,9 @@ func (w PriceWriter) SetSalePrice(ctx context.Context, q db.Querier, actor audit
 	var rowUnit *uuid.UUID
 	if unitID != sku.BaseUnitID {
 		rowUnit = &unitID
+	}
+	if cmd.Price == nil && cmd.ColorID == nil && rowUnit == nil {
+		return nil, errInvalid(map[string]string{"price": "required"})
 	}
 	if cmd.ColorID != nil {
 		found, err := exists(ctx, q, "colors", *cmd.ColorID)

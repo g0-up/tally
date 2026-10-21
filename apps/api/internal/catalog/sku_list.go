@@ -135,7 +135,8 @@ func (s *Service) Skus(ctx context.Context, scope Scope, f SkuFilter) ([]SkuList
 	return out, nil
 }
 
-// fillSkuList adds the units and the per-color stock of each listed SKU.
+// fillSkuList adds the units, with their own prices and locks, and the per-color stock of each
+// listed SKU.
 func (s *Service) fillSkuList(ctx context.Context, q db.Querier, items []SkuListItem) error {
 	if len(items) == 0 {
 		return nil
@@ -147,9 +148,9 @@ func (s *Service) fillSkuList(ctx context.Context, q db.Querier, items []SkuList
 		items[i].Units, items[i].OnHandByColor = []SkuUnit{}, []ColorQty{}
 		byID[items[i].ID] = &items[i]
 	}
-	var units []SkuUnit
-	if err := sqlx.SelectContext(ctx, q, &units, skuUnitSelect+` WHERE su.sku_id = ANY($1) ORDER BY su.is_base DESC, su.factor, u.name`, skuIDs); err != nil {
-		return fmt.Errorf("catalog: read sku units: %w", err)
+	units, err := s.readSkuUnits(ctx, q, skuIDs)
+	if err != nil {
+		return err
 	}
 	for _, u := range units {
 		byID[u.SkuID].Units = append(byID[u.SkuID].Units, u)

@@ -997,6 +997,9 @@ var bodyHints = map[string]func(f *filler) any{
 		return map[string]any{"code": fmt.Sprintf("893%010d", f.n), "unit_id": f.id("unit_id")}
 	},
 	"POST /skus/{id}/units": func(f *filler) any { return map[string]any{"unit_id": f.id("unit_id"), "factor": "12"} },
+	"PUT /skus/{id}/units": func(f *filler) any {
+		return map[string]any{"units": []any{map[string]any{"unit_id": f.id("unit_id"), "factor": "12"}}}
+	},
 	"PUT /stock-counts/{id}/lines": func(f *filler) any {
 		return map[string]any{"lines": []any{map[string]any{"sku_id": f.id("sku_id"), "counted_qty": "1", "reason_id": f.id("reason_id")}}}
 	},

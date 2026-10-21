@@ -32,6 +32,10 @@ type UsageReader interface {
 	SkuInUse(ctx context.Context, q db.Querier, skuID uuid.UUID) (bool, error)
 	// SkuUnitInUse reports whether a document line or price uses the SKU in that unit.
 	SkuUnitInUse(ctx context.Context, q db.Querier, skuID, unitID uuid.UUID) (bool, error)
+	// UnitLocks returns why each of the SKU units cannot be deleted (UnitLockedBy…), checking
+	// documents, then price history, then barcodes; a unit missing from the map can be deleted.
+	// It runs one query per source for all the units.
+	UnitLocks(ctx context.Context, q db.Querier, units []SkuUnitKey) (map[SkuUnitKey]string, error)
 	// ProductInUse reports whether a kit recipe uses the product or any of its SKUs is in use.
 	ProductInUse(ctx context.Context, q db.Querier, productID uuid.UUID) (bool, error)
 	// SkuOnHand is the total on-hand quantity of the SKU over every warehouse.
@@ -43,6 +47,23 @@ type UsageReader interface {
 	// CategoryInUse reports whether a product, a sub-category or a stock count references the category.
 	CategoryInUse(ctx context.Context, q db.Querier, categoryID uuid.UUID) (bool, error)
 }
+
+// SkuUnitKey names one unit of one SKU.
+type SkuUnitKey struct {
+	SkuID  uuid.UUID
+	UnitID uuid.UUID
+}
+
+// Why a SKU unit cannot be deleted, in the order UsageReader.UnitLocks checks them. Such a unit can
+// only be deactivated.
+const (
+	// UnitLockedByDocuments: a document line or kit recipe uses the SKU in the unit.
+	UnitLockedByDocuments = "documents"
+	// UnitLockedByPriceHistory: the unit had its own price; the price history keeps it forever.
+	UnitLockedByPriceHistory = "price_history"
+	// UnitLockedByBarcodes: a barcode scans to the unit.
+	UnitLockedByBarcodes = "barcodes"
+)
 
 // ColorQty is the on-hand quantity of one color of a SKU; ColorID nil is "Chưa gán màu".
 type ColorQty struct {
@@ -70,13 +91,14 @@ const (
 	PriceWholesale = "wholesale"
 )
 
-// SalePrice is a base sale price set from the catalog (quick-create, product form).
+// SalePrice is a base sale price set from the catalog (quick-create, product form, unit table).
 type SalePrice struct {
 	SkuID  uuid.UUID
 	UnitID uuid.UUID
 	// Kind is PriceRetail or PriceWholesale.
-	Kind  string
-	Price money.Money
+	Kind string
+	// Price nil removes the own price of a non-base unit, which then sells at base price × factor.
+	Price *money.Money
 	// Source names the screen that set the price, e.g. "quick_create".
 	Source string
 }

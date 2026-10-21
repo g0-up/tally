@@ -356,8 +356,8 @@ func (onboardingSteps) CompleteStep(ctx context.Context, q db.Querier, tenantID 
 	return nil
 }
 
-// catalogPrices stores the base sale prices the catalog sets (product create, quick-create) as
-// pricing rows with their history, in the catalog's transaction. Prices of products a purchase
+// catalogPrices stores the base sale prices the catalog sets (product create, quick-create, unit
+// table) as pricing rows with their history, in the catalog's transaction. Prices of products a purchase
 // order creates are recorded as edited from the purchase order.
 type catalogPrices struct{ w pricing.PriceWriter }
 
@@ -368,7 +368,7 @@ func (c catalogPrices) SetSalePrice(ctx context.Context, q db.Querier, actor aud
 		source = p.Source
 	}
 	_, err := c.w.SetSalePrice(ctx, q, actor, pricing.SalePriceCommand{
-		SkuID: p.SkuID, UnitID: &unitID, Kind: p.Kind, Price: &p.Price, Source: source,
+		SkuID: p.SkuID, UnitID: &unitID, Kind: p.Kind, Price: p.Price, Source: source,
 	})
 	return err
 }

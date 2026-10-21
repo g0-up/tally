@@ -399,6 +399,60 @@ func TestSalePriceNeedsTheBaseList(t *testing.T) {
 	wantKind(t, err, apperr.NotFound, "not_found")
 }
 
+func TestRemovingAUnitPriceFallsBackToBaseTimesFactor(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	st := h.store(t)
+	sku := h.sku(t, st, "")
+	h.salePrice(t, st, KindRetail, sku, nil, "10000")
+	unitPrice := func(price *money.Money) ([]PriceChange, error) {
+		changes, _, err := h.svc.SetSalePrice(ctx, st.actor, nil, SalePriceCommand{SkuID: sku, UnitID: &st.thung, Kind: KindRetail,
+			Source: ChangeCatalog, Price: price})
+		return changes, err
+	}
+	quoteCarton := func() ResolvedPrice {
+		return h.quote(t, st, QuoteInput{Lines: []PriceLine{{SkuID: sku, UnitID: &st.thung, Qty: money.MustQty("1")}}})[0]
+	}
+	if _, err := unitPrice(ptr(money.MustMoney("230000"))); err != nil {
+		t.Fatal(err)
+	}
+	if got := quoteCarton(); got.Amount.String() != "230000" || got.Source.UnitID == nil || *got.Source.UnitID != st.thung {
+		t.Fatalf("carton with its own price = %s %+v", got.Amount, got.Source)
+	}
+
+	changes, err := unitPrice(nil)
+	if err != nil || len(changes) != 1 || changes[0].OldPrice == nil || changes[0].OldPrice.String() != "230000" ||
+		changes[0].NewPrice != nil || changes[0].UnitID == nil || *changes[0].UnitID != st.thung {
+		t.Fatalf("removal = %+v, %v", changes, err)
+	}
+	if got := quoteCarton(); got.Amount.String() != "240000" || got.Source.UnitID != nil {
+		t.Errorf("carton after removal = %s %+v, want 24 × 10000 from the base row", got.Amount, got.Source)
+	}
+	if again, err := unitPrice(nil); err != nil || len(again) != 0 {
+		t.Errorf("removing a missing unit price = %+v, %v, want nothing", again, err)
+	}
+
+	// The general base price cannot be removed, and apply-all-colors needs a price.
+	_, _, err = h.svc.SetSalePrice(ctx, st.actor, nil, SalePriceCommand{SkuID: sku, UnitID: &st.hop, Kind: KindRetail, Source: ChangeCatalog})
+	wantKind(t, err, apperr.Validation, "")
+	if fieldsOf(err)["price"] != "required" {
+		t.Errorf("removing the base price = %v", err)
+	}
+	_, _, err = h.svc.SetSalePrice(ctx, st.actor, nil, SalePriceCommand{SkuID: sku, UnitID: &st.thung, Kind: KindRetail,
+		Source: ChangeCatalog, ApplyAllColors: true})
+	wantKind(t, err, apperr.Validation, "")
+	if fieldsOf(err)["apply_all_colors"] != "requires_price" {
+		t.Errorf("apply all colors without a price = %v", err)
+	}
+}
+
+func fieldsOf(err error) map[string]string {
+	if e, ok := apperr.As(err); ok {
+		return e.Fields
+	}
+	return nil
+}
+
 // baseList returns the id of the store's base list of kind.
 func (h harness) baseList(t testing.TB, st *store, kind string) uuid.UUID {
 	t.Helper()

@@ -106,6 +106,12 @@ func errUnitInUse() error {
 	return apperr.NewConflict("unit_in_use", "The unit has barcodes; remove them first")
 }
 
+// errUnitsLocked refuses to delete the units in fields (units[<unit id>] → UnitLockedBy… reason).
+func errUnitsLocked(fields map[string]string) error {
+	return &apperr.Error{Kind: apperr.Conflict, Code: "unit_in_use", Fields: fields,
+		Message: "Documents, price history or barcodes use the unit; make it inactive instead"}
+}
+
 func errSkuUnitInUse() error {
 	return apperr.NewConflict("sku_unit_in_use",
 		"Documents or prices use the SKU in this unit; deactivate the unit instead")
