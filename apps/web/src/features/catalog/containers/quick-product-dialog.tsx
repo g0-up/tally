@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { useApiClient } from "../../../shared/api/api-context";
 import { useCommit } from "../../../shared/hooks/use-commit";
+import { useFocusFirstInvalid } from "../../../shared/hooks/use-focus-first-invalid";
 import { CommitDialog } from "../../../shared/ui/commit-dialog";
 import { ListLoading } from "../../../shared/ui/list-footer";
 import { toast } from "../../../shared/ui/toast-store";
 import { productFormErrors } from "../api/mutations";
 import { skuKeys, useUnits } from "../api/queries";
-import { initialProductDraft, quickCreateRequest, validateProductDraft, type ProductDraft, type ProductErrors } from "../components/product-draft";
+import { firstProductError, initialProductDraft, quickCreateRequest, validateProductDraft, type ProductDraft, type ProductErrors } from "../components/product-draft";
 import { ProductFormFields } from "../components/product-form";
+import { UnitPricePreview } from "../components/unit-price-table";
 import { quickCreateResultSchema, type QuickCreateResult } from "../schemas";
 
 const TITLE = "Thêm hàng hóa mới";
@@ -23,7 +25,7 @@ export function QuickProductDialog({ onClose, onCreated }: QuickProductDialogPro
   const units = useUnits();
   if (units.isLoading) {
     return (
-      <CommitDialog open onClose={onClose} title={TITLE}>
+      <CommitDialog open onClose={onClose} title={TITLE} wide>
         <ListLoading />
       </CommitDialog>
     );
@@ -35,6 +37,7 @@ function QuickProductForm({ onClose, onCreated, initial }: QuickProductDialogPro
   const client = useApiClient();
   const [draft, setDraft] = useState(initial);
   const [errors, setErrors] = useState<ProductErrors>({});
+  const focusFirstInvalid = useFocusFirstInvalid();
 
   const commit = useCommit({
     mutationFn: async (d: ProductDraft, { idempotencyKey }) => {
@@ -60,16 +63,17 @@ function QuickProductForm({ onClose, onCreated, initial }: QuickProductDialogPro
   const submit = () => {
     const found = validateProductDraft(draft, "quick");
     setErrors(found);
-    const first = Object.values(found)[0];
+    const first = firstProductError(found);
     if (first !== undefined) {
       toast.commitError(first);
+      focusFirstInvalid();
       return;
     }
     void commit.run(draft);
   };
 
   return (
-    <CommitDialog open onClose={onClose} title={TITLE} submitLabel="Thêm" onSubmit={submit} pending={commit.pending}>
+    <CommitDialog open onClose={onClose} title={TITLE} submitLabel="Thêm" onSubmit={submit} pending={commit.pending} wide live={<UnitPricePreview value={draft} />}>
       <ProductFormFields variant="quick" draft={draft} onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))} errors={errors} attributes={[]} />
     </CommitDialog>
   );

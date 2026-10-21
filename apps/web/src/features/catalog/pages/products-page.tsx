@@ -9,10 +9,12 @@ import { FilterBar, SearchInput } from "../../../shared/ui/filter-bar";
 import { ListFooter, ListLoading } from "../../../shared/ui/list-footer";
 import { PageHeader } from "../../../shared/ui/page-header";
 import { StatusPill } from "../../../shared/ui/status-pill";
-import { PRODUCT_TYPE_LABELS, SKU_STATUS_LABELS, unitConversionLines } from "../api/adapters";
+import { PRODUCT_TYPE_LABELS, SKU_STATUS_LABELS } from "../api/adapters";
 import { useColorDirectory, useSkuList, type ColorDirectory } from "../api/queries";
 import { ColorBreak } from "../components/color-break";
+import { UnitConversionList } from "../components/unit-conversion-list";
 import { BarcodeUnitsDrawer } from "../containers/barcode-units-drawer";
+import { EditUnitsDialog } from "../containers/edit-units-dialog";
 import { NewProductDialog } from "../containers/new-product-dialog";
 import type { SkuListItem } from "../schemas";
 
@@ -20,7 +22,7 @@ const NAME_CELL = { minWidth: 220 } as const;
 
 const priceOrDash = (v: string | null) => (v === null ? "—" : vnd(v));
 
-function productColumns(colors: ColorDirectory, onBarcodes: (skuId: string) => void): Column<SkuListItem>[] {
+function productColumns(colors: ColorDirectory, onBarcodes: (skuId: string) => void, onUnits: (sku: SkuListItem) => void): Column<SkuListItem>[] {
   return [
     {
       key: "code",
@@ -61,13 +63,7 @@ function productColumns(colors: ColorDirectory, onBarcodes: (skuId: string) => v
     {
       key: "units",
       header: "Đơn vị & quy đổi",
-      cell: (s) =>
-        unitConversionLines(s).map((line, i) => (
-          <span key={line}>
-            {i > 0 ? <br /> : null}
-            {line}
-          </span>
-        )),
+      cell: (s) => <UnitConversionList sku={s} />,
     },
     { key: "lot", header: "Lô/hạn", cell: (s) => (s.track_lot ? "Bắt buộc" : "Không") },
     { key: "retail", header: "Giá lẻ", numeric: true, cell: (s) => priceOrDash(s.retail_price) },
@@ -81,9 +77,16 @@ function productColumns(colors: ColorDirectory, onBarcodes: (skuId: string) => v
       header: "",
       className: "acts",
       cell: (s) => (
-        <Button size="sm" aria-label={`Mã vạch ${s.display_name}`} onClick={() => onBarcodes(s.id)}>
-          Mã vạch
-        </Button>
+        <>
+          {s.product_type === "goods" ? (
+            <Button size="sm" aria-label={`Đơn vị & giá ${s.display_name}`} onClick={() => onUnits(s)}>
+              Đơn vị & giá
+            </Button>
+          ) : null}{" "}
+          <Button size="sm" aria-label={`Mã vạch ${s.display_name}`} onClick={() => onBarcodes(s.id)}>
+            Mã vạch
+          </Button>
+        </>
       ),
     },
   ];
@@ -94,6 +97,7 @@ export default function ProductsPage() {
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
   const [barcodesOf, setBarcodesOf] = useState<string | null>(null);
+  const [unitsOf, setUnitsOf] = useState<SkuListItem | null>(null);
   const query = useDebounce(q.trim(), 250);
   const list = useSkuList({ q: query });
   const colors = useColorDirectory();
@@ -115,9 +119,10 @@ export default function ProductsPage() {
       <FilterBar>
         <SearchInput value={q} onChange={setQ} placeholder="Tìm mã, tên, mã vạch…" />
       </FilterBar>
-      {list.isLoading ? <ListLoading /> : <DataTable caption="Hàng hóa" columns={productColumns(colors, setBarcodesOf)} rows={list.items} rowKey={(s) => s.id} />}
+      {list.isLoading ? <ListLoading /> : <DataTable caption="Hàng hóa" columns={productColumns(colors, setBarcodesOf, setUnitsOf)} rows={list.items} rowKey={(s) => s.id} />}
       <ListFooter list={list} />
       {adding ? <NewProductDialog onClose={() => setAdding(false)} /> : null}
+      {unitsOf ? <EditUnitsDialog sku={unitsOf} onClose={() => setUnitsOf(null)} /> : null}
       {barcodesSku ? <BarcodeUnitsDrawer sku={barcodesSku} onClose={() => setBarcodesOf(null)} /> : null}
     </>
   );

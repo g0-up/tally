@@ -23,6 +23,9 @@ const unit = (unitId: string, name: string, factor: string, active = true): SkuU
   active,
   is_default_sale: false,
   is_default_purchase: false,
+  retail_price: null,
+  wholesale_price: null,
+  locked_by: null,
 });
 
 const SKU = testSku({ id: "sku-milk", code: "SH01", display_name: "Sữa hộp" });

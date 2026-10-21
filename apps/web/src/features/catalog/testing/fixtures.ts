@@ -16,8 +16,8 @@ export const MIX_UNITS = [
 
 /** The two candy flavors of the test mix group, counted in gói. */
 export const FLAVOR_SKUS: SkuListItem[] = [
-  testSku({ id: "sku-dau", code: "KD01", display_name: "Kẹo dâu", base_unit_id: UNIT_GOI, units: [{ unit_id: UNIT_GOI, unit_name: "gói", factor: "1", is_base: true, active: true, is_default_sale: true, is_default_purchase: true }] }),
-  testSku({ id: "sku-cam", code: "KC01", display_name: "Kẹo cam", base_unit_id: UNIT_GOI, units: [{ unit_id: UNIT_GOI, unit_name: "gói", factor: "1", is_base: true, active: true, is_default_sale: true, is_default_purchase: true }] }),
+  testSku({ id: "sku-dau", code: "KD01", display_name: "Kẹo dâu", base_unit_id: UNIT_GOI, units: [{ unit_id: UNIT_GOI, unit_name: "gói", factor: "1", is_base: true, active: true, is_default_sale: true, is_default_purchase: true, retail_price: null, wholesale_price: null, locked_by: null }] }),
+  testSku({ id: "sku-cam", code: "KC01", display_name: "Kẹo cam", base_unit_id: UNIT_GOI, units: [{ unit_id: UNIT_GOI, unit_name: "gói", factor: "1", is_base: true, active: true, is_default_sale: true, is_default_purchase: true, retail_price: null, wholesale_price: null, locked_by: null }] }),
 ];
 
 /** An active group of two flavors, 12 gói a thùng, already used on three invoices. */

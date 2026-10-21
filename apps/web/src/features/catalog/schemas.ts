@@ -52,6 +52,11 @@ export const skuUnitSchema = z.object({
   active: z.boolean(),
   is_default_sale: z.boolean(),
   is_default_purchase: z.boolean(),
+  /** The unit's own prices; null sells at the base unit's price × factor. */
+  retail_price: moneySchema.nullable(),
+  wholesale_price: moneySchema.nullable(),
+  /** Why the unit cannot be deleted (only deactivated); null when it can. */
+  locked_by: z.enum(["documents", "price_history", "barcodes"]).nullable(),
 });
 export type SkuUnit = z.infer<typeof skuUnitSchema>;
 
@@ -89,6 +94,17 @@ export type SkuListItem = z.infer<typeof skuListItemSchema>;
 /** A barcode of a SKU and the unit a scan of it answers. */
 export const barcodeSchema = z.object({ id, unit_id: id, code: z.string() });
 export type Barcode = z.infer<typeof barcodeSchema>;
+
+/** `GET /skus/{id}`: the SKU's version with its whole unit table and every barcode, for "Đơn vị & giá". */
+export const skuDetailSchema = z.object({
+  id,
+  display_name: z.string(),
+  base_unit_id: id,
+  version: z.number().int(),
+  units: z.array(skuUnitSchema),
+  barcodes: z.array(barcodeSchema),
+});
+export type SkuDetail = z.infer<typeof skuDetailSchema>;
 
 export const productDetailSchema = z.object({
   id,

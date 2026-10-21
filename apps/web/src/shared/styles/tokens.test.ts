@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 // The prototype is the visual source of truth: every custom property of its :root must exist in
 // tokens.css with the same value.
 
-const PROTOTYPE = new URL("../../../../../docs/design/prototype-v6.14.html", import.meta.url);
+const PROTOTYPE = new URL("../../../../../docs/design/prototype-v6.15.html", import.meta.url);
 const TOKENS = new URL("./tokens.css", import.meta.url);
 
 function rootBlock(css: string): string {

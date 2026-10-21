@@ -35,8 +35,8 @@ export function testSku(over: Partial<SkuListItem> = {}): SkuListItem {
     category_id: null,
     category_name: null,
     units: [
-      { unit_id: UNIT_HOP, unit_name: "hộp", factor: "1", is_base: true, active: true, is_default_sale: true, is_default_purchase: false },
-      { unit_id: UNIT_THUNG, unit_name: "thùng", factor: "12", is_base: false, active: true, is_default_sale: false, is_default_purchase: true },
+      { unit_id: UNIT_HOP, unit_name: "hộp", factor: "1", is_base: true, active: true, is_default_sale: true, is_default_purchase: false, retail_price: null, wholesale_price: null, locked_by: null },
+      { unit_id: UNIT_THUNG, unit_name: "thùng", factor: "12", is_base: false, active: true, is_default_sale: false, is_default_purchase: true, retail_price: null, wholesale_price: null, locked_by: null },
     ],
     barcode: null,
     retail_price: toMoney(15000),

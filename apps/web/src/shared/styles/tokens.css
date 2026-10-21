@@ -1,4 +1,4 @@
-/* Design tokens copied byte-for-byte from the prototype :root (docs/design/prototype-v6.14.html).
+/* Design tokens copied byte-for-byte from the prototype :root (docs/design/prototype-v6.15.html).
  * Keep names and values identical; tokens.test.ts compares them. Tokens after the marker name
  * values the prototype writes inline (row hover, scrims, product colors, hatch) and the contrast-safe
  * companions added for accessibility. */

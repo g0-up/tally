@@ -1130,7 +1130,12 @@ export interface paths {
         };
         /** Units of a SKU with their factors */
         get: operations["listSkuUnits"];
-        put?: never;
+        /**
+         * Save the whole unit table of a SKU with its unit prices
+         * @description Adds, updates, deactivates and deletes units and sets or removes their prices in one
+         *     transaction, so a refused row leaves the table unchanged. Bumps the SKU version.
+         */
+        put: operations["replaceSkuUnits"];
         /** Add a selling or purchasing unit */
         post: operations["addSkuUnit"];
         delete?: never;
@@ -6576,6 +6581,60 @@ export interface components {
             active: boolean;
             is_default_sale: boolean;
             is_default_purchase: boolean;
+            /** @description The unit's own retail list price (general color, no tier); null on a non-base unit sells at base price × factor. */
+            retail_price: components["schemas"]["Money"] | null;
+            /** @description The unit's own wholesale list price; null as for retail_price. */
+            wholesale_price: components["schemas"]["Money"] | null;
+            /**
+             * @description Why the unit cannot be deleted, only deactivated, checked in this order: a document line or kit
+             *     recipe uses it, it had its own price (kept in the price history), or a barcode scans to it.
+             *     Null when it can be deleted; always null on the base unit.
+             * @enum {string|null}
+             */
+            locked_by: "documents" | "price_history" | "barcodes" | null;
+        };
+        NewSkuUnit: {
+            /**
+             * Format: uuid
+             * @description An active unit other than the base unit.
+             */
+            unit_id: string;
+            /** @description Base units per unit, a positive decimal. */
+            factor: string;
+            /** @description Null sells at base price × factor. */
+            retail_price?: components["schemas"]["Money"] | null;
+            /** @description Null sells at base price × factor. */
+            wholesale_price?: components["schemas"]["Money"] | null;
+        };
+        /**
+         * @description The whole unit table of a SKU. The base unit is not a row; its prices are the top-level ones and
+         *     null keeps them. A current unit missing from `units` is deleted, unless it is locked (see
+         *     SkuUnit.locked_by): then nothing is saved and the answer is 409 unit_in_use with
+         *     `fields.units[<unit_id>]` the reason, and the unit must be sent with `active: false` instead.
+         *     Deactivating the default purchase unit moves the default to the active unit with the largest
+         *     factor above 1, else the base unit. `units` is required (an empty array deletes every unlocked
+         *     unit) and holds at most 20 rows. If-Match is the SKU version, which unit and SKU edits move;
+         *     prices set elsewhere (purchasing, the price list) do not, so the prices sent here win.
+         *     Row errors (422) name the row: `units[1].unit_id`
+         *     required, is_base, duplicate or unknown_unit; `units[1].factor`; prices must not be negative.
+         */
+        SkuUnitsRequest: {
+            /** @description Base unit retail price; null keeps it. */
+            retail_price?: components["schemas"]["Money"] | null;
+            /** @description Base unit wholesale price; null keeps it. */
+            wholesale_price?: components["schemas"]["Money"] | null;
+            units: {
+                /** Format: uuid */
+                unit_id: string;
+                /** @description Base units per unit, a positive decimal. */
+                factor: string;
+                /** @description Defaults to true. */
+                active?: boolean;
+                /** @description Omitted or null removes the unit's own price (the table is replaced whole). */
+                retail_price?: components["schemas"]["Money"] | null;
+                /** @description Omitted or null removes the unit's own price (the table is replaced whole). */
+                wholesale_price?: components["schemas"]["Money"] | null;
+            }[];
         };
         SkuBarcodeRef: {
             code: string;
@@ -7028,7 +7087,10 @@ export interface components {
             unit_id?: string | null;
             /** @description Not allowed with color_id. */
             apply_all_colors?: boolean;
-            /** @description Null removes the price of color_id. */
+            /**
+             * @description Null removes the price of color_id, or the own price of a non-base unit_id, which then sells
+             *     at base price × factor. Null with apply_all_colors and a unit is 422 requires_price.
+             */
             price: components["schemas"]["Money"] | null;
             source: components["schemas"]["PriceChangeSource"];
             /** Format: uuid */
@@ -8200,10 +8262,18 @@ export interface components {
             category_id?: string | null;
             /** Format: uuid */
             base_unit_id: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description With `units`, the base unit or one of them; the line buys in it.
+             */
             purchase_unit_id?: string | null;
             /** @description Base units per purchase unit, a positive decimal. */
             factor?: string | null;
+            /**
+             * @description Conversion units with their own prices; not allowed with `factor`. Without `purchase_unit_id`
+             *     the line's unit becomes the default purchase unit, so the line price is its reference cost.
+             */
+            units?: components["schemas"]["NewSkuUnit"][];
             /** @description Track lots and expiry dates. */
             track_lot?: boolean;
             retail_price?: components["schemas"]["Money"] | null;
@@ -13204,11 +13274,18 @@ export interface operations {
                         barcode?: string | null;
                         /**
                          * Format: uuid
-                         * @description Default purchase unit; the base unit or null adds none.
+                         * @description Default purchase unit; the base unit or null adds none. Not allowed with `units`.
                          */
                         purchase_unit_id?: string | null;
                         /** @description Base units per purchase unit, a positive decimal. */
                         factor?: string | null;
+                        /**
+                         * @description Conversion units of the SKU; the one with the largest factor above 1 is the default
+                         *     purchase unit. Not allowed with `factor` (422 `sku.units` with_purchase_unit). Row
+                         *     errors name the row: `sku.units[1].unit_id` required, is_base, duplicate or
+                         *     unknown_unit; `sku.units[1].factor` required or why it is not a positive factor.
+                         */
+                        units?: components["schemas"]["NewSkuUnit"][];
                         /** @description Retail price per base unit. */
                         retail_price?: components["schemas"]["Money"] | null;
                         /** @description Wholesale price per base unit. */
@@ -13250,10 +13327,20 @@ export interface operations {
                     category_id?: string | null;
                     /** Format: uuid */
                     base_unit_id: string;
-                    /** Format: uuid */
+                    /**
+                     * Format: uuid
+                     * @description With `units`, the base unit or one of them (422 not_a_unit), and the default purchase unit.
+                     */
                     purchase_unit_id?: string | null;
                     /** @description Base units per purchase unit, a positive decimal. */
                     factor?: string | null;
+                    /**
+                     * @description Conversion units of the SKU; without `purchase_unit_id` the one with the largest factor above 1
+                     *     is the default purchase unit. Not allowed with `factor` (422 `units` with_purchase_unit). Row
+                     *     errors name the row: `units[1].unit_id`, `units[1].factor`.
+                     */
+                    units?: components["schemas"]["NewSkuUnit"][];
+                    /** @description Price per default purchase unit, kept as the reference cost per base unit. */
                     purchase_price?: components["schemas"]["Money"] | null;
                     /** @description Retail price per base unit. */
                     sale_price?: components["schemas"]["Money"] | null;
@@ -13761,6 +13848,43 @@ export interface operations {
             };
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
+        };
+    };
+    replaceSkuUnits: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Resource version as returned in the `ETag` header. */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkuUnitsRequest"];
+            };
+        };
+        responses: {
+            /** @description SKU; `ETag` carries the version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkuDetail"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            /** @description unit_in_use (`fields.units[<unit_id>]` documents, price_history or barcodes) or sku_unit_in_use. */
+            409: components["responses"]["Error"];
+            412: components["responses"]["Error"];
+            /** @description validation_failed with the row fields. */
+            422: components["responses"]["Error"];
+            428: components["responses"]["Error"];
         };
     };
     addSkuUnit: {

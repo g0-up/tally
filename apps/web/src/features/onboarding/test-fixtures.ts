@@ -69,7 +69,7 @@ export function testSkuItem(over: Record<string, unknown> = {}) {
     product_type: "goods",
     category_id: null,
     category_name: null,
-    units: [{ unit_id: "unit-hop", unit_name: "hộp", factor: "1", is_base: true, active: true, is_default_sale: true, is_default_purchase: true }],
+    units: [{ unit_id: "unit-hop", unit_name: "hộp", factor: "1", is_base: true, active: true, is_default_sale: true, is_default_purchase: true, retail_price: null, wholesale_price: null, locked_by: null }],
     barcode: null,
     retail_price: "60000",
     wholesale_price: null,

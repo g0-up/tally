@@ -1,9 +1,8 @@
-import { Fragment } from "react";
 import { money, num } from "../../../shared/lib/format";
 import { Button } from "../../../shared/ui/button";
 import { CellSub } from "../../../shared/ui/data-table/cell-sub";
 import { DataTable, type Column } from "../../../shared/ui/data-table/data-table";
-import { ColorBreak, unitConversionLines, type ColorDirectory, type SkuListItem } from "../../catalog";
+import { ColorBreak, UnitConversionList, type ColorDirectory, type SkuListItem } from "../../catalog";
 import { marginText } from "../../pricing";
 
 export interface PurchasingProductTableProps {
@@ -42,13 +41,7 @@ export function PurchasingProductTable({ rows, colors, onEditPrice }: Purchasing
     {
       key: "units",
       header: "Đơn vị & quy đổi",
-      cell: (s) =>
-        unitConversionLines(s).map((line, i) => (
-          <Fragment key={line}>
-            {i > 0 ? <br /> : null}
-            {line}
-          </Fragment>
-        )),
+      cell: (s) => <UnitConversionList sku={s} />,
     },
     { key: "sellable", header: "Có thể bán", numeric: true, cell: (s) => num(s.sellable) },
     { key: "last", header: "Giá nhập gần nhất", numeric: true, cell: (s) => (s.last_purchase_price === null ? "—" : money(s.last_purchase_price)) },
