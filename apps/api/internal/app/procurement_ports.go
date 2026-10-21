@@ -196,9 +196,13 @@ func (p procurementPricing) SetRetailPrice(ctx context.Context, q db.Querier, ac
 type procurementCatalog struct{ s *catalog.Service }
 
 func (c procurementCatalog) CreateProduct(ctx context.Context, q db.Querier, actor audit.Actor, p procurement.NewProductInput) (uuid.UUID, error) {
+	units := make([]catalog.UnitPriceInput, len(p.Units))
+	for i, u := range p.Units {
+		units[i] = catalog.UnitPriceInput(u)
+	}
 	res, err := c.s.QuickCreateProductIn(ctx, q, actor, catalog.QuickCreateInput{
 		Name: p.Name, CategoryID: p.CategoryID, BaseUnitID: p.BaseUnitID, PurchaseUnitID: p.PurchaseUnitID, Factor: p.Factor,
-		PurchasePrice: p.PurchasePrice, SalePrice: p.RetailPrice, WholesalePrice: p.WholesalePrice, Barcode: p.Barcode,
+		Units: units, PurchasePrice: p.PurchasePrice, SalePrice: p.RetailPrice, WholesalePrice: p.WholesalePrice, Barcode: p.Barcode,
 		TrackLot: p.TrackLot, PriceSource: pricing.ChangePurchaseOrder,
 	})
 	if err != nil {

@@ -78,23 +78,33 @@ func (l orderLineRequest) input() OrderLineInput {
 
 // newProductRequest is a product a purchase line creates.
 type newProductRequest struct {
-	Name           string       `json:"name"`
-	CategoryID     *uuid.UUID   `json:"category_id"`
-	BaseUnitID     uuid.UUID    `json:"base_unit_id"`
-	PurchaseUnitID *uuid.UUID   `json:"purchase_unit_id"`
+	Name           string                  `json:"name"`
+	CategoryID     *uuid.UUID              `json:"category_id"`
+	BaseUnitID     uuid.UUID               `json:"base_unit_id"`
+	PurchaseUnitID *uuid.UUID              `json:"purchase_unit_id"`
+	Factor         *string                 `json:"factor"`
+	Units          []newProductUnitRequest `json:"units"`
+	TrackLot       bool                    `json:"track_lot"`
+	RetailPrice    *money.Money            `json:"retail_price"`
+	WholesalePrice *money.Money            `json:"wholesale_price"`
+	Barcode        *string                 `json:"barcode"`
+}
+
+// newProductUnitRequest is a conversion unit of a new product with its own prices.
+type newProductUnitRequest struct {
+	UnitID         uuid.UUID    `json:"unit_id"`
 	Factor         *string      `json:"factor"`
-	TrackLot       bool         `json:"track_lot"`
 	RetailPrice    *money.Money `json:"retail_price"`
 	WholesalePrice *money.Money `json:"wholesale_price"`
-	Barcode        *string      `json:"barcode"`
 }
 
 func (r *newProductRequest) input() *NewProduct {
 	if r == nil {
 		return nil
 	}
-	p := NewProduct(*r)
-	return &p
+	return &NewProduct{Name: r.Name, CategoryID: r.CategoryID, BaseUnitID: r.BaseUnitID, PurchaseUnitID: r.PurchaseUnitID,
+		Factor: r.Factor, Units: mapSlice(r.Units, func(u newProductUnitRequest) NewProductUnit { return NewProductUnit(u) }),
+		TrackLot: r.TrackLot, RetailPrice: r.RetailPrice, WholesalePrice: r.WholesalePrice, Barcode: r.Barcode}
 }
 
 type orderRequest struct {

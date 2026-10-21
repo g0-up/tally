@@ -14,18 +14,30 @@ import (
 
 // NewProduct is a product typed by name on a purchase line that the catalog does not have yet.
 // The document creates it with one SKU in its own transaction, so cancelling the document leaves
-// no product behind. Factor is how many base units one purchase unit holds; the prices are per
-// base unit; Barcode, when given, becomes a barcode of the base unit.
+// no product behind. Units are its conversion units with their own prices; without Units, Factor
+// is how many base units the single purchase unit holds. With Units, PurchaseUnitID is the base
+// unit or one of Units and Factor stays empty. The prices are per base unit; Barcode, when given,
+// becomes a barcode of the base unit.
 type NewProduct struct {
 	Name           string
 	CategoryID     *uuid.UUID
 	BaseUnitID     uuid.UUID
 	PurchaseUnitID *uuid.UUID
 	Factor         *string
+	Units          []NewProductUnit
 	TrackLot       bool
 	RetailPrice    *money.Money
 	WholesalePrice *money.Money
 	Barcode        *string
+}
+
+// NewProductUnit is a conversion unit of a new product holding Factor base units, with its own
+// prices per unit; a nil price sells it at base price × factor.
+type NewProductUnit struct {
+	UnitID         uuid.UUID
+	Factor         *string
+	RetailPrice    *money.Money
+	WholesalePrice *money.Money
 }
 
 // codeBarcodeTaken is the catalog's conflict for a barcode another SKU of the store holds.
@@ -47,6 +59,20 @@ func (p NewProduct) lineUnit() uuid.UUID {
 	return p.BaseUnitID
 }
 
+// hasUnit reports whether a line of the new product may be counted in unitID: its base unit, its
+// purchase unit or one of its units.
+func (p NewProduct) hasUnit(unitID uuid.UUID) bool {
+	if unitID == p.BaseUnitID || unitID == p.lineUnit() {
+		return true
+	}
+	for _, u := range p.Units {
+		if u.UnitID == unitID {
+			return true
+		}
+	}
+	return false
+}
+
 // validateNewProduct checks the shape of the new product of request line i; the catalog checks
 // the rest (name, units, factor, duplicate names).
 func validateNewProduct(fields map[string]string, i int, skuID uuid.UUID, unitID *uuid.UUID, p *NewProduct) {
@@ -65,7 +91,7 @@ func validateNewProduct(fields map[string]string, i int, skuID uuid.UUID, unitID
 	if p.BaseUnitID == uuid.Nil {
 		fields[lineField(i, "new_product.base_unit_id")] = "required"
 	}
-	if unitID != nil && *unitID != p.BaseUnitID && *unitID != p.lineUnit() {
+	if unitID != nil && !p.hasUnit(*unitID) {
 		fields[lineField(i, "unit_id")] = "not_new_product_unit"
 	}
 	for name, v := range map[string]*money.Money{"retail_price": p.RetailPrice, "wholesale_price": p.WholesalePrice} {
@@ -84,6 +110,11 @@ func (s *Service) createProduct(ctx context.Context, q db.Querier, actor audit.A
 	unit := p.lineUnit()
 	if unitID != nil {
 		unit = *unitID
+	}
+	// With a unit table and no purchase unit, the catalog would default to the largest unit; the
+	// line's unit becomes the purchase unit instead, so the line price is the cost of that unit.
+	if p.PurchaseUnitID == nil && len(p.Units) > 0 {
+		p.PurchaseUnitID = &unit
 	}
 	// The reference cost is per purchase unit; a line counted in another unit leaves it unset.
 	if unit != p.lineUnit() {

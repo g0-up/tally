@@ -14,8 +14,10 @@ import (
 )
 
 func TestValidateNewProduct(t *testing.T) {
-	base, carton, other := uuid.New(), uuid.New(), uuid.New()
+	base, carton, other, pack := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	negative := money.MustMoney("-1")
+	fifty, fiveHundred := "50", "500"
+	units := []NewProductUnit{{UnitID: pack, Factor: &fifty}, {UnitID: carton, Factor: &fiveHundred}}
 	cases := []struct {
 		name   string
 		sku    uuid.UUID
@@ -27,6 +29,11 @@ func TestValidateNewProduct(t *testing.T) {
 		{"existing sku", uuid.New(), nil, nil, map[string]string{}},
 		{"product counted in its purchase unit", uuid.Nil, &carton,
 			&NewProduct{Name: "Bia", BaseUnitID: base, PurchaseUnitID: &carton}, map[string]string{}},
+		{"product counted in one of its units", uuid.Nil, &pack,
+			&NewProduct{Name: "Kẹo", BaseUnitID: base, PurchaseUnitID: &carton, Units: units}, map[string]string{}},
+		{"product counted in a unit it does not have", uuid.Nil, &other,
+			&NewProduct{Name: "Kẹo", BaseUnitID: base, PurchaseUnitID: &carton, Units: units},
+			map[string]string{"lines.2.unit_id": "not_new_product_unit"}},
 		{"both sku and product", uuid.New(), nil, &NewProduct{Name: "Bia", BaseUnitID: base},
 			map[string]string{"lines.2.new_product": "not_allowed_with_sku_id"}},
 		{"blank product", uuid.Nil, &other, &NewProduct{Name: "  ", RetailPrice: &negative},
@@ -120,5 +127,51 @@ func TestNewProductLineUnit(t *testing.T) {
 	}
 	if got := (NewProduct{BaseUnitID: base, PurchaseUnitID: &carton}).lineUnit(); got != carton {
 		t.Errorf("with purchase unit = %v, want carton", got)
+	}
+}
+
+func TestNewProductHasUnit(t *testing.T) {
+	base, pack, carton, other := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	p := NewProduct{BaseUnitID: base, PurchaseUnitID: &carton, Units: []NewProductUnit{{UnitID: pack}, {UnitID: carton}}}
+	for unit, want := range map[uuid.UUID]bool{base: true, pack: true, carton: true, other: false} {
+		if got := p.hasUnit(unit); got != want {
+			t.Errorf("hasUnit(%v) = %v, want %v", unit, got, want)
+		}
+	}
+	legacy := NewProduct{BaseUnitID: base, PurchaseUnitID: &carton}
+	if !legacy.hasUnit(carton) || legacy.hasUnit(pack) {
+		t.Error("without units only the base and purchase units count")
+	}
+}
+
+func TestCreateProductWithUnitsBuysInTheLineUnit(t *testing.T) {
+	base, pack, carton := uuid.New(), uuid.New(), uuid.New()
+	units := []NewProductUnit{{UnitID: pack, Factor: ptr("50")}, {UnitID: carton, Factor: ptr("500")}}
+	price := vnd("240000")
+	cases := []struct {
+		name   string
+		unitID *uuid.UUID
+		want   uuid.UUID
+	}{
+		{"a line in the base unit", nil, base},
+		{"a line in a unit of the table", &pack, pack},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cat := &fakeCatalog{sku: uuid.New()}
+			s := &Service{catalog: cat}
+			_, unit, err := s.createProduct(context.Background(), nil, audit.Actor{}, 0,
+				NewProduct{Name: "Kẹo X", BaseUnitID: base, Units: units}, c.unitID, &price)
+			if err != nil || unit != c.want {
+				t.Fatalf("createProduct unit = %v, %v, want %v", unit, err, c.want)
+			}
+			got := cat.created[0]
+			if got.PurchaseUnitID == nil || *got.PurchaseUnitID != c.want {
+				t.Errorf("purchase unit = %v, want %v", got.PurchaseUnitID, c.want)
+			}
+			if got.PurchasePrice == nil || !got.PurchasePrice.Equal(price) {
+				t.Errorf("purchase price = %v, want %v", got.PurchasePrice, price)
+			}
+		})
 	}
 }
