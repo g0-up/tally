@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useApiClient } from "../../../shared/api/api-context";
 import { errorMessage } from "../../../shared/api/api-error";
 import { toMoney } from "../../../shared/domain/money";
@@ -18,7 +18,7 @@ import { LinkButton } from "../../../shared/ui/link-button";
 import { MoneyInput } from "../../../shared/ui/money-input";
 import { QtyInput } from "../../../shared/ui/qty-input";
 import { toast } from "../../../shared/ui/toast-store";
-import { baseUnitName, lookupSkuCode, useSkuPicker, useUnits, type SkuCodeMatch } from "../../catalog";
+import { baseUnitName, lookupSkuCode, UnitPriceTable, useSkuPicker, useUnits, type SkuCodeMatch, type UnitTable } from "../../catalog";
 import { NOT_ACCEPTING, PhonePairingCard, useScanTarget, type ScanHandler } from "../../scanner";
 import { PROCUREMENT_MESSAGES } from "../api/adapters";
 import {
@@ -26,11 +26,15 @@ import {
   emptyBuyLine,
   isBuyable,
   lineAmount,
+  lineFactor,
   lineName,
+  lineUnitErrors,
   newProductLine,
+  newProductUnit,
   scanNewProduct,
   tracksExpiry,
   tracksLot,
+  withNewProductUnits,
   withSku,
   withUnit,
   type BarcodeError,
@@ -182,99 +186,120 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false, bar
 
   const swatches = (l: BuyLine, i: number) => <ColorSwatchGroup value={l.color} onChange={(color) => set(i, { ...l, color })} label={rowLabel("Màu sắc", l, i)} />;
 
+  /**
+   * A change from a new product's unit table, applied to the latest rows: a unit created in the
+   * directory lands after the server answers, when the rows may have moved on.
+   */
+  const patchTable = (key: string, patch: Partial<UnitTable>) => {
+    const next = latest.current.map((l) => {
+      if (l.key !== key) return l;
+      return {
+        ...withNewProductUnits(l, patch.units ?? l.units),
+        baseUnitId: patch.baseUnitId === undefined ? l.baseUnitId : patch.baseUnitId,
+        sell: patch.retailPrice === undefined ? l.sell : patch.retailPrice,
+        wholesale: patch.wholesalePrice === undefined ? l.wholesale : patch.wholesalePrice,
+      };
+    });
+    latest.current = next;
+    onChange(next);
+  };
+
   const newRow = (l: BuyLine, i: number) => {
     const base = units.name(l.baseUnitId);
-    const big = l.bigUnitId !== null && l.bigUnitId !== l.baseUnitId ? l.bigUnitId : null;
-    const unitName = l.inBig && big !== null ? units.name(big) : base;
-    const factor = l.inBig && big !== null ? dec(l.factor ?? 0) : dec(1);
+    const unit = newProductUnit(l);
+    const factor = lineFactor(l);
+    const picked = l.units.filter((u) => u.unitId !== null);
+    const named = l.units.filter((u) => u.unitName.trim() !== "").length;
+    const toggleId = `bp-ut-tg-${l.key}`;
+    const tableId = `bp-ut-row-${l.key}`;
     return (
-      <tr key={l.key} className="bp-new">
-        <td style={{ minWidth: 260 }}>
-          <div className="bp-name">
-            <Input value={l.name} onChange={(e) => set(i, { ...l, name: e.target.value })} placeholder="Tên hàng hóa mới" aria-label="Tên hàng mới" autoFocus={l.key === created} />
-            <span className="tag">Hàng mới</span>
-          </div>
-          <div className="bp-units">
-            <span>
-              ĐV cơ sở
-              <select
-                className="in"
-                style={{ width: 88 }}
-                value={l.baseUnitId ?? ""}
-                onChange={(e) => {
-                  const id = e.target.value === "" ? null : e.target.value;
-                  set(i, { ...l, baseUnitId: id, inBig: l.inBig && l.bigUnitId !== null && l.bigUnitId !== id });
-                }}
-                aria-label={rowLabel("Đơn vị cơ sở", l, i)}
-              >
-                <option value="">ĐV cơ sở</option>
-                {units.active.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-            </span>
-            <span>
-              Quy đổi 1
-              <select
-                className="in"
-                style={{ width: 88 }}
-                value={l.bigUnitId ?? ""}
-                onChange={(e) => {
-                  const id = e.target.value === "" ? null : e.target.value;
-                  set(i, { ...l, bigUnitId: id, inBig: l.inBig && id !== null && id !== l.baseUnitId });
-                }}
-                aria-label={rowLabel("Đơn vị lớn", l, i)}
-              >
-                <option value="">ĐV lớn</option>
-                {units.active.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-              =
-              <QtyInput size="sm" style={{ width: 56 }} value={l.factor} onChange={(factor) => set(i, { ...l, factor })} placeholder="hệ số" aria-label={rowLabel("Hệ số quy đổi", l, i)} />
-              {base}
-            </span>
-            {barcodeInput(l, i)}
-          </div>
-          <div style={{ marginTop: 6, fontSize: 12 }}>
-            <Checkbox label="Quản lý lô/hạn" aria-label={rowLabel("Quản lý lô/hạn", l, i)} checked={l.trackLot} onChange={(e) => set(i, { ...l, trackLot: e.target.checked })} />
-          </div>
-          {swatches(l, i)}
-        </td>
-        <td>
-          <select className="in" style={{ minWidth: 96 }} value={l.inBig && big !== null ? "big" : "base"} onChange={(e) => set(i, { ...l, inBig: e.target.value === "big" })} aria-label={rowLabel("Đơn vị tính", l, i)}>
-            <option value="base">{base || "ĐVT"}</option>
-            {big !== null ? <option value="big">{units.name(big)}</option> : null}
-          </select>
-        </td>
-        <td className="num">
-          <QtyInput size="sm" value={l.qty} onChange={(qty) => set(i, { ...l, qty })} aria-label={rowLabel("Số lượng", l, i)} />
-          {factor.gt(1) ? (
-            <CellSub>
-              = {num(dec(l.qty ?? 0).times(factor))} {base}
-            </CellSub>
-          ) : null}
-        </td>
-        {spec(l, i)}
-        <td className="num">
-          <MoneyInput size="md" value={l.price} onChange={(price) => set(i, { ...l, price })} aria-label={rowLabel("Đơn giá", l, i)} />
-          <CellSub>/{unitName || "ĐVT"}</CellSub>
-        </td>
-        <td className="num amt">{money(lineAmount(l))}</td>
-        <td className="num">
-          <MoneyInput size="md" value={l.sell} onChange={(sell) => set(i, { ...l, sell })} placeholder={`/${base || "ĐV"}`} aria-label={rowLabel("Giá bán lẻ", l, i)} />
-        </td>
-        {lot(l, i)}
-        <td>
-          <LinkButton onClick={() => remove(i)} aria-label={rowLabel("Xóa", l, i)}>
-            Xóa
-          </LinkButton>
-        </td>
-      </tr>
+      <Fragment key={l.key}>
+        <tr className="bp-new">
+          <td style={{ minWidth: 260 }}>
+            <div className="bp-name">
+              <Input value={l.name} onChange={(e) => set(i, { ...l, name: e.target.value })} placeholder="Tên hàng hóa mới" aria-label="Tên hàng mới" autoFocus={l.key === created} />
+              <span className="tag">Hàng mới</span>
+            </div>
+            <div className="bp-units">
+              <span>
+                ĐV cơ sở
+                <select
+                  className="in"
+                  style={{ width: 88 }}
+                  value={l.baseUnitId ?? ""}
+                  onChange={(e) => {
+                    const id = e.target.value === "" ? null : e.target.value;
+                    set(i, { ...l, baseUnitId: id, unitId: l.unitId === id ? null : l.unitId });
+                  }}
+                  aria-label={rowLabel("Đơn vị cơ sở", l, i)}
+                >
+                  <option value="">ĐV cơ sở</option>
+                  {units.active.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </span>
+              <LinkButton id={toggleId} onClick={() => set(i, { ...l, showUnits: !l.showUnits })} aria-expanded={l.showUnits} aria-controls={l.showUnits ? tableId : undefined}>
+                Đơn vị &amp; giá… ({named + 1} đơn vị)
+              </LinkButton>
+              {barcodeInput(l, i)}
+            </div>
+            <div style={{ marginTop: 6, fontSize: 12 }}>
+              <Checkbox label="Quản lý lô/hạn" aria-label={rowLabel("Quản lý lô/hạn", l, i)} checked={l.trackLot} onChange={(e) => set(i, { ...l, trackLot: e.target.checked })} />
+            </div>
+            {swatches(l, i)}
+          </td>
+          <td>
+            <select className="in" style={{ minWidth: 96 }} value={l.unitId ?? ""} onChange={(e) => set(i, { ...l, unitId: e.target.value === "" ? null : e.target.value })} aria-label={rowLabel("Đơn vị tính", l, i)}>
+              <option value="">{base || "ĐVT"}</option>
+              {picked.map((u) => (
+                <option key={u.key} value={u.unitId ?? ""}>
+                  {u.unitName}
+                </option>
+              ))}
+            </select>
+          </td>
+          <td className="num">
+            <QtyInput size="sm" value={l.qty} onChange={(qty) => set(i, { ...l, qty })} aria-label={rowLabel("Số lượng", l, i)} />
+            {factor.gt(1) ? (
+              <CellSub>
+                = {num(dec(l.qty ?? 0).times(factor))} {base}
+              </CellSub>
+            ) : null}
+          </td>
+          {spec(l, i)}
+          <td className="num">
+            <MoneyInput size="md" value={l.price} onChange={(price) => set(i, { ...l, price })} aria-label={rowLabel("Đơn giá", l, i)} />
+            <CellSub>/{(unit?.unitName ?? base) || "ĐVT"}</CellSub>
+          </td>
+          <td className="num amt">{money(lineAmount(l))}</td>
+          <td className="num">
+            <MoneyInput size="md" value={l.sell} onChange={(sell) => set(i, { ...l, sell })} aria-label={rowLabel("Giá bán lẻ", l, i)} />
+            <CellSub>/{base || "ĐV"}</CellSub>
+          </td>
+          {lot(l, i)}
+          <td>
+            <LinkButton onClick={() => remove(i)} aria-label={rowLabel("Xóa", l, i)}>
+              Xóa
+            </LinkButton>
+          </td>
+        </tr>
+        {l.showUnits ? (
+          <tr className="bp-new" id={tableId}>
+            <td colSpan={receive ? 9 : 8}>
+              <UnitPriceTable
+                value={{ baseUnitId: l.baseUnitId, retailPrice: l.sell, wholesalePrice: l.wholesale, units: l.units }}
+                onChange={(patch) => patchTable(l.key, patch)}
+                errors={l.unitsChecked ? lineUnitErrors(l) : {}}
+                baseUnitName={base}
+                purchaseUnitId={l.unitId}
+              />
+            </td>
+          </tr>
+        ) : null}
+      </Fragment>
     );
   };
 

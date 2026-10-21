@@ -8,6 +8,7 @@ import { server } from "../../../test/msw/server";
 import { renderWithProviders } from "../../../test/render";
 import { createFakeStreams } from "../../scanner/testing/fake-event-stream";
 import { memorySessionStore, pairedStream, withScanner } from "../../scanner/testing/scanner-harness";
+import { UNIT_MESSAGES } from "../../catalog";
 import { PROCUREMENT_MESSAGES } from "../api/adapters";
 import { SUPPLIER_ID, TEST_UNITS, UNIT_HOP, UNIT_THUNG, testSku } from "../testing/fixtures";
 import { NewPoDialog } from "./new-po-dialog";
@@ -60,7 +61,7 @@ describe("NewPoDialog", () => {
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toMatchObject({
       supplier_party_id: SUPPLIER_ID,
-      lines: [{ unit_id: UNIT_THUNG, new_product: { name: "Kẹo dẻo", base_unit_id: UNIT_HOP, purchase_unit_id: UNIT_THUNG, factor: "12", barcode: "8936000111222" } }],
+      lines: [{ unit_id: UNIT_THUNG, new_product: { name: "Kẹo dẻo", base_unit_id: UNIT_HOP, units: [{ unit_id: UNIT_THUNG, factor: "12" }], purchase_unit_id: UNIT_THUNG, barcode: "8936000111222" } }],
     });
 
     const barcode = within(dialog).getByRole("textbox", { name: "Mã vạch – Kẹo dẻo" });
@@ -83,6 +84,28 @@ describe("NewPoDialog", () => {
     expect(await screen.findByText(PROCUREMENT_MESSAGES.barcodeShared("8936000111222"), { exact: false })).toBeInTheDocument();
     expect(sent).toHaveLength(0);
   });
+
+  it("opens a new product's unit table with its errors marked when the order is refused for it", async () => {
+    const sent = serveOrder(() => HttpResponse.json({ id: "po-7", doc_no: "PO-0007", version: 1, status: "draft" }, { status: 201 }));
+    const { user, dialog } = await renderDialog();
+    await addNewProduct(user, dialog, "Kẹo dẻo", "8936000111222");
+    const toggle = within(dialog).getByRole("button", { name: "Đơn vị & giá… (2 đơn vị)" });
+    await user.click(toggle);
+    await user.clear(within(dialog).getByRole("textbox", { name: "Quy đổi: 1 thùng bằng bao nhiêu hộp" }));
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(within(dialog).getByRole("button", { name: "Lưu nháp" }));
+    // The toast and the field both say it.
+    await waitFor(() => expect(screen.getAllByText(UNIT_MESSAGES.factor)).toHaveLength(2));
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const factor = within(dialog).getByRole("textbox", { name: "Quy đổi: 1 thùng bằng bao nhiêu hộp" });
+    expect(factor).toHaveAttribute("aria-invalid", "true");
+    expect(factor).toHaveAccessibleDescription(UNIT_MESSAGES.factor);
+    await waitFor(() => expect(factor).toHaveFocus());
+    expect(sent).toHaveLength(0);
+  });
+
   it("turns a phone's code away while the order is being saved, and adds no row", async () => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => {

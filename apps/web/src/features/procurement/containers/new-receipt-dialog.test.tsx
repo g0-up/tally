@@ -452,7 +452,7 @@ describe("NewReceiptDialog", () => {
             unit_id: UNIT_HOP,
             qty: "1",
             unit_price: "96000",
-            new_product: { name: "Kẹo dẻo", base_unit_id: UNIT_HOP, purchase_unit_id: UNIT_THUNG, factor: "12", track_lot: false, barcode: "8936000111222" },
+            new_product: { name: "Kẹo dẻo", base_unit_id: UNIT_HOP, units: [{ unit_id: UNIT_THUNG, factor: "12" }], purchase_unit_id: UNIT_HOP, track_lot: false, barcode: "8936000111222" },
           },
         ],
       },

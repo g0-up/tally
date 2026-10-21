@@ -7,6 +7,8 @@ import {
   addScan,
   barcodeErrors,
   emptyBuyLine,
+  lineFactor,
+  lineUnitErrors,
   newProductCount,
   newProductLine,
   orderBuyLine,
@@ -15,10 +17,12 @@ import {
   receiptLinesRequest,
   scannedNewLine,
   sellChanges,
+  withNewProductUnits,
   withSku,
   withUnit,
   type BuyLine,
 } from "./buy-lines";
+import { UNIT_MESSAGES, unitRow } from "../catalog";
 import { UNIT_HOP as HOP, UNIT_THUNG as THUNG, testOrderLine, testSku as sku } from "./testing/fixtures";
 
 const noColor = () => null;
@@ -57,7 +61,15 @@ describe("orderLinesRequest", () => {
     expect(orderLinesRequest([line], noColor)).toEqual({ ok: false, message: "Kẹo dẻo: nhập giá nhập." });
   });
 
-  it("sends a new product bought by the big unit with its conversion and retail price", () => {
+  it("moves a new product bought by a removed unit to its base unit, converting quantity and price", () => {
+    const line = { ...named(newProductLine(unitIdByName), "Kẹo dẻo", 96000), qty: toQty(3) };
+    expect(line.unitId).toBe(THUNG);
+    const renamed = withNewProductUnits(line, line.units.map((u) => ({ ...u, factor: toQty(12) })));
+    expect(renamed).toMatchObject({ unitId: THUNG, qty: "3", price: "96000" });
+    expect(withNewProductUnits(line, [])).toMatchObject({ unitId: null, units: [], qty: "36", price: "8000" });
+  });
+
+  it("sends a new product bought by its thùng with its unit table and retail price", () => {
     const line = { ...named(newProductLine(unitIdByName), "Kẹo dẻo", 96000), qty: toQty(3), sell: toMoney(10000) };
     const built = orderLinesRequest([line], noColor);
     expect(built).toEqual({
@@ -69,10 +81,63 @@ describe("orderLinesRequest", () => {
           qty: "3",
           unit_price: "96000",
           discount_amount: "0",
-          new_product: { name: "Kẹo dẻo", base_unit_id: HOP, purchase_unit_id: THUNG, factor: "12", track_lot: true, retail_price: "10000" },
+          new_product: { name: "Kẹo dẻo", base_unit_id: HOP, units: [{ unit_id: THUNG, factor: "12" }], purchase_unit_id: THUNG, track_lot: true, retail_price: "10000" },
         },
       ],
     });
+  });
+
+  it("buys a new product in any unit of its table and sends that unit as the purchase unit", () => {
+    const loc = unitRow({ unitId: "unit-loc", unitName: "lốc", factor: toQty(6), retail: toMoney(55000) });
+    const base = named(newProductLine(unitIdByName), "Kẹo dẻo", 54000);
+    const line = { ...base, units: [...base.units, loc], unitId: "unit-loc", qty: toQty(2) };
+    expect(lineFactor(line).toString()).toBe("6");
+    const built = orderLinesRequest([line], noColor);
+    expect(built.ok && built.lines[0]).toMatchObject({
+      unit_id: "unit-loc",
+      qty: "2",
+      new_product: {
+        units: [
+          { unit_id: THUNG, factor: "12" },
+          { unit_id: "unit-loc", factor: "6", retail_price: "55000" },
+        ],
+        purchase_unit_id: "unit-loc",
+      },
+    });
+  });
+
+  it("sends a new product without conversion units in its base unit, with its wholesale price", () => {
+    const line = { ...named(newProductLine(unitIdByName), "Kẹo dẻo", 9000), units: [], unitId: null, sell: toMoney(10000), wholesale: toMoney(9500) };
+    const built = orderLinesRequest([line], noColor);
+    expect(built.ok && built.lines[0]).toEqual({
+      unit_id: HOP,
+      qty: "1",
+      unit_price: "9000",
+      discount_amount: "0",
+      new_product: { name: "Kẹo dẻo", base_unit_id: HOP, track_lot: true, retail_price: "10000", wholesale_price: "9500" },
+    });
+  });
+
+  it("opens the unit table of a new product with errors, marks them and refuses with the first", () => {
+    const base = named(newProductLine(unitIdByName), "Kẹo dẻo", 96000);
+    const bad = { ...base, units: [...base.units, unitRow({ unitId: THUNG, unitName: "thùng", factor: toQty(0) })] };
+    const unused = { ...newProductLine(unitIdByName), qty: toQty(0), units: [unitRow()] };
+    expect(lineUnitErrors(bad)).toEqual({ "units.1.unit": UNIT_MESSAGES.duplicate("thùng"), "units.1.factor": UNIT_MESSAGES.factor });
+    for (const build of [orderLinesRequest, receiptLinesRequest]) {
+      const refused = build([bad, unused], noColor);
+      expect(refused).toMatchObject({ ok: false, message: UNIT_MESSAGES.duplicate("thùng") + UNIT_MESSAGES.more(1) });
+      const rows = refused.ok ? [] : (refused.rows ?? []);
+      expect(rows.map((l) => [l.showUnits, l.unitsChecked])).toEqual([
+        [true, true],
+        [false, false],
+      ]);
+    }
+  });
+
+  it("leaves the base unit of a new product to the row's own check", () => {
+    const line = { ...named(newProductLine(unitIdByName), "Kẹo dẻo", 96000), baseUnitId: null };
+    expect(lineUnitErrors(line)).toEqual({});
+    expect(orderLinesRequest([line], noColor)).toEqual({ ok: false, message: PROCUREMENT_MESSAGES.newProductUnit("Kẹo dẻo") });
   });
 
   it("sends an existing SKU with its unit, color and spec", () => {
@@ -134,14 +199,15 @@ describe("new products with a barcode", () => {
 
   it("opens a scanned code as a new product bought by its base unit, the code as its barcode", () => {
     const line = scannedNewLine(" 8936000111222 ", unitIdByName);
-    expect(line).toMatchObject({ isNew: true, barcode: "8936000111222", baseUnitId: HOP, bigUnitId: THUNG, factor: "12", inBig: false, trackLot: true, qty: "1" });
+    expect(line).toMatchObject({ isNew: true, barcode: "8936000111222", baseUnitId: HOP, unitId: null, trackLot: true, qty: "1" });
+    expect(line.units).toMatchObject([{ unitId: THUNG, unitName: "thùng", factor: "12" }]);
   });
 
   it("sends the trimmed barcode of a new product, and none when it is blank", () => {
     const built = orderLinesRequest([{ ...scanned("8936000111222", "Kẹo dẻo"), barcode: " 8936000111222 " }, scanned("  ", "Kẹo gừng")], noColor);
     expect(built.ok && built.lines.map((l) => l.new_product)).toEqual([
-      { name: "Kẹo dẻo", base_unit_id: HOP, purchase_unit_id: THUNG, factor: "12", track_lot: true, barcode: "8936000111222" },
-      { name: "Kẹo gừng", base_unit_id: HOP, purchase_unit_id: THUNG, factor: "12", track_lot: true },
+      { name: "Kẹo dẻo", base_unit_id: HOP, units: [{ unit_id: THUNG, factor: "12" }], purchase_unit_id: HOP, track_lot: true, barcode: "8936000111222" },
+      { name: "Kẹo gừng", base_unit_id: HOP, units: [{ unit_id: THUNG, factor: "12" }], purchase_unit_id: HOP, track_lot: true },
     ]);
   });
 
@@ -206,8 +272,8 @@ describe("addScan", () => {
     expect(again.created).toBeUndefined();
   });
 
-  it("leaves a new product bought by its big unit to the desktop", () => {
-    const line = { ...scannedNewLine("8936000111222", unitIdByName), inBig: true };
+  it("leaves a new product bought by a larger unit to the desktop", () => {
+    const line = { ...scannedNewLine("8936000111222", unitIdByName), unitId: THUNG };
     expect(addScan([line], "8936000111222", null, opts)).toEqual({ lines: null, outcome: { outcome: "needs_desktop_edit" } });
   });
 

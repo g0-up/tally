@@ -3,6 +3,7 @@ import type { Money } from "../../../shared/domain/money";
 import { dec } from "../../../shared/lib/decimal";
 import { vnd } from "../../../shared/lib/format";
 import { CLOSE_UNSETTLED_MESSAGE } from "../../../shared/hooks/create-once";
+import { useFocusFirstInvalid } from "../../../shared/hooks/use-focus-first-invalid";
 import { CommitDialog } from "../../../shared/ui/commit-dialog";
 import { Field } from "../../../shared/ui/field";
 import { FormGrid } from "../../../shared/ui/form-grid";
@@ -82,6 +83,7 @@ function ReceiptForm({ order, initial, onClose }: ReceiptFormProps) {
   const [invoiceNo, setInvoiceNo] = useState("");
   const [freight, setFreight] = useState<Money | null>(null);
   const [lines, setLines] = useState<BuyLine[]>(initial);
+  const focusFirstInvalid = useFocusFirstInvalid();
   const [quick, setQuick] = useState(false);
   const post = usePostReceipt(onClose);
   /** Lines of the last post, so a refused barcode shows under the row that sent it. */
@@ -100,6 +102,11 @@ function ReceiptForm({ order, initial, onClose }: ReceiptFormProps) {
     const built = receiptLinesRequest(lines, colors.idOf);
     if (!built.ok) {
       toast.commitError(built.message);
+      // A refused unit table opens under its row with the errors marked.
+      if (built.rows) {
+        setLines(built.rows);
+        focusFirstInvalid();
+      }
       return;
     }
     setSent({ lines: built, before: post.error });

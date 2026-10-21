@@ -4,9 +4,11 @@ import { toMoney, type Money } from "../../shared/domain/money";
 import { toQty, type Qty } from "../../shared/domain/qty";
 import type { ScanOutcome } from "../../shared/lib/barcode";
 import { dec, sumDec, type Decimal } from "../../shared/lib/decimal";
-import { baseUnitName, defaultPurchaseUnit, type SkuCodeMatch, type SkuListItem } from "../catalog";
+import { baseUnitName, defaultPurchaseUnit, firstProductError, initialUnitTable, unitsRequest, unitTableErrors, type SkuCodeMatch, type SkuListItem, type UnitRow } from "../catalog";
 import { PROCUREMENT_MESSAGES } from "./api/adapters";
 import type { OrderLine } from "./schemas";
+
+type NewSkuUnit = ReturnType<typeof unitsRequest>[number];
 
 // The line table of Đơn nhập and Nhận hàng (prototype `buyEditor`, `buyOnChange`, `buyLines`,
 // `receive`): a row is an existing SKU, an inline new product, or — when receiving against an
@@ -35,16 +37,18 @@ export interface BuyLine {
   key: string;
   /** Existing SKU; null on an empty row and on a new product. */
   sku: SkuListItem | null;
-  /** Unit of an existing SKU the quantity and price are in. */
+  /** Unit the quantity and price are in: of an existing SKU, or a unit row of a new product (null = its base unit). */
   unitId: string | null;
   isNew: boolean;
   /** New product: name, units and lot tracking. */
   name: string;
   baseUnitId: string | null;
-  bigUnitId: string | null;
-  factor: Qty | null;
-  /** New product bought in its big unit rather than the base unit. */
-  inBig: boolean;
+  /** New product: its conversion units with their own prices (the unit table under the row). */
+  units: UnitRow[];
+  /** New product: the unit table is open under the row. */
+  showUnits: boolean;
+  /** New product: a submit found errors in its unit table, which then shows them. */
+  unitsChecked: boolean;
   trackLot: boolean;
   /** New product: barcode of its base unit, blank for none. */
   barcode: string;
@@ -53,6 +57,8 @@ export interface BuyLine {
   price: Money | null;
   /** "Giá bán lẻ" of one base unit. */
   sell: Money | null;
+  /** New product: "Giá sỉ" of one base unit. */
+  wholesale: Money | null;
   spec: string;
   color: ColorCode | null;
   lotNo: string;
@@ -74,14 +80,15 @@ const BLANK: Omit<BuyLine, "key"> = {
   isNew: false,
   name: "",
   baseUnitId: null,
-  bigUnitId: null,
-  factor: null,
-  inBig: false,
+  units: [],
+  showUnits: false,
+  unitsChecked: false,
   trackLot: false,
   barcode: "",
   qty: toQty(1),
   price: toMoney(0),
   sell: null,
+  wholesale: null,
   spec: "",
   color: null,
   lotNo: "",
@@ -97,16 +104,14 @@ export function emptyBuyLine(): BuyLine {
 
 /** "+ Hàng hóa mới": prototype defaults (hộp, thùng = 12, bought by the thùng, lot tracked). */
 export function newProductLine(unitIdByName: (name: string) => string | null): BuyLine {
-  const base = unitIdByName("hộp");
-  const big = unitIdByName("thùng");
+  const table = initialUnitTable(unitIdByName);
   return {
     ...BLANK,
     key: nextKey(),
     isNew: true,
-    baseUnitId: base,
-    bigUnitId: big,
-    factor: toQty(12),
-    inBig: big !== null,
+    baseUnitId: table.baseUnitId,
+    units: table.units,
+    unitId: table.units[0]?.unitId ?? null,
     trackLot: true,
     sell: toMoney(0),
   };
@@ -117,7 +122,7 @@ export function newProductLine(unitIdByName: (name: string) => string | null): B
  * with the code as its barcode, bought by the base unit so each further scan of it adds one.
  */
 export function scannedNewLine(code: string, unitIdByName: (name: string) => string | null): BuyLine {
-  return { ...newProductLine(unitIdByName), barcode: code.trim(), inBig: false };
+  return { ...newProductLine(unitIdByName), barcode: code.trim(), unitId: null };
 }
 
 /** Goods and materials are bought; kits and combos are not. */
@@ -170,8 +175,37 @@ export function lineName(line: BuyLine, fallback = ""): string {
 /** Base units in one unit of the row. */
 export function lineFactor(line: BuyLine): Decimal {
   if (line.order) return dec(1);
-  if (line.isNew) return line.inBig ? dec(line.factor ?? 0) : dec(1);
+  if (line.isNew) {
+    const row = newProductUnit(line);
+    return row ? dec(row.factor ?? 0) : dec(1);
+  }
   return line.sku ? unitFactor(line.sku, line.unitId) : dec(1);
+}
+
+/** The unit row a new-product row is counted in; undefined for its base unit. */
+export function newProductUnit(line: BuyLine): UnitRow | undefined {
+  return line.unitId === null ? undefined : line.units.find((u) => u.unitId === line.unitId);
+}
+
+/**
+ * A new-product row with a changed unit table. The row keeps counting in its unit while that unit
+ * stays in the table (followed when its name is changed). When the unit is removed, the row moves to
+ * the base unit with its quantity and price converted, so the line still buys the same goods.
+ */
+export function withNewProductUnits(line: BuyLine, units: UnitRow[]): BuyLine {
+  const was = newProductUnit(line);
+  if (was === undefined) return { ...line, units, unitId: null };
+  const kept = units.find((u) => u.key === was.key);
+  if (kept !== undefined) return { ...line, units, unitId: kept.unitId };
+  const factor = dec(was.factor ?? 0);
+  if (!factor.gt(0)) return { ...line, units, unitId: null };
+  return {
+    ...line,
+    units,
+    unitId: null,
+    qty: line.qty === null ? null : toQty(dec(line.qty).times(factor)),
+    price: line.price === null ? null : toMoney(dec(line.price).div(factor)),
+  };
 }
 
 /** "Thành tiền" of a row (quantity × unit price). */
@@ -253,7 +287,7 @@ function placeRow(lines: readonly BuyLine[], row: BuyLine): BuyLine[] {
 
 /**
  * A code a new-product row already carries (exact match): one more in the base unit, or nothing
- * when that row is bought by its big unit, which only the desktop can change. Null when no
+ * when that row is bought by a larger unit, which only the desktop can change. Null when no
  * new-product row carries it.
  */
 export function scanNewProduct(lines: readonly BuyLine[], code: string): ScanStep | null {
@@ -261,7 +295,7 @@ export function scanNewProduct(lines: readonly BuyLine[], code: string): ScanSte
   const i = wanted === "" ? -1 : lines.findIndex((l) => l.isNew && l.barcode.trim() === wanted);
   const row = lines[i];
   if (row === undefined) return null;
-  if (row.inBig) return { lines: null, outcome: { outcome: "needs_desktop_edit" } };
+  if (row.unitId !== null) return { lines: null, outcome: { outcome: "needs_desktop_edit" } };
   return { lines: changeRow(lines, i, (l) => plusQty(l, 1)), outcome: { outcome: "new_product" } };
 }
 
@@ -295,16 +329,20 @@ export function addScan(lines: readonly BuyLine[], code: string, found: Pick<Sku
 
 /* ---------- request bodies ---------- */
 
-/** Request lines built from the rows, with the key of the row each one came from. */
-export type Built<T> = { ok: true; lines: T[]; keys: string[] } | { ok: false; message: string };
+/**
+ * Request lines built from the rows, with the key of the row each one came from; or why they cannot
+ * be, with the rows to show when the refusal is in a new product's unit table (opened under its row).
+ */
+export type Built<T> = { ok: true; lines: T[]; keys: string[] } | { ok: false; message: string; rows?: BuyLine[] };
 
 export interface NewProductRequest {
   name: string;
   base_unit_id: string;
   purchase_unit_id?: string;
-  factor?: Qty;
+  units?: NewSkuUnit[];
   track_lot: boolean;
   retail_price?: Money;
+  wholesale_price?: Money;
   barcode?: string;
 }
 
@@ -344,22 +382,52 @@ function common(line: BuyLine, colorIdOf: ColorIdOf) {
   return { ...(colorId === null ? {} : { color_id: colorId }), ...(spec === "" ? {} : { spec_text: spec }) };
 }
 
-/** The product a new-product row creates, and the unit its quantity is in; or the reason it cannot. */
+/** Errors of a new-product row's unit table; its base unit is picked on the row and checked with the row. */
+export function lineUnitErrors(line: BuyLine): Record<string, string> {
+  const { base_unit_id: _, ...errors } = unitTableErrors({ baseUnitId: line.baseUnitId, retailPrice: line.sell, wholesalePrice: line.wholesale, units: line.units });
+  return errors;
+}
+
+const inUse = (l: BuyLine) => l.isNew && (l.name.trim() !== "" || isPositive(l.qty));
+
+/**
+ * Prototype `buyLines` → `utCheck`: the new-product rows in use whose unit table has errors are
+ * opened with their errors shown, and the first error is the refusal. Null when every table is valid.
+ */
+function unitTableRefusal(lines: readonly BuyLine[]): { ok: false; message: string; rows: BuyLine[] } | null {
+  let message: string | undefined;
+  const rows = lines.map((l) => {
+    if (!inUse(l)) return l;
+    const errors = lineUnitErrors(l);
+    if (Object.keys(errors).length === 0) return l;
+    message ??= firstProductError(errors);
+    return { ...l, showUnits: true, unitsChecked: true };
+  });
+  return message === undefined ? null : { ok: false, message, rows };
+}
+
+/**
+ * The product a new-product row creates, and the unit its quantity is in; or the reason it cannot.
+ * With conversion units the line's unit (the base unit or one of the table's) is sent as the
+ * purchase unit, which is also what the API takes when it is omitted: the line's price becomes
+ * that unit's reference cost.
+ */
 function newProductOf(line: BuyLine): { product: NewProductRequest; unitId: string } | string {
   const name = line.name.trim();
   if (line.baseUnitId === null) return PROCUREMENT_MESSAGES.newProductUnit(name);
-  const big = line.bigUnitId !== null && line.bigUnitId !== line.baseUnitId ? line.bigUnitId : null;
-  if (big !== null && !isPositive(line.factor)) return PROCUREMENT_MESSAGES.factorPositive;
+  const units = unitsRequest(line.units);
+  const unitId = newProductUnit(line)?.unitId ?? line.baseUnitId;
   const barcode = line.barcode.trim();
   const product: NewProductRequest = {
     name,
     base_unit_id: line.baseUnitId,
     track_lot: line.trackLot,
-    ...(big !== null && line.factor !== null ? { purchase_unit_id: big, factor: line.factor } : {}),
+    ...(units.length > 0 ? { units, purchase_unit_id: unitId } : {}),
     ...(isPositive(line.sell) && line.sell !== null ? { retail_price: line.sell } : {}),
+    ...(isPositive(line.wholesale) && line.wholesale !== null ? { wholesale_price: line.wholesale } : {}),
     ...(barcode === "" ? {} : { barcode }),
   };
-  return { product, unitId: big !== null && line.inBig ? big : line.baseUnitId };
+  return { product, unitId };
 }
 
 /** The barcode two new products of a request carry, compared exactly; null when none is shared. */
@@ -381,10 +449,12 @@ function built<T extends { new_product?: NewProductRequest }>(lines: T[], keys: 
 }
 
 /**
- * Rows of a new order (prototype `buyLines`): empty rows are skipped, a new product needs its
- * price; an order without rows is refused, and so are two new products with one barcode.
+ * Rows of a new order (prototype `buyLines`): empty rows are skipped, a new product needs a valid
+ * unit table and its price; an order without rows is refused, and so are two new products with one barcode.
  */
 export function orderLinesRequest(lines: readonly BuyLine[], colorIdOf: ColorIdOf): Built<OrderLineRequest> {
+  const refused = unitTableRefusal(lines);
+  if (refused) return refused;
   const out: OrderLineRequest[] = [];
   const keys: string[] = [];
   for (const l of lines) {
@@ -429,14 +499,17 @@ function inOrderUnit(baseQty: Decimal, ref: OrderRef): Qty | null {
 }
 
 /**
- * Rows of a receipt (prototype `buyLines` then `receive`): new products need a price, at least one
+ * Rows of a receipt (prototype `buyLines` then `receive`): new products need a valid unit table
+ * and a price, at least one
  * row must carry a quantity, tracked SKUs need lot and expiry, and an ordered line may be received
  * up to 5% over what is pending — the part above pending is sent as excess of the same line. Two
  * new products with one barcode are refused.
  */
 export function receiptLinesRequest(lines: readonly BuyLine[], colorIdOf: ColorIdOf): Built<ReceiptLineRequest> {
+  const refused = unitTableRefusal(lines);
+  if (refused) return refused;
   for (const l of lines) {
-    if (l.isNew && (l.name.trim() !== "" || isPositive(l.qty)) && !isPositive(l.price)) {
+    if (inUse(l) && !isPositive(l.price)) {
       return { ok: false, message: PROCUREMENT_MESSAGES.newProductPrice(l.name.trim()) };
     }
   }

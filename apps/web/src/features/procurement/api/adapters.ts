@@ -33,7 +33,6 @@ export const PROCUREMENT_MESSAGES = {
   newProductPrice: (name: string) => `${name || "Hàng mới"}: nhập giá nhập.`,
   newProductQty: (name: string) => `${name || "Hàng mới"}: nhập số lượng.`,
   newProductUnit: (name: string) => `${name || "Hàng mới"}: chọn đơn vị cơ sở.`,
-  factorPositive: "Hệ số quy đổi phải dương.",
   receiptEmpty: "Chưa nhập số lượng thực nhận.",
   lotRequired: (name: string) => `${name}: bắt buộc nhập số lô.`,
   expiryRequired: (name: string) => `${name}: bắt buộc nhập hạn dùng.`,

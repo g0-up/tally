@@ -4,6 +4,7 @@ import { addDays } from "../../../shared/lib/dates";
 import { vnd } from "../../../shared/lib/format";
 import { Button } from "../../../shared/ui/button";
 import { CLOSE_UNSETTLED_MESSAGE } from "../../../shared/hooks/create-once";
+import { useFocusFirstInvalid } from "../../../shared/hooks/use-focus-first-invalid";
 import { CommitDialog } from "../../../shared/ui/commit-dialog";
 import { DatePicker } from "../../../shared/ui/date-picker";
 import { Field } from "../../../shared/ui/field";
@@ -34,6 +35,7 @@ export function NewPoDialog({ supplier: preset = null, onClose }: NewPoDialogPro
   const [supplier, setSupplier] = useState<PickedSupplier | null>(preset);
   const [expected, setExpected] = useState<string | null>(() => addDays(today, DEFAULT_LEAD_DAYS));
   const [lines, setLines] = useState<BuyLine[]>(() => [emptyBuyLine()]);
+  const focusFirstInvalid = useFocusFirstInvalid();
   const [quick, setQuick] = useState(false);
   const save = useSaveOrder(onClose);
   /** Lines of the last save, so a refused barcode shows under the row that sent it. */
@@ -47,6 +49,11 @@ export function NewPoDialog({ supplier: preset = null, onClose }: NewPoDialogPro
     const built = orderLinesRequest(lines, colors.idOf);
     if (!built.ok) {
       toast.commitError(built.message);
+      // A refused unit table opens under its row with the errors marked.
+      if (built.rows) {
+        setLines(built.rows);
+        focusFirstInvalid();
+      }
       return;
     }
     setSent({ lines: built, before: save.error });

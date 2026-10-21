@@ -67,7 +67,8 @@ describe("BuyEditor", () => {
 
     expect(screen.getByText("Hàng mới", { selector: ".tag" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Đơn vị cơ sở – Hàng mới" })).toHaveValue(UNIT_HOP);
-    expect(screen.getByRole("combobox", { name: "Đơn vị lớn – Hàng mới" })).toHaveValue(UNIT_THUNG);
+    expect(screen.getByRole("combobox", { name: "Đơn vị tính – Hàng mới" })).toHaveValue(UNIT_THUNG);
+    expect(screen.getByRole("button", { name: "Đơn vị & giá… (2 đơn vị)" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("checkbox", { name: "Quản lý lô/hạn – Hàng mới" })).toBeChecked();
 
     await user.type(screen.getByRole("textbox", { name: "Tên hàng mới" }), "Kẹo dẻo");
@@ -76,6 +77,42 @@ describe("BuyEditor", () => {
 
     await user.click(screen.getByRole("button", { name: "Xóa – Kẹo dẻo" }));
     expect(screen.queryByRole("textbox", { name: "Tên hàng mới" })).not.toBeInTheDocument();
+  });
+
+  it("opens a new product's unit table under its row and buys in a unit added there", async () => {
+    const user = userEvent.setup();
+    server.use(http.post(apiUrl("/units"), async ({ request }) => HttpResponse.json({ id: "unit-loc", active: true, ...((await request.json()) as { name: string }) }, { status: 201 })));
+    const { platform } = renderEditor([]);
+    await waitFor(() => expect(platform.queryClient.getQueryState(["catalog", "lookup", "units"])?.status).toBe("success"));
+    await user.click(screen.getByRole("button", { name: "+ Hàng hóa mới" }));
+    await user.type(screen.getByRole("textbox", { name: "Tên hàng mới" }), "Kẹo dẻo");
+
+    const toggle = screen.getByRole("button", { name: "Đơn vị & giá… (2 đơn vị)" });
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const table = document.getElementById(toggle.getAttribute("aria-controls") ?? "");
+    if (table === null) throw new Error("unit table not open");
+    // The row counts in thùng, which the product will be bought by.
+    expect(within(table).getByText("Đơn vị nhập mặc định.")).toBeInTheDocument();
+    expect(screen.getByText("= 12 hộp")).toBeInTheDocument();
+
+    await user.click(within(table).getByRole("button", { name: "+ Thêm đơn vị" }));
+    await user.type(within(table).getByRole("combobox", { name: "Tên đơn vị 3" }), "lốc");
+    await user.click(await screen.findByRole("option", { name: "+ Tạo mới “lốc”" }));
+    await user.type(within(table).getByRole("textbox", { name: "Quy đổi: 1 lốc bằng bao nhiêu hộp" }), "6");
+    expect(await screen.findByRole("button", { name: "Đơn vị & giá… (3 đơn vị)" })).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Đơn vị tính – Kẹo dẻo" }), "unit-loc");
+    await user.clear(screen.getByRole("textbox", { name: "Số lượng – Kẹo dẻo" }));
+    await user.type(screen.getByRole("textbox", { name: "Số lượng – Kẹo dẻo" }), "3");
+    expect(screen.getByText("= 18 hộp")).toBeInTheDocument();
+    expect(screen.getByText("/lốc")).toBeInTheDocument();
+    expect(within(table).getByText("Đơn vị nhập mặc định.")).toBeInTheDocument();
+
+    // Removing the unit the row counts in puts the row back in the base unit.
+    await user.click(within(table).getByRole("button", { name: "Xóa đơn vị lốc" }));
+    expect(screen.getByRole("combobox", { name: "Đơn vị tính – Kẹo dẻo" })).toHaveValue("");
+    expect(screen.queryByText("/lốc")).not.toBeInTheDocument();
   });
 
   it("turns a search that finds nothing into a new product named after the typed text", async () => {
@@ -161,7 +198,7 @@ describe("BuyEditor", () => {
     expect(screen.getAllByRole("combobox", { name: "Đơn vị tính – Bánh quy bơ" }).map((el) => (el as HTMLSelectElement).value)).toEqual([UNIT_HOP, UNIT_THUNG]);
   });
 
-  it("opens an unknown code as a new product with that barcode, counts its rescans and leaves its big unit to the desktop", async () => {
+  it("opens an unknown code as a new product with that barcode, counts its rescans and leaves a larger unit to the desktop", async () => {
     const user = userEvent.setup();
     const { api, scan } = await renderEditorWithPhone([emptyBuyLine()]);
 
@@ -170,7 +207,7 @@ describe("BuyEditor", () => {
     expect(api.results[0]?.body).toEqual({ outcome: "new_product" });
     expect(screen.getByRole("textbox", { name: "Mã vạch – Hàng mới" })).toHaveValue(UNKNOWN_BARCODE);
     expect(screen.getByRole("textbox", { name: "Tên hàng mới" })).toHaveFocus();
-    expect(screen.getByRole("combobox", { name: "Đơn vị tính – Hàng mới" })).toHaveValue("base");
+    expect(screen.getByRole("combobox", { name: "Đơn vị tính – Hàng mới" })).toHaveValue("");
     expect(qtys("Hàng mới")).toEqual(["1"]);
 
     scan(UNKNOWN_BARCODE);
@@ -178,7 +215,7 @@ describe("BuyEditor", () => {
     expect(api.results[1]?.body).toEqual({ outcome: "new_product" });
     expect(qtys("Hàng mới")).toEqual(["2"]);
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Đơn vị tính – Hàng mới" }), "big");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Đơn vị tính – Hàng mới" }), UNIT_THUNG);
     scan(UNKNOWN_BARCODE);
     await waitFor(() => expect(api.results).toHaveLength(3));
     expect(api.results[2]?.body).toEqual({ outcome: "needs_desktop_edit" });
