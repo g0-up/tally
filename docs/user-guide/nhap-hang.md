@@ -17,6 +17,18 @@ Menu **Nhập hàng** gồm bốn màn hình: Đơn nhập, Danh sách hàng hó
 5. Trả tiền trước khi nhận hàng thì dùng **Ứng trước NCC** → **Ghi phiếu chi**. Khoản này là ứng trước, chưa phải giảm nợ.
    Hệ thống tự phân bổ khi phiếu nhận được ghi.
 
+## Hàng mới có nhiều đơn vị
+
+Trên dòng **+ Hàng hóa mới** của **Tạo đơn nhập** hoặc **Nhập nhanh**, bấm **Đơn vị & giá…** để mở bảng
+[Đơn vị tính & giá bán](danh-muc-bang-gia.md#hàng-hóa-danh-mục--hàng-hóa) ngay dưới dòng. Ví dụ hàng tính theo cái, thêm
+dây (1 dây = 50 cái) và thùng (1 thùng = 500 cái), mỗi đơn vị có giá lẻ và giá sỉ riêng hoặc để trống cho tự tính.
+
+- Ô **Đơn vị tính** của dòng chỉ đưa ra đơn vị cơ sở và các đơn vị trong bảng. Đơn vị bạn chọn ở đây thành **đơn vị nhập
+  mặc định** của hàng, và **Đơn giá** của dòng là giá nhập của một đơn vị đó.
+- Dưới **Số lượng** hiện số quy đổi ra đơn vị cơ sở. Ví dụ nhập 2 thùng thì hiện "= 1.000 cái". Khi phiếu nhận được ghi
+  sổ, tồn tăng đúng số đơn vị cơ sở đó.
+- Hàng mới chỉ được tạo khi chứng từ được lưu. Đóng hộp thoại mà không lưu thì không có hàng nào được tạo.
+
 ## Nhận hàng
 
 - **Nhập nhanh** dùng khi không có đơn nhập. Bạn chọn hàng có sẵn hoặc thêm hàng mới, nhập **Số hóa đơn NCC (nếu có)** và

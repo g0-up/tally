@@ -7,6 +7,12 @@ Bản 1.1 chỉ có **một kho**. Mọi số tồn đều được tính từ s
 ## Tồn kho
 
 - **Kho › Tồn kho** hiện tồn của từng hàng **theo màu**.
+- Dưới tên hàng có mã, đơn vị cơ sở và các đơn vị lớn đang dùng, ví dụ "ĐV cơ sở: cái · 1 dây = 50 cái · 1 thùng = 500
+  cái".
+- Số tồn luôn tính theo đơn vị cơ sở. Với hàng có đơn vị lớn, bên dưới số tồn hiện số đó quy ra các đơn vị lớn. Ví dụ
+  tồn 1.250 cái hiện thêm "= 2 thùng 5 dây". Tồn nhỏ hơn đơn vị lớn nhỏ nhất thì không hiện dòng quy đổi.
+- Sửa đơn vị và giá theo đơn vị ở **Danh mục › Hàng hóa** (xem [Danh mục và bảng giá](danh-muc-bang-gia.md)). Màn hình này
+  không có nút sửa đơn vị.
 - **Có thể bán** = tồn thực tế − hàng cách ly/hết hạn − hàng đang giữ cho hóa đơn.
 - **Sửa giá** → **Lưu giá màu** đặt giá riêng cho một màu.
 
@@ -34,6 +40,8 @@ Hai máy cùng bán một mặt hàng sẽ không bán vượt số có thể b�
    **Quét bằng điện thoại** của phiên (cách ghép đôi ở [Quét bằng điện thoại](ban-hang-pos.md#quét-bằng-điện-thoại)).
    - Mỗi lần quét cộng vào số thực đếm theo hệ số của đơn vị mang mã đó: mã của hộp cộng 1, mã của thùng 24 hộp cộng 24.
    - Tally tra mã trên máy chủ, nên khớp được mọi mã vạch của hàng (mã của hộp, mã của thùng) và cả mã hàng.
+   - Đổi hệ số của một đơn vị thì lần quét sau cộng theo hệ số mới. Số đã cộng trước đó giữ nguyên.
+   - Mã vạch của đơn vị đã **Ngừng dùng** không quét được nữa.
    - Hàng không thuộc phiên kiểm kê thì không được cộng, và màn hình báo mã đó không có trong phiên.
    - Khi phiên đã hoàn tất đếm, ô quét và ô ghép đôi ẩn đi. Điện thoại đã ghép đôi báo màn hình trên máy tính không
      nhận mã quét.
@@ -51,6 +59,9 @@ Hai máy cùng bán một mặt hàng sẽ không bán vượt số có thể b�
 ## Thẻ kho
 
 **Kho › Thẻ kho** hiện số đầu kỳ, từng lần nhập/xuất và số dư sau mỗi dòng của một mặt hàng. Số cuối khớp với Tồn kho.
+
+Ở **Hiển thị số lượng**, chọn **Quy đổi tự động** hoặc xem theo từng đơn vị, ví dụ **Theo dây** hay **Theo thùng**. Chỉ
+đơn vị đang dùng mới có trong danh sách này. Đơn vị đã **Ngừng dùng** không còn hiện.
 
 ## Giỏ quà và combo (Giỏ quà)
 
