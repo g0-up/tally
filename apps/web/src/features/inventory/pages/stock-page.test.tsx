@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { apiError, apiUrl } from "../../../test/msw/handlers";
 import { server } from "../../../test/msw/server";
 import { renderApp } from "../../../test/render";
-import { testSku } from "../../procurement/testing/fixtures";
+import { UNIT_THUNG, testSku } from "../../procurement/testing/fixtures";
 import { COLOR_BLUE, COLOR_RED, testColorStock, testStockRow } from "../testing/fixtures";
 
 const plain = testStockRow();
@@ -151,5 +151,33 @@ describe("Tồn kho page", () => {
     await user.click(within(dialog).getByRole("button", { name: "Ghi sổ điều chỉnh" }));
     expect(await screen.findByText("Đã ghi điều chỉnh.")).toBeInTheDocument();
     expect(body).toEqual({ kind: "damage", reason_id: "rsn-1", lines: [{ sku_id: "sku-1", qty: "2" }] });
+  });
+
+  it("sets a unit's own price from the sell-price dialog", async () => {
+    stockServer();
+    const bodies: unknown[] = [];
+    server.use(
+      http.get(apiUrl("/price-lists"), () => HttpResponse.json({ data: [] })),
+      http.get(apiUrl("/skus/sku-1/price-history"), () => HttpResponse.json({ data: [], next_cursor: null })),
+      http.post(apiUrl("/skus/sku-1/sale-price"), async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({ data: [] });
+      }),
+    );
+    const user = userEvent.setup();
+    renderApp("/inventory/stock");
+
+    await user.click(await screen.findByRole("button", { name: "Sửa giá – Bánh quy bơ" }));
+    const dialog = await screen.findByRole("dialog", { name: "Sửa giá bán · Bánh quy bơ" });
+    const carton = within(dialog).getByLabelText("Giá bán lẻ / thùng");
+    expect(carton).toHaveValue("");
+    expect(carton).toHaveAttribute("placeholder", "180.000 tự tính");
+    expect(dialog).toHaveTextContent("1 thùng = 12 hộp");
+
+    await user.type(carton, "170000");
+    await user.click(within(dialog).getByRole("button", { name: "Lưu giá" }));
+
+    await waitFor(() => expect(bodies).toEqual([{ kind: "retail", price: "170000", unit_id: UNIT_THUNG, source: "inventory" }]));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Sửa giá bán · Bánh quy bơ" })).not.toBeInTheDocument());
   });
 });

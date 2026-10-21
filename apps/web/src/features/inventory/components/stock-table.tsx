@@ -7,7 +7,7 @@ import { CellSub } from "../../../shared/ui/data-table/cell-sub";
 import { DataTable, type Column } from "../../../shared/ui/data-table/data-table";
 import { ExpandableName, SubRow } from "../../../shared/ui/data-table/expandable-row";
 import { TextLink } from "../../../shared/ui/link-button";
-import type { SkuListItem } from "../../catalog";
+import { autoConvertQty, unitFactorLine, type SkuListItem } from "../../catalog";
 import { colorKeyOf } from "../api/adapters";
 import { colorPriceKey, type ColorPrice, type ColorPriceMap } from "../api/queries";
 import type { ColorStock, StockRow } from "../schemas";
@@ -53,6 +53,12 @@ function priceRange(base: string | null, own: readonly ColorPrice[]) {
   );
 }
 
+/** "= 2 thùng 5 dây" under a main row's base figure; none for one unit or below the smallest larger unit. */
+function converted(sku: SkuListItem | undefined, qty: string) {
+  const mix = autoConvertQty(sku, qty);
+  return mix === null ? null : <CellSub>= {mix}</CellSub>;
+}
+
 /**
  * Prototype `kho.ton`: one row per SKU with its on-hand and sellable stock, colored stock as inline
  * pills and, when opened, one sub row per color with its own price. Every figure is the server's.
@@ -86,6 +92,7 @@ export function StockTable({ rows, skus, colorPrices, onSeen, partial, pick, ope
         <b>{r.row.name}</b>
         <CellSub>
           {r.row.code} · ĐV cơ sở: {r.row.unit_name}
+          {sku ? unitFactorLine(sku) : ""}
           {sku?.product_type === "kit" ? " · giỏ đóng sẵn" : ""}
         </CellSub>
         {r.colored ? (
@@ -118,7 +125,14 @@ export function StockTable({ rows, skus, colorPrices, onSeen, partial, pick, ope
     ].filter((x) => x !== null);
     return (
       <>
-        {r.kind === "sub" ? num(r.color.sellable) : <b>{num(r.row.available)}</b>}
+        {r.kind === "sub" ? (
+          num(r.color.sellable)
+        ) : (
+          <>
+            <b>{num(r.row.available)}</b>
+            {converted(skus?.get(r.row.sku_id), r.row.available)}
+          </>
+        )}
         {notes.length > 0 ? <CellSub>{notes.flatMap((n, i) => (i === 0 ? [n] : [" · ", n]))}</CellSub> : null}
       </>
     );
@@ -196,7 +210,20 @@ export function StockTable({ rows, skus, colorPrices, onSeen, partial, pick, ope
 
   const columns: Column<ViewRow>[] = [
     { key: "name", header: "Hàng", cell: nameCell, footer: `${mains} mặt hàng${colored ? ` · ${colored} có màu` : ""}${partial ? " (đã tải)" : ""}` },
-    { key: "on-hand", header: "Tồn thực", numeric: true, cell: (r) => (r.kind === "sub" ? num(r.color.on_hand) : <b>{num(r.row.on_hand)}</b>) },
+    {
+      key: "on-hand",
+      header: "Tồn thực",
+      numeric: true,
+      cell: (r) =>
+        r.kind === "sub" ? (
+          num(r.color.on_hand)
+        ) : (
+          <>
+            <b>{num(r.row.on_hand)}</b>
+            {converted(skus?.get(r.row.sku_id), r.row.on_hand)}
+          </>
+        ),
+    },
     { key: "sellable", header: "Có thể bán", numeric: true, cell: sellableCell },
     { key: "price", header: "Giá bán", numeric: true, cell: priceCell },
     {
