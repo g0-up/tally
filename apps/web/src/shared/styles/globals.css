@@ -279,19 +279,30 @@ select { background-color: var(--surface-0); color: var(--gray-800); border: 1px
 .bp .t td:last-child .lnk { height: var(--bp-ctl); }
 /* An existing SKU's purchase unit sits under its quantity, right-aligned with it. */
 .bp .t td .bp-unit { display: block; width: 80px; margin: 4px 0 0 auto; }
+/* A new product's unit table spans the visible width and stays in view while the line table scrolls sideways. */
+.bp { container-type: inline-size; }
+.bp > .t > tbody > tr.bp-ut > td > .ut { position: sticky; left: 8px; width: calc(100cqi - 16px); }
 .bp .swatches { gap: 4px; }
 .bp .sw-n { flex-basis: 100%; margin-left: 0; }
 /* ---------- đơn vị tính & giá theo đơn vị ---------- */
 .ut { display: grid; gap: var(--space-3); margin: var(--space-4) 0; }
 .ut-h { display: grid; gap: var(--space-1); }
 .ut-h b { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--navy-900); font-weight: 600; }
-.ut-t .in { min-width: 96px; }
+.ut-t .in { min-width: 96px; height: var(--ut-ctl); }
 .ut-t td:first-child { min-width: 200px; }
 .ut-t .ut-n { width: 132px; text-align: right; }
 .ut-f { display: flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
 .ut-t .ut-f .ut-n { width: 88px; }
 .ut-err { display: block; margin-top: var(--space-1); font-size: 12px; font-weight: 500; color: var(--bad-ink); }
 .ut [aria-invalid="true"] { border-color: var(--bad-ink); box-shadow: inset 0 0 0 1px var(--bad-ink); }
+/* Cells without an input (the base-unit badge, "Nhập theo", "Xóa") sit on the inputs' line. */
+.ut-t { --ut-ctl: 42px; }
+.bp .ut-t { --ut-ctl: var(--bp-ctl); }
+.ut-mid { display: flex; align-items: center; min-height: var(--ut-ctl); }
+.ut-buy { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--ut-ctl); vertical-align: top; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.ut-buy input { margin: 0; }
+.ut-t td.acts { white-space: nowrap; }
+.ut-t td.acts .lnk { min-height: var(--ut-ctl); }
 .ut-off { font-size: 13px; white-space: nowrap; }
 .ut-dim td { color: var(--gray-600); }
 .ut-dim .in { background: var(--surface-100); }
@@ -306,7 +317,7 @@ select { background-color: var(--surface-0); color: var(--gray-800); border: 1px
   .ut-t td:first-child { padding-right: 64px; }
   .ut-t .in, .ut-t .ut-n, .ut-t .ut-f .ut-n { width: 100%; min-width: 0; text-align: left; }
   .ut .btn-row .btn { min-width: 44px; min-height: 44px; }
-  .ut-off { min-height: 44px; align-items: center; }
+  .ut-off, .ut-buy { min-height: 44px; align-items: center; }
 }
 @media (max-width: 1100px) { .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g-main, .pos { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 860px) {
@@ -643,5 +654,3 @@ input[type="checkbox"]:focus-visible { outline-offset: calc((var(--cb-mark) - va
   .scan-page-flash-ok { box-shadow: inset 0 0 0 10px var(--ok-ink); }
   .scan-page-flash-error { box-shadow: inset 0 0 0 10px var(--bad-ink); }
 }
-/* The unit table opened under a new-product buy line is not part of the line table's pinned delete column. */
-.bp .ut-t th:last-child, .bp .ut-t td:last-child { position: static; background: none; box-shadow: none; }
