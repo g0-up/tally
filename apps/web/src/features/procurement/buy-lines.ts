@@ -382,10 +382,9 @@ function common(line: BuyLine, colorIdOf: ColorIdOf) {
   return { ...(colorId === null ? {} : { color_id: colorId }), ...(spec === "" ? {} : { spec_text: spec }) };
 }
 
-/** Errors of a new-product row's unit table; its base unit is picked on the row and checked with the row. */
+/** Errors of a new-product row's unit table, base unit included: every unit of the row is set there. */
 export function lineUnitErrors(line: BuyLine): Record<string, string> {
-  const { base_unit_id: _, ...errors } = unitTableErrors({ baseUnitId: line.baseUnitId, retailPrice: line.sell, wholesalePrice: line.wholesale, units: line.units });
-  return errors;
+  return unitTableErrors({ baseUnitId: line.baseUnitId, retailPrice: line.sell, wholesalePrice: line.wholesale, units: line.units });
 }
 
 const inUse = (l: BuyLine) => l.isNew && (l.name.trim() !== "" || isPositive(l.qty));
@@ -400,7 +399,8 @@ function unitTableRefusal(lines: readonly BuyLine[]): { ok: false; message: stri
     if (!inUse(l)) return l;
     const errors = lineUnitErrors(l);
     if (Object.keys(errors).length === 0) return l;
-    message ??= firstProductError(errors);
+    // A missing base unit is named after its row: nothing else in the table can be checked without it.
+    message ??= errors.base_unit_id === undefined ? firstProductError(errors) : PROCUREMENT_MESSAGES.newProductUnit(l.name.trim());
     return { ...l, showUnits: true, unitsChecked: true };
   });
   return message === undefined ? null : { ok: false, message, rows };

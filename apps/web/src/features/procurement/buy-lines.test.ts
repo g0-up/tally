@@ -134,10 +134,13 @@ describe("orderLinesRequest", () => {
     }
   });
 
-  it("leaves the base unit of a new product to the row's own check", () => {
+  it("opens the unit table of a new product without a base unit and names the row in the refusal", () => {
     const line = { ...named(newProductLine(unitIdByName), "Kẹo dẻo", 96000), baseUnitId: null };
-    expect(lineUnitErrors(line)).toEqual({});
-    expect(orderLinesRequest([line], noColor)).toEqual({ ok: false, message: PROCUREMENT_MESSAGES.newProductUnit("Kẹo dẻo") });
+    expect(Object.keys(lineUnitErrors(line))).toEqual(["base_unit_id"]);
+    const refused = orderLinesRequest([line], noColor);
+    expect(refused).toMatchObject({ ok: false, message: PROCUREMENT_MESSAGES.newProductUnit("Kẹo dẻo") });
+    if (refused.ok) throw new Error("expected a refusal");
+    expect(refused.rows?.map((l) => [l.showUnits, l.unitsChecked])).toEqual([[true, true]]);
   });
 
   it("sends an existing SKU with its unit, color and spec", () => {

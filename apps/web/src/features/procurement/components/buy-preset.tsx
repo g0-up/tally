@@ -193,9 +193,13 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false, bar
   const patchTable = (key: string, patch: Partial<UnitTable>) => {
     const next = latest.current.map((l) => {
       if (l.key !== key) return l;
+      const row = withNewProductUnits(l, patch.units ?? l.units);
+      const baseUnitId = patch.baseUnitId === undefined ? l.baseUnitId : patch.baseUnitId;
       return {
-        ...withNewProductUnits(l, patch.units ?? l.units),
-        baseUnitId: patch.baseUnitId === undefined ? l.baseUnitId : patch.baseUnitId,
+        ...row,
+        baseUnitId,
+        // A unit made the base unit is no longer a conversion unit to count in.
+        unitId: row.unitId === baseUnitId ? null : row.unitId,
         sell: patch.retailPrice === undefined ? l.sell : patch.retailPrice,
         wholesale: patch.wholesalePrice === undefined ? l.wholesale : patch.wholesalePrice,
       };
@@ -208,7 +212,6 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false, bar
     const base = units.name(l.baseUnitId);
     const unit = newProductUnit(l);
     const factor = lineFactor(l);
-    const picked = l.units.filter((u) => u.unitId !== null);
     const named = l.units.filter((u) => u.unitName.trim() !== "").length;
     const toggleId = `bp-ut-tg-${l.key}`;
     const tableId = `bp-ut-row-${l.key}`;
@@ -221,26 +224,6 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false, bar
               <span className="tag">Hàng mới</span>
             </div>
             <div className="bp-units">
-              <span>
-                ĐV cơ sở
-                <select
-                  className="in"
-                  style={{ width: 88 }}
-                  value={l.baseUnitId ?? ""}
-                  onChange={(e) => {
-                    const id = e.target.value === "" ? null : e.target.value;
-                    set(i, { ...l, baseUnitId: id, unitId: l.unitId === id ? null : l.unitId });
-                  }}
-                  aria-label={rowLabel("Đơn vị cơ sở", l, i)}
-                >
-                  <option value="">ĐV cơ sở</option>
-                  {units.active.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </select>
-              </span>
               <LinkButton id={toggleId} onClick={() => set(i, { ...l, showUnits: !l.showUnits })} aria-expanded={l.showUnits} aria-controls={l.showUnits ? tableId : undefined}>
                 Đơn vị &amp; giá… ({named + 1} đơn vị)
               </LinkButton>
@@ -250,16 +233,6 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false, bar
               <Checkbox label="Quản lý lô/hạn" aria-label={rowLabel("Quản lý lô/hạn", l, i)} checked={l.trackLot} onChange={(e) => set(i, { ...l, trackLot: e.target.checked })} />
             </div>
             {swatches(l, i)}
-          </td>
-          <td>
-            <select className="in" style={{ minWidth: 96 }} value={l.unitId ?? ""} onChange={(e) => set(i, { ...l, unitId: e.target.value === "" ? null : e.target.value })} aria-label={rowLabel("Đơn vị tính", l, i)}>
-              <option value="">{base || "ĐVT"}</option>
-              {picked.map((u) => (
-                <option key={u.key} value={u.unitId ?? ""}>
-                  {u.unitName}
-                </option>
-              ))}
-            </select>
           </td>
           <td className="num">
             <QtyInput size="sm" value={l.qty} onChange={(qty) => set(i, { ...l, qty })} aria-label={rowLabel("Số lượng", l, i)} />
@@ -287,14 +260,14 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false, bar
           </td>
         </tr>
         {l.showUnits ? (
-          <tr className="bp-new" id={tableId}>
-            <td colSpan={receive ? 9 : 8}>
+          <tr className="bp-new bp-ut" id={tableId}>
+            <td colSpan={receive ? 8 : 7}>
               <UnitPriceTable
                 value={{ baseUnitId: l.baseUnitId, retailPrice: l.sell, wholesalePrice: l.wholesale, units: l.units }}
                 onChange={(patch) => patchTable(l.key, patch)}
                 errors={l.unitsChecked ? lineUnitErrors(l) : {}}
-                baseUnitName={base}
                 purchaseUnitId={l.unitId}
+                onPurchaseUnitChange={(unitId) => set(i, { ...l, unitId })}
               />
             </td>
           </tr>
@@ -307,6 +280,8 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false, bar
     const sku = l.sku;
     const base = sku ? baseUnitName(sku) : "";
     const unitName = fixed ? base : (sku?.units.find((u) => u.unit_id === l.unitId)?.unit_name ?? base);
+    /** Units the row can be bought in; with one, the quantity just names it. */
+    const buyUnits = fixed || !sku ? [] : sku.units.filter((u) => u.active);
     return (
       <tr key={l.key}>
         <td style={{ minWidth: 260 }}>
@@ -348,23 +323,19 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false, bar
           )}
           {swatches(l, i)}
         </td>
-        <td>
-          {fixed || !sku ? (
-            base
-          ) : (
-            <select className="in" value={l.unitId ?? ""} onChange={(e) => set(i, withUnit(l, e.target.value))} aria-label={rowLabel("Đơn vị tính", l, i)}>
-              {sku.units
-                .filter((u) => u.active)
-                .map((u) => (
-                  <option key={u.unit_id} value={u.unit_id}>
-                    {u.unit_name}
-                  </option>
-                ))}
-            </select>
-          )}
-        </td>
         <td className="num">
           <QtyInput size="sm" value={l.qty} onChange={(qty) => set(i, { ...l, qty })} aria-label={rowLabel("Số lượng", l, i)} />
+          {buyUnits.length > 1 ? (
+            <select className="in bp-unit" value={l.unitId ?? ""} onChange={(e) => set(i, withUnit(l, e.target.value))} aria-label={rowLabel("Đơn vị tính", l, i)}>
+              {buyUnits.map((u) => (
+                <option key={u.unit_id} value={u.unit_id}>
+                  {u.unit_name}
+                </option>
+              ))}
+            </select>
+          ) : sku ? (
+            <CellSub>{unitName}</CellSub>
+          ) : null}
         </td>
         {spec(l, i)}
         <td className="num">
@@ -405,7 +376,6 @@ export function BuyEditor({ lines, onChange, receive = false, fixed = false, bar
           <thead>
             <tr>
               <th scope="col">Tên sản phẩm</th>
-              <th scope="col">Đơn vị tính</th>
               <th scope="col" className="num">
                 Số lượng
               </th>

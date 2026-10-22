@@ -35,7 +35,6 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const labelled = (label: string, name: string) => new RegExp(`^${escapeRe(label)} – ${escapeRe(name)}`);
 
 /** The option a native select shows as chosen. */
-const selectedOption = (select: Locator) => select.locator("option:checked");
 
 /** Opens a store screen and waits until the shell and the screen header are rendered. */
 async function openScreen(page: Page, path: string): Promise<void> {
@@ -118,8 +117,9 @@ test.describe("with the real API", () => {
     await newPo.getByRole("button", { name: "+ Hàng hóa mới" }).click();
     await newPo.getByRole("textbox", { name: "Tên hàng mới" }).last().fill(productName);
     // A new product starts counted in hộp and bought by the thùng of 12 hộp.
-    await expect(selectedOption(newPo.getByRole("combobox", { name: labelled("Đơn vị cơ sở", productName) }))).toHaveText("hộp");
-    await expect(selectedOption(newPo.getByRole("combobox", { name: labelled("Đơn vị tính", productName) }))).toHaveText("thùng");
+    const newRow = newPo.getByRole("row").filter({ has: newPo.getByRole("textbox", { name: "Tên hàng mới" }).last() });
+    await expect(newRow).toContainText("/thùng");
+    await expect(newRow).toContainText("/hộp");
     await expect(newPo.getByRole("checkbox", { name: labelled("Quản lý lô/hạn", productName) })).toBeChecked();
     await newPo.getByRole("textbox", { name: labelled("Số lượng", productName) }).fill("2");
     await expect(newPo.getByRole("row").filter({ has: newPo.getByRole("textbox", { name: "Tên hàng mới" }).last() })).toContainText("= 24 hộp");
@@ -246,21 +246,20 @@ test.describe("with the real API", () => {
 
     await newPo.getByRole("button", { name: "+ Hàng hóa mới" }).click();
     await newPo.getByRole("textbox", { name: "Tên hàng mới" }).last().fill(productName);
-    await newPo.getByRole("combobox", { name: labelled("Đơn vị cơ sở", productName) }).selectOption({ label: "cái" });
     await newPo.getByRole("checkbox", { name: labelled("Quản lý lô/hạn", productName) }).uncheck();
 
-    // The unit table of the row: thùng (the default second unit) becomes 500 cái, and dây = 50 cái is added.
+    // The unit table of the row: the base unit becomes cái, thùng (the default second unit) 500 cái, and dây = 50 cái is added.
     await newPo.getByRole("button", { name: /^Đơn vị & giá… \(2 đơn vị\)$/ }).click();
     const table = newPo.getByRole("group", { name: "Đơn vị tính & giá bán" });
     await expect(table).toBeVisible();
+    await pickUnit(table.getByRole("combobox", { name: "Đơn vị cơ sở" }), "cái");
     await table.getByRole("textbox", { name: "Quy đổi: 1 thùng bằng bao nhiêu cái" }).fill("500");
     await table.getByRole("button", { name: "+ Thêm đơn vị" }).click();
     await pickUnit(table.getByRole("combobox", { name: "Tên đơn vị 3" }), "dây");
     await table.getByRole("textbox", { name: "Quy đổi: 1 dây bằng bao nhiêu cái" }).fill("50");
-    await expect(table).toContainText("Đơn vị nhập mặc định.");
+    await expect(table.getByRole("radio", { name: "Nhập theo thùng" })).toBeChecked();
     await expect(newPo.getByRole("button", { name: /^Đơn vị & giá… \(3 đơn vị\)$/ })).toBeVisible();
 
-    await expect(selectedOption(newPo.getByRole("combobox", { name: labelled("Đơn vị tính", productName) }))).toHaveText("thùng");
     await named("Số lượng").fill("2");
     await expect(newPo.getByRole("row").filter({ has: named("Số lượng") })).toContainText("= 1.000 cái");
     await named("Đơn giá").fill("200000");

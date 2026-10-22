@@ -46,7 +46,10 @@ async function addNewProduct(user: ReturnType<typeof userEvent.setup>, dialog: H
   const field = names.at(-1);
   if (field === undefined) throw new Error("no new product row");
   await user.type(field, name);
-  await waitFor(() => expect(within(dialog).getByRole("combobox", { name: `Đơn vị cơ sở – ${name}` })).toHaveValue(UNIT_HOP));
+  // The row counts in its default thùng once the units have arrived.
+  const row = field.closest("tr");
+  if (row === null) throw new Error("no new product row");
+  await waitFor(() => expect(within(row).getByText("/thùng")).toBeInTheDocument());
   await user.type(within(dialog).getByRole("textbox", { name: `Mã vạch – ${name}` }), barcode);
   await user.type(within(dialog).getByRole("textbox", { name: `Đơn giá – ${name}` }), "96000");
 }

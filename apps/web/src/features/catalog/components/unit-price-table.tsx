@@ -7,6 +7,7 @@ import { Checkbox } from "../../../shared/ui/checkbox";
 import { Combobox } from "../../../shared/ui/combobox";
 import { CellSub } from "../../../shared/ui/data-table/cell-sub";
 import { ImpactSummary, type ImpactItem } from "../../../shared/ui/impact-summary";
+import { LinkButton } from "../../../shared/ui/link-button";
 import { MoneyInput } from "../../../shared/ui/money-input";
 import { QtyInput } from "../../../shared/ui/qty-input";
 import { toast } from "../../../shared/ui/toast-store";
@@ -35,8 +36,10 @@ export interface UnitPriceTableProps {
   errors: ProductErrors;
   /** The base unit is chosen outside the table (the purchase-order line): shown, not picked. */
   baseUnitName?: string;
-  /** Unit the purchase-order line counts in; its row says it becomes the default purchase unit. */
+  /** Unit the purchase-order line counts in (null = the base unit); it becomes the default purchase unit. */
   purchaseUnitId?: string | null;
+  /** The purchase-order line picks its unit here: each row gets a "Nhập theo" choice. */
+  onPurchaseUnitChange?: (unitId: string | null) => void;
   /**
    * Editing a saved SKU ("Đơn vị & giá"): a locked unit offers "Ngừng dùng" instead of removal,
    * and the hints say what a factor change or deactivation does to documents, scans and purchases.
@@ -55,7 +58,7 @@ interface Created {
  * placeholder and stays blank (sold at that computed price). A unit typed that is not in the
  * directory is added to it when picked ("+ Tạo mới …").
  */
-export function UnitPriceTable({ value, onChange, errors, baseUnitName, purchaseUnitId = null, saved }: UnitPriceTableProps) {
+export function UnitPriceTable({ value, onChange, errors, baseUnitName, purchaseUnitId = null, onPurchaseUnitChange, saved }: UnitPriceTableProps) {
   const units = useUnits();
   const createUnit = useCreateUnit();
   const id = useId();
@@ -166,6 +169,24 @@ export function UnitPriceTable({ value, onChange, errors, baseUnitName, purchase
   const purchaseRow = saved ? purchaseRowAfterSave(value, saved.purchaseUnitId) : undefined;
   const isPurchaseRow = (row: UnitRow) => (saved ? row === purchaseRow : purchaseUnitId !== null && row.unitId === purchaseUnitId);
 
+  /** "Nhập theo": the unit the purchase-order line counts in; a row is offered once its unit is picked. */
+  const buyChoice = (unitId: string | null, name: string, isBase = false) =>
+    onPurchaseUnitChange ? (
+      <td data-l="Nhập theo">
+        <label className="ut-buy">
+          <input
+            type="radio"
+            name={fieldId("purchase")}
+            checked={isBase ? purchaseUnitId === null : unitId !== null && unitId === purchaseUnitId}
+            disabled={!isBase && unitId === null}
+            onChange={() => onPurchaseUnitChange(unitId)}
+            aria-label={`Nhập theo ${name}`}
+          />
+          <span aria-hidden="true">Nhập theo</span>
+        </label>
+      </td>
+    ) : null;
+
   const baseRow = (
     <tr>
       <td data-l="Đơn vị">
@@ -189,7 +210,9 @@ export function UnitPriceTable({ value, onChange, errors, baseUnitName, purchase
         )}
       </td>
       <td data-l="Quy đổi">
-        <span className="tag alt">Đơn vị cơ sở</span>
+        <span className="ut-mid">
+          <span className="tag alt">Đơn vị cơ sở</span>
+        </span>
       </td>
       <td data-l="Giá bán lẻ">
         <MoneyInput className="ut-n" value={value.retailPrice} onChange={(retailPrice) => onChange({ retailPrice })} aria-label={`Giá bán lẻ / ${base}`} {...described("retail_price")} />
@@ -199,6 +222,7 @@ export function UnitPriceTable({ value, onChange, errors, baseUnitName, purchase
         <MoneyInput className="ut-n" value={value.wholesalePrice} onChange={(wholesalePrice) => onChange({ wholesalePrice })} aria-label={`Giá sỉ / ${base}`} {...described("wholesale_price")} />
         {err("wholesale_price")}
       </td>
+      {buyChoice(null, base, true)}
       <td className="acts" />
     </tr>
   );
@@ -246,7 +270,7 @@ export function UnitPriceTable({ value, onChange, errors, baseUnitName, purchase
           {err(`${at}factor`)}
           {refactored && lock === "documents" ? <span className="hint">Chứng từ cũ giữ hệ số cũ ({num(was.factor)}).</span> : null}
           {refactored && was.barcode && !off ? <span className="hint">Kiểm kê quét mã này sẽ cộng theo hệ số mới.</span> : null}
-          {isPurchaseRow(row) ? <span className="hint">Đơn vị nhập mặc định.</span> : null}
+          {isPurchaseRow(row) && !onPurchaseUnitChange ? <span className="hint">Đơn vị nhập mặc định.</span> : null}
           {saved && off && row.unitId === saved.purchaseUnitId ? (
             <span className="hint">Đơn vị nhập mặc định chuyển sang {purchaseRow?.unitName.trim() || base}.</span>
           ) : null}
@@ -273,6 +297,7 @@ export function UnitPriceTable({ value, onChange, errors, baseUnitName, purchase
           />
           {err(`${at}wholesale`)}
         </td>
+        {buyChoice(row.unitId, name)}
         <td className="acts">
           {was !== undefined && (lock !== null || !was.active) ? (
             <>
@@ -288,9 +313,9 @@ export function UnitPriceTable({ value, onChange, errors, baseUnitName, purchase
             </>
           ) : null}
           {lock === null ? (
-            <Button size="sm" className="ut-x" aria-label={`Xóa đơn vị ${name}`} onClick={() => remove(row)}>
-              ×
-            </Button>
+            <LinkButton aria-label={`Xóa đơn vị ${name}`} onClick={() => remove(row)}>
+              Xóa
+            </LinkButton>
           ) : null}
         </td>
       </tr>
@@ -311,6 +336,7 @@ export function UnitPriceTable({ value, onChange, errors, baseUnitName, purchase
               <th>Quy đổi</th>
               <th className="num">Giá bán lẻ (₫)</th>
               <th className="num">Giá sỉ (₫)</th>
+              {onPurchaseUnitChange ? <th>Nhập theo</th> : null}
               <th>
                 <span className="sr-only">Thao tác</span>
               </th>
