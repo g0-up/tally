@@ -7,7 +7,7 @@ import { CONTENT_SELECTOR, SHELL_REGIONS, openPrototype, pinSeedClock, region, w
 import { PARITY_STATES, PROTOTYPE_STATES, openAppState, skipReason, type ParityState } from "./parity-states";
 import { maskLocators } from "./masks";
 
-// Visual parity of the app with the prototype (docs/design/prototype-v6.15.html) at a desktop and a
+// Visual parity of the app with the prototype (docs/design/prototype-v6.15.min.html) at a desktop and a
 // phone width. Prototype states are captured at run time and written to the snapshot path of their
 // comparison, so they are never committed; the app is compared with that capture. Additions have no
 // prototype, so they are compared with a snapshot committed after design review.

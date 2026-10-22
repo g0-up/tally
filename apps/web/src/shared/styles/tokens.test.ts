@@ -5,22 +5,22 @@ import { describe, expect, it } from "vitest";
 // The prototype is the visual source of truth: every custom property of its :root must exist in
 // tokens.css with the same value.
 
-const PROTOTYPE = new URL("../../../../../docs/design/prototype-v6.15.html", import.meta.url);
+const PROTOTYPE = new URL("../../../../../docs/design/prototype-v6.15.min.html", import.meta.url);
 const TOKENS = new URL("./tokens.css", import.meta.url);
 
+/** Body of the first :root rule that declares custom properties, minified or not. */
 function rootBlock(css: string): string {
-  const start = css.indexOf(":root {");
-  if (start < 0) throw new Error("no :root block");
-  const end = css.indexOf("}", start);
-  return css.slice(start + ":root {".length, end);
+  for (const [, body = ""] of css.matchAll(/:root\s*\{([^}]*)\}/g)) if (/--[\w-]+\s*:/.test(body)) return body;
+  throw new Error("no :root block with custom properties");
 }
 
 function customProperties(block: string): Map<string, string> {
   const withoutComments = block.replace(/\/\*[\s\S]*?\*\//g, "");
   const out = new Map<string, string>();
-  for (const m of withoutComments.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
+  for (const m of withoutComments.matchAll(/(--[\w-]+)\s*:\s*([^;]+)(?:;|$)/g)) {
     const [, name = "", value = ""] = m;
-    out.set(name, value.trim().replace(/\s+/g, " "));
+    // Minifying drops the space after a comma; it does not change the value.
+    out.set(name, value.trim().replace(/\s+/g, " ").replace(/\s*,\s*/g, ","));
   }
   return out;
 }

@@ -1,4 +1,4 @@
-/* Prototype stylesheet (docs/design/prototype-v6.15.html) ported verbatim so shared/ui components
+/* Prototype stylesheet (docs/design/prototype-v6.15.min.html) ported verbatim so shared/ui components
  * render the same markup classes. Inline literal colors are replaced by the named tokens in
  * tokens.css; selectors, values, order and media queries match the prototype. Additions for the
  * React build follow the marker at the end. */
