@@ -3,6 +3,12 @@
 Tally là phần mềm quản lý bán hàng, kho và công nợ dành cho cửa hàng hàng Tết, quà tặng và bán sỉ nhỏ.
 Bản hướng dẫn này viết cho chủ cửa hàng, người duy nhất dùng tài khoản của cửa hàng.
 
+## Thiết bị hỗ trợ
+
+Tally dùng trên trình duyệt của **máy tính để bàn, máy tính xách tay và máy tính bảng** (ngang hoặc dọc). Giao diện không
+thiết kế cho màn hình điện thoại. Điện thoại chỉ dùng làm máy quét mã vạch ghép đôi với máy tính (xem
+[Quét bằng điện thoại](ban-hang-pos.md#quét-bằng-điện-thoại)).
+
 ## Giới hạn của bản 1.1
 
 - Mỗi cửa hàng chỉ có một tài khoản là tài khoản chủ cửa hàng, có toàn quyền trên mọi màn hình. Chưa có

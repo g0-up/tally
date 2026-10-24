@@ -26,8 +26,8 @@
 ## Thiết lập cửa hàng (bắt buộc trước khi dùng)
 
 Lần đầu vào cửa hàng, màn hình **Thiết lập cửa hàng** mở ra, ngoài khung app. Bên trái là danh sách 7 bước, chia làm ba
-nhóm: **Cửa hàng**, **Số dư đầu kỳ** và **Chạy thử**. Bên phải là nội dung của bước đang mở. Trên điện thoại, danh sách bước
-thu gọn thành một nút ghi bước hiện tại, bấm để mở ra.
+nhóm: **Cửa hàng**, **Số dư đầu kỳ** và **Chạy thử**. Bên phải là nội dung của bước đang mở. Trên máy tính bảng để dọc, danh
+sách bước thu gọn thành một nút ghi bước hiện tại, bấm để mở ra.
 
 Bước ghi **Bắt buộc** phải xong thì mới dùng được cửa hàng. Trong lúc đó, ngoài màn này bạn chỉ mở được **Danh mục**.
 Bước ghi **Tùy chọn** có nút **Bỏ qua bước này**. Bạn chuyển bước bằng danh sách bên trái, hoặc bằng **← Bước trước** và

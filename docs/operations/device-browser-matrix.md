@@ -1,11 +1,15 @@
 # Browser, device and peripheral matrix
 
-The release gate for NFR-10 (last two major versions of each browser, real phones, certified
-peripherals) and NFR-11 (keyboard access, visible focus, WCAG 2.2 AA). The automated part runs in
+The release gate for NFR-10 (desktop and tablet only, last two major versions of each browser, real
+tablets, certified peripherals) and NFR-11 (keyboard access, visible focus, WCAG 2.2 AA). The automated part runs in
 Playwright; the rest is a manual pass recorded per release. The UI gate that these checks belong to is
 described in the [phase 20 plan](../../plans/261016-0854-tally-full-product-implementation/phase-20-ui-ux-review-accessibility.md).
 
 ## 1. Matrix
+
+Tally supports desktop browsers and tablets, landscape and portrait (768 px and wider). Phone screens are
+not a supported target: a phone takes part only as the paired camera scanner, whose scan page is the one
+screen built for it.
 
 | Row | Target | Automated | Manual pass |
 |---|---|---|---|
@@ -13,8 +17,8 @@ described in the [phase 20 plan](../../plans/261016-0854-tally-full-product-impl
 | Edge, desktop | last two major versions | `a11y-msedge` project (CI only, `msedge` channel) | none |
 | Firefox, desktop | last two major versions | `firefox` project: functional journeys | NVDA on Windows with Firefox (§4) |
 | Safari, macOS | last two major versions | `webkit` project: functional journeys | optional VoiceOver on macOS |
-| Android, real phone | Chrome, current and previous major | none (no device in CI) | POS sale, stock count scan, offline banner (§3) |
-| iOS, real phone | Safari, current and previous major | none | VoiceOver pass on POS, invoice, exception, debt payment, offline banner (§4) |
+| Android, real tablet | Chrome, current and previous major | none (no device in CI) | POS sale, stock count scan, offline banner (§3) |
+| iPadOS, real tablet | Safari, current and previous major | none | VoiceOver pass on POS, invoice, exception, debt payment, offline banner (§4) |
 | Barcode scanner | USB or Bluetooth HID keyboard wedge | none | scan into the POS input and the stock count (§3) |
 | Paired phone as scanner | Android Chrome and iOS Safari, current and previous major | none (unit tests fake the camera and reader) | pairing, scans into POS, stock count and purchasing (§3) |
 | Receipt printer | 80 mm thermal, certified driver | none | print `/print/sales-documents/:id` (§3) |
@@ -44,10 +48,10 @@ addition or a visual change is reviewed by a person before `--update-snapshots` 
 
 Run each row on the device, record the outcome, and note the device model, OS and browser version.
 
-- **Android Chrome:** sign in, open the POS, pick a colour, take cash and check the change, hold a cart,
-  reopen it. Repeat a stock count with the phone in the scanner's place. Turn on airplane mode, check the
+- **Android Chrome (tablet):** sign in, open the POS, pick a colour, take cash and check the change, hold a
+  cart, reopen it. Repeat a stock count with a paired phone in the scanner's place. Turn on airplane mode, check the
   offline banner appears and that a sale queued offline syncs when the network returns.
-- **iOS Safari:** the same POS journey, plus the invoice confirm with exception and a debt payment. Check
+- **iPadOS Safari (tablet):** the same POS journey, in landscape and portrait, plus the invoice confirm with exception and a debt payment. Check
   that the menu and each dialog close with their on-screen close control.
 - **HID barcode scanner:** scan an item into the POS input and into the stock count. A scan must add one
   line per code without a click, and must not submit a half-typed code.
@@ -77,7 +81,7 @@ record a pairing QR code, a verify code or a scanner cookie.
 
 ## 4. Screen-reader passes
 
-NVDA with Firefox (Windows) and VoiceOver with Safari (iOS) read these screens: POS, the invoice dialog,
+NVDA with Firefox (Windows) and VoiceOver with Safari (iPadOS) read these screens: POS, the invoice dialog,
 the exception dialog, the debt payment dialog and the offline banner. Check that:
 
 - the offline banner is announced as a status (`role="status"`), sync results are announced politely

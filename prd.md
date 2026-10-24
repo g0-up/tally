@@ -673,7 +673,7 @@ Các con số dưới đây là \*\*mục tiêu thiết kế và kiểm thử đ
 | NFR-07 | Sao lưu và phục hồi | Mục tiêu RPO ≤ 15 phút, RTO ≤ 4 giờ; phục hồi và đối soát thử định kỳ trước go-live |
 | NFR-08 | Bảo mật | TLS, mã hóa dữ liệu lưu phù hợp, secret manager, MFA nhạy cảm, rate limit, scan dependency và penetration review |
 | NFR-09 | Quan sát hệ thống | Trace/correlation ID, metric/log/alert không lộ PII; cảnh báo job treo, lệch sổ, webhook lỗi |
-| NFR-10 | Trình duyệt/thiết bị | Hai phiên bản chính gần nhất của trình duyệt mục tiêu; test Android/iOS thực tế; danh sách máy in/máy quét được chứng nhận |
+| NFR-10 | Trình duyệt/thiết bị | Chỉ hỗ trợ máy tính (để bàn, xách tay) và máy tính bảng; không thiết kế cho màn hình điện thoại, điện thoại chỉ dùng làm máy quét ghép đôi. Hai phiên bản chính gần nhất của trình duyệt mục tiêu; test máy tính bảng Android/iPad thực tế; danh sách máy in/máy quét được chứng nhận |
 | NFR-11 | Khả dụng | Luồng chính keyboard-accessible, tương phản tốt, focus rõ; hướng đến WCAG 2.2 AA cho phần web cốt lõi |
 | NFR-12 | Riêng tư | Thu thập tối thiểu, consent, retention, export/xóa có kiểm soát; rà soát nghĩa vụ Việt Nam trước thương mại |
 | NFR-13 | Mở rộng | Phân trang, index tenant/time, job queue, giới hạn tài nguyên tenant và quota minh bạch |
