@@ -699,6 +699,85 @@ func TestProcurementOverHTTP(t *testing.T) {
 			http.StatusConflict, procurement.CodeOrderNotReceivable)
 	})
 
+	t.Run("a draft PO is edited and deleted at its version, a confirmed one is not", func(t *testing.T) {
+		type editedOrder struct {
+			ID              uuid.UUID `json:"id"`
+			Version         int       `json:"version"`
+			SupplierPartyID uuid.UUID `json:"supplier_party_id"`
+			ExpectedDate    *string   `json:"expected_date"`
+			TotalAmount     string    `json:"total_amount"`
+			Lines           []struct {
+				SkuID     uuid.UUID `json:"sku_id"`
+				Qty       string    `json:"qty"`
+				UnitPrice string    `json:"unit_price"`
+			} `json:"lines"`
+		}
+		lineSummary := func(o editedOrder) []string {
+			var out []string
+			for _, l := range o.Lines {
+				out = append(out, l.SkuID.String()+" "+l.Qty+" × "+l.UnitPrice)
+			}
+			return out
+		}
+		path := func(id uuid.UUID) string { return v1 + "/purchase-orders/" + id.String() }
+		kept, dropped := storeA.newSku(t, a, "SUA-GIU"), storeA.newSku(t, a, "SUA-BO")
+		rec := a.do(http.MethodPost, v1+"/purchase-orders", map[string]any{"supplier_party_id": storeA.supplier,
+			"expected_date": "2026-03-20", "lines": []map[string]any{
+				{"sku_id": kept, "qty": "10", "unit_price": "10000"}, {"sku_id": dropped, "qty": "5", "unit_price": "20000"}}})
+		expect(t, rec, http.StatusCreated, procurement.StatusDraft)
+		draft := testkit.DecodeJSON[editedOrder](t, rec)
+
+		other := storeA.newSupplier(t, a, "Nhà cung cấp sửa nháp")
+		rec = a.doWith(http.MethodPatch, path(draft.ID), map[string]any{"supplier_party_id": other, "expected_date": "2026-03-25"},
+			ifMatchOf(draft.Version))
+		expect(t, rec, http.StatusOK, procurement.StatusDraft)
+		patched := testkit.DecodeJSON[editedOrder](t, rec)
+		if patched.SupplierPartyID != other || patched.ExpectedDate == nil || *patched.ExpectedDate != "2026-03-25" ||
+			patched.Version != draft.Version+1 {
+			t.Fatalf("patched header = %+v, want the new supplier and date at version %d", patched, draft.Version+1)
+		}
+
+		newName := "Nước chanh nháp sửa"
+		lines := map[string]any{"lines": []map[string]any{{"sku_id": kept, "qty": "12", "unit_price": "10000"},
+			{"qty": "2", "unit_price": "30000", "new_product": map[string]any{"name": newName, "base_unit_id": storeA.units["cái"]}}}}
+		rec = a.doWith(http.MethodPut, path(draft.ID)+"/lines", lines, ifMatchOf(patched.Version))
+		expect(t, rec, http.StatusOK, procurement.StatusDraft)
+		replaced := testkit.DecodeJSON[editedOrder](t, rec)
+		created := skuNamed(t, a, newName).ID
+		want := []string{kept.String() + " 12 × 10000", created.String() + " 2 × 30000"}
+		if !slices.Equal(lineSummary(replaced), want) || replaced.TotalAmount != "180000" || replaced.Version != patched.Version+1 {
+			t.Fatalf("replaced lines = %v total %s version %d, want %v total 180000 version %d",
+				lineSummary(replaced), replaced.TotalAmount, replaced.Version, want, patched.Version+1)
+		}
+		if n := countRows(t, storeA.tenant, `SELECT count(*) FROM products WHERE name = $1`, newName); n != 1 {
+			t.Errorf("products named %q = %d, want 1", newName, n)
+		}
+
+		// A second editor still at the header's version changes nothing.
+		expect(t, a.doWith(http.MethodPut, path(draft.ID)+"/lines", map[string]any{"lines": []map[string]any{
+			{"sku_id": dropped, "qty": "1", "unit_price": "1"}}}, ifMatchOf(patched.Version)), http.StatusPreconditionFailed, "")
+		if got := send[editedOrder](t, a, http.MethodGet, "/purchase-orders/"+draft.ID.String(), nil); !slices.Equal(lineSummary(got), want) ||
+			got.Version != replaced.Version {
+			t.Errorf("lines after the stale write = %v at version %d, want %v at %d", lineSummary(got), got.Version, want, replaced.Version)
+		}
+
+		rec = a.doWith(http.MethodPost, path(draft.ID)+":confirm", nil, ifMatchOf(replaced.Version))
+		expect(t, rec, http.StatusOK, procurement.StatusConfirmed)
+		confirmed := testkit.DecodeJSON[editedOrder](t, rec)
+		at := ifMatchOf(confirmed.Version)
+		expect(t, a.doWith(http.MethodPatch, path(draft.ID), map[string]any{"expected_date": "2026-03-30"}, at),
+			http.StatusConflict, procurement.CodeOrderNotDraft)
+		expect(t, a.doWith(http.MethodPut, path(draft.ID)+"/lines", lines, at), http.StatusConflict, procurement.CodeOrderNotDraft)
+		expect(t, a.doWith(http.MethodDelete, path(draft.ID), nil, at), http.StatusConflict, procurement.CodeOrderNotDraft)
+
+		rec = a.do(http.MethodPost, v1+"/purchase-orders", map[string]any{"supplier_party_id": storeA.supplier,
+			"lines": []map[string]any{{"sku_id": kept, "qty": "1", "unit_price": "10000"}}})
+		expect(t, rec, http.StatusCreated, procurement.StatusDraft)
+		unwanted := testkit.DecodeJSON[editedOrder](t, rec)
+		expect(t, a.doWith(http.MethodDelete, path(unwanted.ID), nil, ifMatchOf(unwanted.Version)), http.StatusNoContent, "")
+		expect(t, a.do(http.MethodGet, path(unwanted.ID), nil), http.StatusNotFound, "")
+	})
+
 	t.Run("a price adjustment after a partial sale splits stock and sold goods and clears the variance", func(t *testing.T) {
 		sku := storeA.newSku(t, a, "DG-1")
 		r := storeA.receiveDirect(t, a, storeA.supplier, sku, "10", "10000")
