@@ -65,6 +65,11 @@ main.view { padding: 26px 28px 60px; max-width: 1480px; }
 .lnk { background: none; border: 0; padding: 0; color: var(--navy-700); font-weight: 600; cursor: pointer; text-decoration: none; text-align: left; }
 .lnk:hover { text-decoration: underline; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn-ic { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-sm);
+  background: none; color: var(--gray-600); cursor: pointer; transition: background .2s, color .2s; }
+.btn-ic:hover { background: var(--surface-blue-50); color: var(--navy-700); }
+.btn-ic.danger:hover { background: var(--bad-bg); color: var(--bad-ink); }
+.btn-ic[disabled] { opacity: .45; cursor: not-allowed; }
 
 /* ---------- cards, grid ---------- */
 .card { background: var(--surface-0); box-shadow: var(--shadow-card); padding: var(--space-5); min-width: 0; }
@@ -101,6 +106,18 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .t .sub { display: block; font-size: 12px; color: var(--gray-600); }
 .t .doc { font-weight: 600; color: var(--navy-700); }
 .t td.acts { white-space: nowrap; text-align: right; }
+/* `.t th` is later than `th.num` at the same specificity, so a numeric header needs its own rule to
+   sit over its right-aligned values. */
+.t th.num { text-align: right; }
+/* Row actions: the quiet icon actions, then one main step button of a fixed width at the right
+   edge, so the steps of every row line up. The column shrinks to its buttons. A table wider than
+   its screen (a tablet) scrolls sideways, and the actions stay pinned at the right. */
+.t td.acts:has(> .row-acts) { width: 1%; background: var(--surface-0); }
+.t tbody tr:hover td.acts:has(> .row-acts) { background: var(--row-hover); }
+.t td.acts:has(> .row-acts), .t:has(td.acts > .row-acts) th:last-child { position: sticky; right: 0; z-index: 1; }
+@media (max-width: 1279px) { .t td.acts:has(> .row-acts), .t:has(td.acts > .row-acts) th:last-child { box-shadow: inset 1px 0 0 var(--gray-200); } }
+.t td.acts .row-acts { display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: 4px; }
+.t td.acts .row-acts .btn-sm { min-width: 124px; margin-left: 4px; gap: 6px; }
 .empty { padding: 28px; text-align: center; color: var(--gray-600); }
 .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
 .filters input, .filters select { border: 1px solid var(--gray-300); padding: 8px 10px; background: var(--surface-0); color: var(--gray-800); border-radius: var(--radius-xs); min-width: 0; }
@@ -587,11 +604,13 @@ input[type="checkbox"]:focus-visible { outline-offset: calc((var(--cb-mark) - va
 /* Narrow screens and touch pointers: 44px targets, whatever the container. */
 @media (max-width: 860px), (pointer: coarse) {
   .tgl-hit { min-width: 44px; min-height: 44px; margin: -10px; }
-  .btn, .btn-sm, a.lnk, button.lnk, .auth-links a, .cp, .chip, .x, .dp-btn, .bell, .nav-sub a, .tabs a, .toast .toast-x, .nav-tg { min-height: 44px; }
-  a.lnk, button.lnk, .toast .toast-x, .x, .dp-btn, .cp, .chip { min-width: 44px; }
+  .btn, .btn-sm, a.lnk, button.lnk, .auth-links a, .cp, .chip, .x, .dp-btn, .bell, .nav-sub a, .tabs a, .toast .toast-x, .nav-tg, .btn-ic { min-height: 44px; }
+  a.lnk, button.lnk, .toast .toast-x, .x, .dp-btn, .cp, .chip, .btn-ic { min-width: 44px; }
   .cp, .chip { justify-content: center; }
   .dp .dp-in { padding-right: 52px; }
   .btn-sm, button.lnk, .cp, .chip, .bell, .tabs a { display: inline-flex; align-items: center; }
+  /* A row's 44px document link keeps its text on the line of the other cells. */
+  .t td:first-child > button.lnk:first-child { margin-block: -10px; }
   .nav-sub a { display: flex; align-items: center; }
   .sw { width: 44px; height: 44px; }
   .f input, .f select, .in, select, .filters input, .filters select, .check { min-height: 44px; }

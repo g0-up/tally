@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { Button, PENDING_LABEL } from "./button";
+import { Button, IconButton, PENDING_LABEL } from "./button";
 
 describe("Button", () => {
   it("keeps focus on a pending button and ignores presses on it", async () => {
@@ -68,5 +68,22 @@ describe("Button", () => {
     expect(button).not.toHaveAttribute("aria-disabled");
     await userEvent.click(button);
     expect(onClick).not.toHaveBeenCalled();
+  });
+});
+
+describe("IconButton", () => {
+  it("is named and titled by its label, so the icon alone never carries the meaning", async () => {
+    const onClick = vi.fn();
+    render(
+      <IconButton label="Xóa PO-0007" tone="danger" onClick={onClick}>
+        <svg aria-hidden="true" />
+      </IconButton>,
+    );
+    const button = screen.getByRole("button", { name: "Xóa PO-0007" });
+    expect(button).toHaveAttribute("title", "Xóa PO-0007");
+    expect(button).toHaveAttribute("type", "button");
+    expect(button).toHaveClass("btn-ic", "danger");
+    await userEvent.click(button);
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 });

@@ -39,6 +39,19 @@ export function Button({ variant = "line", size = "md", pending = false, pending
   );
 }
 
+export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "aria-label" | "title"> {
+  /** Accessible name and hover tooltip, e.g. "Sửa PO-0007". */
+  label: string;
+  /** `danger` turns red on hover, for destructive actions such as "Xóa". */
+  tone?: "default" | "danger";
+  ref?: Ref<HTMLButtonElement>;
+}
+
+/** `.btn-ic`: a quiet, icon-only secondary action beside a row's main button. The icon is decorative. */
+export function IconButton({ label, tone = "default", className, type = "button", ...rest }: IconButtonProps) {
+  return <button type={type} className={cx("btn-ic", tone === "danger" && "danger", className)} aria-label={label} title={label} {...rest} />;
+}
+
 /** Prototype `.btn-row`: a wrapping row of buttons. */
 export function ButtonRow({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return <div className={cx("btn-row", className)} {...rest} />;
