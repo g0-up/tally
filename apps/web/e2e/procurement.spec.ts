@@ -7,7 +7,8 @@ import { candyNames, candyUnits, pickUnit, unitOf, type UnitSkuRow } from "./sup
 // and supplier on the fly, received in part with lot, expiry and color, a receipt over the 5%
 // tolerance refused, a lot returned to the supplier, the rest closed short. Stock and the
 // supplier payable are read back from the API. A second order creates a product with its own unit
-// table and receives it by the thùng. Every run uses fresh names, so runs never collide.
+// table and receives it by the thùng. A draft is edited, reopened and confirmed, and another draft
+// is deleted. Every run uses fresh names, so runs never collide.
 
 interface Page_<T> {
   data: T[];
@@ -221,6 +222,88 @@ test.describe("with the real API", () => {
     await confirmStop.getByRole("button", { name: "Ngừng giao dịch", exact: true }).click();
     await expect(page.getByText("Đã ngừng giao dịch. NCC không còn hiện khi tạo đơn nhập.").first()).toBeVisible();
     await expect(confirmStop).toBeHidden();
+  });
+
+  test("edits a draft order, confirms it, and deletes another draft", async ({ page }) => {
+    test.slow();
+    const stamp = Date.now().toString(36);
+    const supplierName = `NCC e2e ${stamp}`;
+    const productName = `Bánh e2e ${stamp}`;
+    const addedName = `Kẹo e2e ${stamp}`;
+
+    /** Opens "Tạo đơn nhập" with a new supplier and one new product line, and saves it as a draft. */
+    const draftOrder = async (supplier: string, product: string): Promise<string> => {
+      // A toast left from an earlier save would be read as this order's number.
+      await expect(page.getByText(/^Đã lưu nháp /)).toHaveCount(0);
+      await page.getByRole("button", { name: "Tạo đơn nhập" }).click();
+      const newPo = page.getByRole("dialog", { name: "Tạo đơn nhập" });
+      await newPo.getByRole("button", { name: "+ NCC mới" }).click();
+      const quick = page.getByRole("dialog", { name: "Thêm nhà cung cấp mới" });
+      await quick.getByLabel(/^Tên nhà cung cấp/).fill(supplier);
+      await quick.getByRole("button", { name: "Thêm & chọn" }).click();
+      await expect(quick).toBeHidden();
+      await newPo.getByRole("button", { name: "+ Hàng hóa mới" }).click();
+      await newPo.getByRole("textbox", { name: "Tên hàng mới" }).last().fill(product);
+      await newPo.getByRole("checkbox", { name: labelled("Quản lý lô/hạn", product) }).uncheck();
+      await newPo.getByRole("textbox", { name: labelled("Số lượng", product) }).fill("2");
+      await newPo.getByRole("textbox", { name: labelled("Đơn giá", product) }).fill("120000");
+      await newPo.getByRole("textbox", { name: labelled("Giá bán lẻ", product) }).fill("15000");
+      await newPo.getByRole("button", { name: "Lưu nháp" }).click();
+      const doc = await toastDoc(page, /^Đã lưu nháp /);
+      expect(doc).toMatch(/^PO-/);
+      await expect(newPo).toBeHidden();
+      return doc;
+    };
+    const rowOf = async (doc: string): Promise<Locator> => {
+      await page.getByPlaceholder("Tìm số đơn, nhà cung cấp…").fill(doc);
+      const row = page.getByRole("row").filter({ hasText: doc });
+      await expect(row).toHaveCount(1);
+      return row;
+    };
+
+    await openScreen(page, "/purchasing/orders");
+    const poDoc = await draftOrder(supplierName, productName);
+
+    // Sửa reopens the draft as it was saved; a changed quantity and a new line are saved as a draft.
+    const poRow = await rowOf(poDoc);
+    await expect(poRow).toContainText("Nháp");
+    await poRow.getByRole("button", { name: `Sửa ${poDoc}` }).click();
+    const edit = page.getByRole("dialog", { name: `Sửa đơn nhập ${poDoc}` });
+    await expect(edit.getByRole("combobox", { name: "Nhà cung cấp" })).toHaveValue(supplierName);
+    await expect(edit.getByRole("textbox", { name: labelled("Số lượng", productName) })).toHaveValue("2");
+    await edit.getByRole("textbox", { name: labelled("Số lượng", productName) }).fill("3");
+    await edit.getByRole("button", { name: "+ Hàng hóa mới" }).click();
+    await edit.getByRole("textbox", { name: "Tên hàng mới" }).last().fill(addedName);
+    await edit.getByRole("checkbox", { name: labelled("Quản lý lô/hạn", addedName) }).uncheck();
+    await edit.getByRole("textbox", { name: labelled("Số lượng", addedName) }).fill("1");
+    await edit.getByRole("textbox", { name: labelled("Đơn giá", addedName) }).fill("50000");
+    await edit.getByRole("textbox", { name: labelled("Giá bán lẻ", addedName) }).fill("8000");
+    await edit.getByRole("button", { name: "Lưu nháp" }).click();
+    expect(await toastDoc(page, /^Đã lưu nháp /)).toBe(poDoc);
+    await expect(edit).toBeHidden();
+
+    // Reopened, the draft shows what was saved; "Lưu & chốt đơn" confirms it and the edit buttons go.
+    await poRow.getByRole("button", { name: `Sửa ${poDoc}` }).click();
+    await expect(edit.getByRole("textbox", { name: labelled("Số lượng", productName) })).toHaveValue("3");
+    await expect(edit.getByRole("textbox", { name: labelled("Số lượng", addedName) })).toHaveValue("1");
+    await edit.getByRole("button", { name: "Lưu & chốt đơn" }).click();
+    expect(await toastDoc(page, /: Đã chốt\./)).toBe(poDoc);
+    await expect(edit).toBeHidden();
+    await expect(poRow).toContainText("Đã chốt");
+    await expect(poRow.getByRole("button", { name: /^(Sửa|Xóa) / })).toHaveCount(0);
+
+    // Another draft is deleted from its drawer after the confirmation and leaves the list.
+    const dropDoc = await draftOrder(`${supplierName} b`, `${productName} b`);
+    await openScreen(page, `/purchasing/orders?doc=${dropDoc}`);
+    const drawer = page.getByRole("dialog", { name: `Đơn nhập ${dropDoc}` });
+    await drawer.getByRole("button", { name: "Xóa nháp" }).click();
+    const ask = page.getByRole("dialog", { name: `Xóa đơn nhập nháp ${dropDoc}?` });
+    await ask.getByRole("button", { name: "Xóa nháp" }).click();
+    expect(await toastDoc(page, /^Đã xóa đơn nhập nháp /)).toBe(dropDoc);
+    await expect(ask).toBeHidden();
+    await expect(drawer).toBeHidden();
+    await page.getByPlaceholder("Tìm số đơn, nhà cung cấp…").fill(dropDoc);
+    await expect(page.getByRole("row").filter({ hasText: dropDoc })).toHaveCount(0);
   });
 
   test("orders a new product with its own units by the thùng and receives it as thùng × 500 cái", async ({ page }) => {

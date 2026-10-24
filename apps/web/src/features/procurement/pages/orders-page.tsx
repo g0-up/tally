@@ -15,9 +15,14 @@ import { NewPoDialog } from "../containers/new-po-dialog";
 import { NewReceiptDialog } from "../containers/new-receipt-dialog";
 import { PoAdvanceDialog } from "../containers/po-advance-dialog";
 import { PoCloseDialog } from "../containers/po-close-dialog";
+import { PoDeleteDialog } from "../containers/po-delete-dialog";
 import type { Order } from "../schemas";
 
-type Opened = { kind: "new" } | { kind: "receive"; order: Order } | { kind: "advance"; order: Order } | { kind: "close"; order: Order } | null;
+type Opened =
+  | { kind: "new" }
+  | { kind: "edit"; order: Order }
+  | { kind: "delete"; order: Order }
+  | { kind: "receive"; order: Order } | { kind: "advance"; order: Order } | { kind: "close"; order: Order } | null;
 
 /** Đơn nhập (/purchasing/orders). `?doc=PO-…` opens an order, `?supplier=<id>` a new order for that supplier. */
 export default function OrdersPage() {
@@ -76,6 +81,8 @@ export default function OrdersPage() {
           today={today}
           onOpen={openOrder}
           onConfirm={(o) => void confirm.run({ id: o.id, docNo: o.doc_no, version: o.version })}
+          onEdit={(order) => setOpened({ kind: "edit", order })}
+          onDelete={(order) => setOpened({ kind: "delete", order })}
           onReceive={(order) => setOpened({ kind: "receive", order })}
           confirming={confirm.pending}
         />
@@ -88,11 +95,25 @@ export default function OrdersPage() {
           onReceive={(order) => setOpened({ kind: "receive", order })}
           onAdvance={(order) => setOpened({ kind: "advance", order })}
           onCloseShort={(order) => setOpened({ kind: "close", order })}
+          onEdit={(order) => setOpened({ kind: "edit", order })}
+          onDelete={(order) => setOpened({ kind: "delete", order })}
         />
       ) : doc !== null && (byDoc.isSuccess || byDoc.isError) ? (
         <DocNotFoundDrawer title="Đơn nhập" docNo={doc} error={byDoc.error} onClose={closeDrawer} />
       ) : null}
       {opened?.kind === "new" ? <NewPoDialog onClose={() => setOpened(null)} /> : null}
+      {opened?.kind === "edit" ? <NewPoDialog order={opened.order} onClose={() => setOpened(null)} /> : null}
+      {opened?.kind === "delete" ? (
+        <PoDeleteDialog
+          order={opened.order}
+          onClose={() => setOpened(null)}
+          onDeleted={() => {
+            // The drawer of the deleted draft has nothing left to show.
+            if (drawerId === opened.order.id) closeDrawer();
+            setOpened(null);
+          }}
+        />
+      ) : null}
       {supplierId !== null && opened === null && (supplier.isSuccess || supplier.isError) ? (
         <NewPoDialog supplier={supplier.data && supplier.data.status === "active" ? { id: supplier.data.id, name: supplier.data.name } : null} onClose={() => dropParam("supplier")} />
       ) : null}

@@ -140,6 +140,11 @@ export function isSessionExpired(e: unknown): boolean {
   return isApiError(e) && e.status === 401 && e.code === ERROR_CODES.unauthenticated;
 }
 
+/** The record changed since it was read (412): read it again before writing. */
+export function isStale(e: unknown): boolean {
+  return isApiError(e) && e.status === 412;
+}
+
 /** The server is throttling this client: the IP rate limit or the sign-in attempt lock. */
 export function isRateLimited(e: unknown): e is ApiError {
   return isApiError(e) && e.status === 429;

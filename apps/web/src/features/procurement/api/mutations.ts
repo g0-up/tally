@@ -1,18 +1,19 @@
 import { createElement, Fragment, useRef, type ReactNode } from "react";
 import { z } from "zod";
 import { useApiClient } from "../../../shared/api/api-context";
+import { isStale } from "../../../shared/api/api-error";
 import { moneySchema } from "../../../shared/api/decimal-schemas";
 import type { HttpClient } from "../../../shared/api/http";
 import type { Money } from "../../../shared/domain/money";
 import type { Qty } from "../../../shared/domain/qty";
-import { createOnce, newCreateState, unsettled, useUnsettled, type CreateState } from "../../../shared/hooks/create-once";
+import { createOnce, newCreateState, outcomeUnknown, requestJson, unsettled, useUnsettled, type CreateState } from "../../../shared/hooks/create-once";
 import { PartialCommitError, runFollowUps, useCommit, type FollowUpStep } from "../../../shared/hooks/use-commit";
 import { dec } from "../../../shared/lib/decimal";
 import { etagOf, skuKeys } from "../../catalog";
 import { supplierKeys } from "../../partners";
 import { postSalePrice, pricingKeys, type PriceChangeSource, type SalePriceWrites } from "../../pricing";
-import type { OrderLineRequest, ReceiptLineRequest, SellChange } from "../buy-lines";
-import { orderSchema, postedDocSchema } from "../schemas";
+import { storedOrderLineRequest, type OrderLineRequest, type ReceiptLineRequest, type SellChange } from "../buy-lines";
+import { orderSchema, postedDocSchema, type Order } from "../schemas";
 import { PROCUREMENT_MESSAGES, withProcurementMessage } from "./adapters";
 import { DEBT_KEY, procurementKeys } from "./queries";
 
@@ -93,6 +94,8 @@ interface OrderBody {
 }
 
 export interface SaveOrderVars {
+  /** The draft being edited, with its lines; none creates a new order. */
+  order?: Order | null;
   supplierId: string;
   expectedDate: string | null;
   lines: OrderLineRequest[];
@@ -101,28 +104,94 @@ export interface SaveOrderVars {
   confirm: boolean;
 }
 
+/** What a draft being edited holds on the server after the intent's last answered write. */
+interface DraftEdit {
+  supplierId: string;
+  expectedDate: string | null;
+  /** The lines as attempts compare them: those the intent last stored, else those read. */
+  lines: string;
+  /** A write lost its answer or met a newer version: read the order before writing again. */
+  stale: boolean;
+}
+
+type OrderProgress = Progress<SavedOrder> & { edit: DraftEdit | null };
+
+const draftEdit = (o: Order, lines = requestJson((o.lines ?? []).map(storedOrderLineRequest))): DraftEdit => ({
+  supplierId: o.supplier_party_id,
+  expectedDate: o.expected_date ?? null,
+  lines,
+  stale: false,
+});
+
+/**
+ * Writes the header and the lines of a draft that differ from what the server holds, each from the
+ * version the previous answer left. The supplier is sent only when another one was picked, so a
+ * supplier stopped since the draft was made stays on it. A cleared expected date cannot be sent:
+ * the stored one stays.
+ */
+async function saveDraftEdits(client: HttpClient, p: OrderProgress, held: DraftEdit, v: SaveOrderVars): Promise<void> {
+  let edit = held;
+  if (edit.stale) {
+    // A lost answer may have stored the write, and moved the version: start from what is stored.
+    const o = await procurementCall(() => client.get(`/purchase-orders/${p.doc.id}`, { schema: orderSchema }));
+    p.doc = o;
+    edit = p.edit = draftEdit(o);
+  }
+  const write = async (send: (at: SavedOrder) => Promise<Order>): Promise<Order> => {
+    try {
+      return (p.doc = await send(p.doc));
+    } catch (e) {
+      if (isStale(e) || outcomeUnknown(e)) edit.stale = true;
+      throw withProcurementMessage(e);
+    }
+  };
+  const expected = v.expectedDate ?? edit.expectedDate;
+  if (v.supplierId !== edit.supplierId || expected !== edit.expectedDate) {
+    const body = { ...(v.supplierId !== edit.supplierId ? { supplier_party_id: v.supplierId } : {}), ...(expected !== edit.expectedDate ? { expected_date: expected } : {}) };
+    const o = await write((at) => client.patch(`/purchase-orders/${at.id}`, body, { ifMatch: etagOf(at.version), schema: orderSchema }));
+    edit = p.edit = draftEdit(o, edit.lines);
+  }
+  const lines = requestJson(v.lines);
+  if (lines !== edit.lines) {
+    await write((at) => client.put(`/purchase-orders/${at.id}/lines`, { lines: v.lines }, { ifMatch: etagOf(at.version), schema: orderSchema }));
+    edit.lines = lines;
+  }
+}
+
 /**
  * newPO: saves the draft (`POST /purchase-orders`), then confirms it unless saved as a draft, then
  * writes the sale prices. Once the draft is stored, a retry of the intent only runs what is left.
+ * Editing a draft writes what changed on it (`PATCH`, `PUT …/lines`) in place of the create.
  */
 export function useSaveOrder(after: () => void) {
   const client = useApiClient();
-  const progress = useRef<Progress<SavedOrder> | null>(null);
+  const progress = useRef<OrderProgress | null>(null);
   const creating = useRef<{ key: string; state: CreateState<OrderBody, SavedOrder> } | null>(null);
   const lost = useUnsettled();
   const commit = useCommit({
     mutationFn: async (v: SaveOrderVars, { idempotencyKey }) => {
       let p = progress.current?.key === idempotencyKey ? progress.current : null;
-      if (p === null) {
+      if (p === null && v.order) {
+        p = progress.current = { key: idempotencyKey, doc: v.order, done: new Set(), writes: new Map(), edit: draftEdit(v.order) };
+      } else if (p === null) {
         if (creating.current?.key !== idempotencyKey) creating.current = { key: idempotencyKey, state: newCreateState() };
         const create = creating.current.state;
         const body: OrderBody = { supplier_party_id: v.supplierId, ...(v.expectedDate ? { expected_date: v.expectedDate } : {}), lines: v.lines };
         const made = await lost.watch(create, () => procurementCall(() => createOnce(create, body, { send: (b) => client.post("/purchase-orders", b, { idempotencyKey, schema: savedOrderSchema }) })));
         // Stored from an earlier attempt's body: neither confirm nor price what the owner did not see.
         if (made.edited) throw new PartialCommitError(PROCUREMENT_MESSAGES.orderCreatedAsSent(made.result.doc_no));
-        p = progress.current = { key: idempotencyKey, doc: made.result, done: new Set(), writes: new Map() };
+        p = progress.current = { key: idempotencyKey, doc: made.result, done: new Set(), writes: new Map(), edit: null };
       }
       const stored = p;
+      // A confirmed order takes no more edits: once the intent confirmed it, only its prices are left.
+      if (stored.edit !== null && !stored.done.has("confirm")) {
+        try {
+          await saveDraftEdits(client, stored, stored.edit, v);
+        } catch (e) {
+          if (stored.edit?.stale && outcomeUnknown(e)) throw new PartialCommitError(withDoc("Chưa rõ đã lưu ", stored.doc.doc_no, " hay chưa. Bấm lại để kiểm tra và lưu tiếp."));
+          throw e;
+        }
+      }
       const confirm: FollowUpStep = {
         id: "confirm",
         label: "chốt đơn",
@@ -158,6 +227,20 @@ export function useConfirmOrder() {
       procurementCall(() => client.post(`/purchase-orders/${o.id}:confirm`, {}, { idempotencyKey, ifMatch: etagOf(o.version), schema: savedOrderSchema })),
     success: (po) => withDoc("", po.doc_no, ": Đã chốt."),
     invalidate: [procurementKeys.all],
+  });
+}
+
+/** "Xóa nháp": removes a draft at the version shown (`DELETE`); a draft moved no stock or debt. */
+export function useDeleteOrder(after: () => void) {
+  const client = useApiClient();
+  return useCommit({
+    mutationFn: async (o: OrderRefVars) => {
+      await procurementCall(() => client.delete(`/purchase-orders/${o.id}`, { ifMatch: etagOf(o.version) }));
+      return o;
+    },
+    success: (o) => withDoc("Đã xóa đơn nhập nháp ", o.docNo, "."),
+    invalidate: [procurementKeys.all],
+    after,
   });
 }
 

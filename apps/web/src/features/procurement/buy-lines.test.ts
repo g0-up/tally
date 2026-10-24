@@ -6,6 +6,7 @@ import { PROCUREMENT_MESSAGES } from "./api/adapters";
 import {
   addScan,
   barcodeErrors,
+  draftOrderBuyLine,
   emptyBuyLine,
   lineFactor,
   lineUnitErrors,
@@ -17,6 +18,7 @@ import {
   receiptLinesRequest,
   scannedNewLine,
   sellChanges,
+  storedOrderLineRequest,
   withNewProductUnits,
   withSku,
   withUnit,
@@ -151,6 +153,19 @@ describe("orderLinesRequest", () => {
       keys: [line.key],
       lines: [{ sku_id: "sku-1", unit_id: THUNG, qty: "2", unit_price: "120000", discount_amount: "0", color_id: "color-do", spec_text: "24 gói" }],
     });
+  });
+
+  it("reopens a draft's line with its unit, quantity, price, spec and color, and sends it back as stored", () => {
+    const stored = testOrderLine({ qty: "3", unit_price: "118000", color_id: "color-do", spec_text: "24 gói" });
+    const line = draftOrderBuyLine(stored, sku({ retail_price: toMoney(12000) }), "do");
+    expect(line).toMatchObject({ unitId: THUNG, qty: "3", price: "118000", sell: "12000", spec: "24 gói", color: "do" });
+    const built = orderLinesRequest([line], () => "color-do");
+    expect(built).toEqual({ ok: true, keys: [line.key], lines: [storedOrderLineRequest(stored)] });
+  });
+
+  it("compares a stored line without color, spec or discount as the dialog sends it", () => {
+    const stored = testOrderLine({ spec_text: "  " });
+    expect(orderLinesRequest([draftOrderBuyLine(stored, sku(), null)], noColor)).toEqual({ ok: true, keys: [expect.any(String)], lines: [storedOrderLineRequest(stored)] });
   });
 });
 

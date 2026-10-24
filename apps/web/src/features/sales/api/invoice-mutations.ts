@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "../../../shared/api/api-context";
-import { isApiError } from "../../../shared/api/api-error";
+import { isApiError, isStale } from "../../../shared/api/api-error";
 import { PATHS, exceptionConfirmationSchema } from "../../../shared/api/endpoints";
 import type { HttpClient } from "../../../shared/api/http";
 import { useBusinessDate } from "../../../shared/api/platform-queries";
@@ -126,8 +126,6 @@ async function confirmInvoice(
 /** The header fields an edit writes, as attempts compare them. */
 const headerJson = (h: { customer_party_id: string; payer_party_id: string; due_date?: string | null; note?: string | null }) =>
   requestJson({ customer_party_id: h.customer_party_id, payer_party_id: h.payer_party_id, due_date: h.due_date ?? null, note: h.note ?? "" });
-
-const isStale = (e: unknown) => isApiError(e) && e.status === 412;
 
 /** What one "Lưu" intent stored, so a retry writes only what is still missing. */
 interface InvoiceProgress {

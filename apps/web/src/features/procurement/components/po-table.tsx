@@ -1,5 +1,6 @@
+import { CircleCheck, PackageCheck, Pencil, Trash2 } from "lucide-react";
 import { fd, money, num } from "../../../shared/lib/format";
-import { Button, ButtonRow } from "../../../shared/ui/button";
+import { Button, ButtonRow, IconButton } from "../../../shared/ui/button";
 import { CellSub } from "../../../shared/ui/data-table/cell-sub";
 import { DataTable, type Column } from "../../../shared/ui/data-table/data-table";
 import { LinkButton } from "../../../shared/ui/link-button";
@@ -14,12 +15,21 @@ export interface PoTableProps {
   today: string;
   onOpen: (order: Order) => void;
   onConfirm: (order: Order) => void;
+  /** "Sửa" and "Xóa" on a draft. */
+  onEdit: (order: Order) => void;
+  onDelete: (order: Order) => void;
   onReceive: (order: Order) => void;
   confirming: boolean;
 }
 
-/** Prototype `mua-hang.po` table: one row per PO with its receiving progress and the next step. */
-export function PoTable({ rows, today, onOpen, onConfirm, onReceive, confirming }: PoTableProps) {
+const ICON = { size: 15, strokeWidth: 2, "aria-hidden": true } as const;
+
+/**
+ * Prototype `mua-hang.po` table: one row per PO with its receiving progress and the next step. The
+ * next step ("Chốt đơn" on a draft, "Nhận hàng" on an open order) is the one filled button of a row;
+ * a draft's "Sửa" and "Xóa" are quiet icon buttons before it, so the next steps line up at the right.
+ */
+export function PoTable({ rows, today, onOpen, onConfirm, onEdit, onDelete, onReceive, confirming }: PoTableProps) {
   const columns: Column<Order>[] = [
     {
       key: "doc",
@@ -70,14 +80,24 @@ export function PoTable({ rows, today, onOpen, onConfirm, onReceive, confirming 
       header: "",
       className: "acts",
       cell: (o) => (
-        <ButtonRow style={{ flexWrap: "nowrap", whiteSpace: "nowrap" }}>
+        <ButtonRow className="row-acts">
           {o.status === "draft" ? (
-            <Button size="sm" disabled={confirming} onClick={() => onConfirm(o)}>
-              Chốt đơn
-            </Button>
+            <>
+              <IconButton label={`Sửa ${o.doc_no}`} onClick={() => onEdit(o)}>
+                <Pencil {...ICON} />
+              </IconButton>
+              <IconButton label={`Xóa ${o.doc_no}`} tone="danger" onClick={() => onDelete(o)}>
+                <Trash2 {...ICON} />
+              </IconButton>
+              <Button variant="navy" size="sm" disabled={confirming} onClick={() => onConfirm(o)}>
+                <CircleCheck {...ICON} />
+                Chốt đơn
+              </Button>
+            </>
           ) : null}
           {isOpenOrder(o.status) ? (
             <Button variant="navy" size="sm" onClick={() => onReceive(o)}>
+              <PackageCheck {...ICON} />
               Nhận hàng
             </Button>
           ) : null}

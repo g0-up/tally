@@ -166,6 +166,14 @@ export function orderBuyLine(ol: OrderLine, sku: SkuListItem | null, color: Colo
   };
 }
 
+/**
+ * A line of a draft order reopened for editing, as it was ordered: its unit, quantity and price per
+ * unit. "Giá bán lẻ" starts at the SKU's current one, so only a price the owner types is written.
+ */
+export function draftOrderBuyLine(ol: OrderLine, sku: SkuListItem | null, color: ColorCode | null): BuyLine {
+  return { ...BLANK, key: nextKey(), sku, unitId: ol.unit_id, qty: ol.qty, price: ol.unit_price, sell: sku?.retail_price ?? null, spec: ol.spec_text ?? "", color };
+}
+
 /** Name the row is reported under. */
 export function lineName(line: BuyLine, fallback = ""): string {
   if (line.isNew) return line.name.trim() || "Hàng mới";
@@ -481,6 +489,20 @@ export function orderLinesRequest(lines: readonly BuyLine[], colorIdOf: ColorIdO
   }
   if (out.length === 0) return { ok: false, message: PROCUREMENT_MESSAGES.orderEmpty };
   return built(out, keys);
+}
+
+/** The request that stores a line of a draft order again as it is; what an edit compares its rows with. */
+export function storedOrderLineRequest(ol: OrderLine): OrderLineRequest {
+  const spec = ol.spec_text?.trim() ?? "";
+  return {
+    sku_id: ol.sku_id,
+    unit_id: ol.unit_id,
+    qty: ol.qty,
+    unit_price: ol.unit_price,
+    discount_amount: ol.discount_amount ?? toMoney(0),
+    ...(ol.color_id ? { color_id: ol.color_id } : {}),
+    ...(spec === "" ? {} : { spec_text: spec }),
+  };
 }
 
 /** Lot and expiry of a row: sent only when its SKU tracks them (the server refuses them otherwise). */

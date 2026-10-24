@@ -70,12 +70,15 @@ export interface ColorDirectory {
   codeOf: (colorId: string | null | undefined) => ColorKey;
   /** Fixed color code → API color id. */
   idOf: (color: ColorCode | null) => string | null;
+  /** The color list is still loading, so every id reads as "none". */
+  pending: boolean;
+  error: Error | null;
 }
 
 /** The fixed product colors keyed both ways (ids are per tenant, codes are fixed). */
 export function useColorDirectory(): ColorDirectory {
   const client = useApiClient();
-  const { data } = useQuery({
+  const { data, isPending, error } = useQuery({
     queryKey: catalogKeys.lookup("colors"),
     queryFn: ({ signal }) => client.get("/colors", { schema: listOf(colorSchema), signal }),
     staleTime: LOOKUP_STALE_MS,
@@ -91,8 +94,10 @@ export function useColorDirectory(): ColorDirectory {
     return {
       codeOf: (colorId) => (colorId ? (byId.get(colorId) ?? "none") : "none"),
       idOf: (color) => (color === null ? null : (byCode.get(color) ?? null)),
+      pending: isPending,
+      error,
     };
-  }, [data]);
+  }, [data, isPending, error]);
 }
 
 export function useAttributeSet(attributeSetId: string | null) {

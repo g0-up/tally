@@ -42,6 +42,9 @@ describe("Đơn nhập page", () => {
     expect(within(rowOf("PO-0001")).getByRole("button", { name: "Nhận hàng" })).toBeInTheDocument();
     expect(within(rowOf("PO-0002")).getByText("Nháp")).toBeInTheDocument();
     expect(within(rowOf("PO-0002")).queryByRole("button", { name: "Nhận hàng" })).not.toBeInTheDocument();
+    expect(within(rowOf("PO-0002")).getByRole("button", { name: "Sửa PO-0002" })).toBeInTheDocument();
+    expect(within(rowOf("PO-0002")).getByRole("button", { name: "Xóa PO-0002" })).toBeInTheDocument();
+    expect(within(rowOf("PO-0001")).queryByRole("button", { name: /^(Sửa|Xóa)/ })).not.toBeInTheDocument();
 
     await user.click(within(rowOf("PO-0002")).getByRole("button", { name: "Chốt đơn" }));
     expect(await screen.findByText(/: Đã chốt\./)).toBeInTheDocument();
@@ -70,6 +73,7 @@ describe("Đơn nhập page", () => {
     expect(within(drawer).getByRole("button", { name: "Nhận hàng" })).toBeInTheDocument();
     expect(within(drawer).getByRole("button", { name: "Ứng trước NCC" })).toBeInTheDocument();
     expect(within(drawer).getByRole("button", { name: "Đóng phần còn thiếu" })).toBeInTheDocument();
+    expect(within(drawer).queryByRole("button", { name: /^(Sửa|Xóa nháp|Chốt đơn)$/ })).not.toBeInTheDocument();
     expect(await within(drawer).findByText("Chưa đối chiếu")).toBeInTheDocument();
     expect(await within(drawer).findByText(/Tổng ứng trước 500\.000/)).toBeInTheDocument();
 
@@ -88,5 +92,52 @@ describe("Đơn nhập page", () => {
     await user.click(within(drawer).getByRole("button", { name: "Đóng" }));
     await waitFor(() => expect(router.state.location.search).toBe(""));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("opens a draft's Sửa from its row in the order dialog, prefilled", async () => {
+    server.use(
+      ordersAre([draft, onTime]),
+      http.get(apiUrl("/purchase-orders/po-2"), () => HttpResponse.json({ ...draft, lines: [testOrderLine()] })),
+      http.get(apiUrl("/colors"), () => HttpResponse.json({ data: [] })),
+      http.get(apiUrl("/skus"), () => HttpResponse.json({ data: [testSku()] })),
+    );
+    const user = userEvent.setup();
+    renderApp("/purchasing/orders");
+
+    await user.click(await screen.findByRole("button", { name: "Sửa PO-0002" }));
+    expect(await screen.findByRole("textbox", { name: "Số lượng – Bánh quy bơ" })).toHaveValue("2");
+    expect(screen.getByRole("dialog", { name: "Sửa đơn nhập PO-0002" })).toBeInTheDocument();
+  });
+
+  it("deletes a draft from its drawer after asking, closes the drawer and refreshes the list", async () => {
+    let rows = [draft, onTime];
+    let ifMatch: string | null = null;
+    server.use(
+      http.get(apiUrl("/purchase-orders"), () => HttpResponse.json({ data: rows, next_cursor: null })),
+      http.get(apiUrl("/purchase-orders/po-2"), () => HttpResponse.json({ ...draft, lines: [testOrderLine()] })),
+      http.get(apiUrl("/receipts"), () => HttpResponse.json({ data: [], next_cursor: null })),
+      http.get(apiUrl(`/debts/parties/${SUPPLIER_ID}`), () => HttpResponse.json({ advances: [] })),
+      http.get(apiUrl("/reasons"), () => HttpResponse.json({ data: [] })),
+      http.get(apiUrl("/colors"), () => HttpResponse.json({ data: [] })),
+      http.get(apiUrl("/skus"), () => HttpResponse.json({ data: [testSku()] })),
+      http.delete(apiUrl("/purchase-orders/po-2"), ({ request }) => {
+        ifMatch = request.headers.get("If-Match");
+        rows = [onTime];
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderApp("/purchasing/orders?doc=PO-0002");
+
+    const drawer = await screen.findByRole("dialog", { name: "Đơn nhập PO-0002" });
+    expect(within(drawer).getByRole("button", { name: "Sửa" })).toBeInTheDocument();
+    await user.click(within(drawer).getByRole("button", { name: "Xóa nháp" }));
+    const ask = await screen.findByRole("dialog", { name: "Xóa đơn nhập nháp PO-0002?" });
+    await user.click(within(ask).getByRole("button", { name: "Xóa nháp" }));
+
+    expect(await screen.findByText(/Đã xóa đơn nhập nháp/)).toBeInTheDocument();
+    expect(ifMatch).toBe(etagOf(3));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "PO-0002" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 });

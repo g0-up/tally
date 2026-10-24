@@ -10,7 +10,14 @@ Menu **Nhập hàng** gồm bốn màn hình: Đơn nhập, Danh sách hàng hó
 
 1. Bấm **Tạo đơn nhập**, chọn NCC (hoặc **+ NCC mới**), thêm dòng hàng và **Ngày dự kiến giao**. Hàng chưa có trong danh mục
    thì bấm **+ Hàng hóa mới**.
-2. Chọn **Lưu & chốt đơn**, hoặc **Lưu nháp** rồi **Chốt đơn** sau.
+2. Chọn **Lưu & chốt đơn**, hoặc **Lưu nháp** rồi **Chốt đơn** sau. Khi đơn còn nháp, **Sửa** (trên dòng đơn hoặc trong
+   chi tiết đơn) đổi được NCC, ngày dự kiến giao và các dòng hàng, rồi **Lưu nháp** hoặc **Lưu & chốt đơn**. **Xóa** bỏ
+   hẳn đơn nháp sau khi bạn xác nhận. Đơn đã chốt không sửa hay xóa được nữa, chỉ **Đóng phần còn thiếu**.
+
+   Trên danh sách đơn nhập, nút bước tiếp theo của mỗi đơn nằm ở mép phải dòng: **Chốt đơn** với đơn nháp, **Nhận hàng**
+   với đơn đã chốt hoặc mới nhận một phần. **Sửa** (hình bút chì) và **Xóa** (hình thùng rác) là hai biểu tượng ngay
+   trước **Chốt đơn**; rê chuột lên biểu tượng để thấy tên. Trên máy tính bảng, bảng rộng hơn màn hình thì kéo ngang để
+   xem các cột, cột nút luôn ở mép phải.
 3. **Nhận hàng** theo đơn. Đơn nhận được **nhiều đợt**.
 4. Nếu NCC không giao đủ, bấm **Đóng phần còn thiếu** → **Đóng đơn**. Phần đã nhận giữ nguyên, phần còn chờ không còn
    tính là "dự kiến về".

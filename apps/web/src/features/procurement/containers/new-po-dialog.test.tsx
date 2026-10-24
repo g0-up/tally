@@ -10,7 +10,8 @@ import { createFakeStreams } from "../../scanner/testing/fake-event-stream";
 import { memorySessionStore, pairedStream, withScanner } from "../../scanner/testing/scanner-harness";
 import { UNIT_MESSAGES } from "../../catalog";
 import { PROCUREMENT_MESSAGES } from "../api/adapters";
-import { SUPPLIER_ID, TEST_UNITS, UNIT_HOP, UNIT_THUNG, testSku } from "../testing/fixtures";
+import { etagOf } from "../../catalog";
+import { SUPPLIER_ID, TEST_UNITS, UNIT_HOP, UNIT_THUNG, testOrder, testOrderLine, testSku } from "../testing/fixtures";
 import { NewPoDialog } from "./new-po-dialog";
 
 const BARCODE_TAKEN = "Mã vạch đã được dùng cho hàng khác.";
@@ -150,5 +151,137 @@ describe("NewPoDialog", () => {
     release();
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(sent).toEqual([expect.objectContaining({ lines: [expect.objectContaining({ sku_id: "sku-1", unit_id: UNIT_HOP, qty: "1" })] })]);
+  });
+});
+
+describe("NewPoDialog on a draft", () => {
+  const listed = testOrder({ id: "po-2", doc_no: "PO-0002", status: "draft", version: 3 });
+
+  /** The draft with one line of 2 thùng, and its PUT …/lines; returns what was written. */
+  function serveDraft() {
+    const writes: Array<{ method: string; ifMatch: string | null; body: unknown }> = [];
+    const record = async (request: Request) => {
+      writes.push({ method: request.method, ifMatch: request.headers.get("If-Match"), body: await request.json() });
+      return HttpResponse.json({ ...listed, version: 4, lines: [testOrderLine()] });
+    };
+    server.use(
+      http.get(apiUrl("/units"), () => HttpResponse.json({ data: TEST_UNITS })),
+      http.get(apiUrl("/colors"), () => HttpResponse.json({ data: [] })),
+      http.get(apiUrl("/skus"), () => HttpResponse.json({ data: [testSku()] })),
+      http.get(apiUrl("/purchase-orders/po-2"), () => HttpResponse.json({ ...listed, lines: [testOrderLine({ spec_text: "24 gói" })] })),
+      http.patch(apiUrl("/purchase-orders/po-2"), ({ request }) => record(request)),
+      http.put(apiUrl("/purchase-orders/po-2/lines"), ({ request }) => record(request)),
+    );
+    return writes;
+  }
+
+  it("opens the draft with its supplier, expected date and lines, and writes only the lines changed", async () => {
+    const writes = serveDraft();
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(<NewPoDialog order={listed} onClose={onClose} />);
+
+    // The form replaces the loading dialog once the lines and their SKUs arrived.
+    const qty = await screen.findByRole("textbox", { name: "Số lượng – Bánh quy bơ" });
+    const dialog = screen.getByRole("dialog", { name: "Sửa đơn nhập PO-0002" });
+    expect(qty).toHaveValue("2");
+    expect(within(dialog).getByRole("combobox", { name: "Nhà cung cấp" })).toHaveValue("Công ty Bánh kẹo Hải Hà");
+    expect(within(dialog).getByRole("textbox", { name: "Quy cách – Bánh quy bơ" })).toHaveValue("24 gói");
+    expect(within(dialog).getByRole("button", { name: "Lưu & chốt đơn" })).toBeInTheDocument();
+
+    await user.clear(qty);
+    await user.type(qty, "5");
+    await user.click(within(dialog).getByRole("button", { name: "Lưu nháp" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(writes).toEqual([
+      { method: "PUT", ifMatch: etagOf(3), body: { lines: [{ sku_id: "sku-1", unit_id: UNIT_THUNG, qty: "5", unit_price: "120000", discount_amount: "0", spec_text: "24 gói" }] } },
+    ]);
+    expect(await screen.findByText(/Đã lưu nháp/)).toHaveTextContent("Đã lưu nháp PO-0002.");
+  });
+
+  it("waits for the color list, so a save with nothing changed keeps the line's color", async () => {
+    const writes = serveDraft();
+    let skusServed = false;
+    let colorsIn = () => {};
+    const colorsGate = new Promise<void>((resolve) => (colorsIn = resolve));
+    server.use(
+      http.get(apiUrl("/colors"), async () => {
+        await colorsGate;
+        return HttpResponse.json({ data: [{ id: "c-do", code: "do", name: "Đỏ", sort_order: 1, active: true }] });
+      }),
+      http.get(apiUrl("/skus"), () => {
+        skusServed = true;
+        return HttpResponse.json({ data: [testSku()] });
+      }),
+      http.get(apiUrl("/purchase-orders/po-2"), () => HttpResponse.json({ ...listed, lines: [testOrderLine({ color_id: "c-do" })] })),
+    );
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(<NewPoDialog order={listed} onClose={onClose} />);
+
+    await waitFor(() => expect(skusServed).toBe(true));
+    expect(screen.getByRole("dialog", { name: "Sửa đơn nhập PO-0002" })).toHaveTextContent("Đang tải…");
+    colorsIn();
+    await screen.findByRole("textbox", { name: "Số lượng – Bánh quy bơ" });
+    await user.click(within(screen.getByRole("dialog", { name: "Sửa đơn nhập PO-0002" })).getByRole("button", { name: "Lưu nháp" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(writes).toEqual([]);
+  });
+
+  it("does not open an order confirmed since it was listed", async () => {
+    serveDraft();
+    server.use(http.get(apiUrl("/purchase-orders/po-2"), () => HttpResponse.json({ ...listed, status: "confirmed", version: 4, lines: [testOrderLine()] })));
+    renderWithProviders(<NewPoDialog order={listed} onClose={vi.fn()} />);
+
+    expect(await screen.findByText(PROCUREMENT_MESSAGES.orderNotDraft)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Lưu nháp" })).not.toBeInTheDocument();
+  });
+
+  it("retries only the price after the edits and the confirm were stored", async () => {
+    const writes = serveDraft();
+    // What GET returns follows the writes, so the refresh after the partial save sees the confirmed order.
+    let stored = { ...listed, lines: [testOrderLine()] };
+    const confirms: Array<string | null> = [];
+    const prices: unknown[] = [];
+    server.use(
+      http.get(apiUrl("/purchase-orders/po-2"), () => HttpResponse.json(stored)),
+      http.put(apiUrl("/purchase-orders/po-2/lines"), async ({ request }) => {
+        writes.push({ method: "PUT", ifMatch: request.headers.get("If-Match"), body: await request.json() });
+        stored = { ...stored, version: 4, lines: [testOrderLine({ qty: "5" })] };
+        return HttpResponse.json(stored);
+      }),
+      http.post(/\/purchase-orders\/po-2:confirm$/, ({ request }) => {
+        confirms.push(request.headers.get("If-Match"));
+        stored = { ...stored, version: 5, status: "confirmed" };
+        return HttpResponse.json(stored);
+      }),
+      http.post(apiUrl("/skus/sku-1/sale-price"), async ({ request }) => {
+        prices.push(await request.json());
+        // The first price write fails after the order was confirmed.
+        return prices.length === 1 ? HttpResponse.json({ code: "internal_error" }, { status: 500 }) : HttpResponse.json({});
+      }),
+    );
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(<NewPoDialog order={listed} onClose={onClose} />);
+
+    const qty = await screen.findByRole("textbox", { name: "Số lượng – Bánh quy bơ" });
+    const dialog = screen.getByRole("dialog", { name: "Sửa đơn nhập PO-0002" });
+    await user.clear(qty);
+    await user.type(qty, "5");
+    const sell = within(dialog).getByRole("textbox", { name: "Giá bán lẻ – Bánh quy bơ" });
+    await user.clear(sell);
+    await user.type(sell, "18000");
+    await user.click(within(dialog).getByRole("button", { name: "Lưu & chốt đơn" }));
+    expect(await screen.findByText(/nhưng chưa cập nhật giá bán/)).toBeInTheDocument();
+
+    // The form keeps what was typed through the refresh, and the retry writes only the price.
+    expect(within(dialog).getByRole("textbox", { name: "Giá bán lẻ – Bánh quy bơ" })).toHaveValue("18.000");
+    await user.click(await within(dialog).findByRole("button", { name: "Lưu & chốt đơn" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(writes.map((w) => `${w.method}@${w.ifMatch}`)).toEqual([`PUT@${etagOf(3)}`]);
+    expect(confirms).toEqual([etagOf(4)]);
+    expect(prices).toHaveLength(2);
+    expect(prices[1]).toMatchObject({ kind: "retail", price: "18000" });
   });
 });

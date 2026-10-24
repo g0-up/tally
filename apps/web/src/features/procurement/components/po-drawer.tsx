@@ -22,10 +22,13 @@ export interface PoDrawerProps {
   onReceive: (order: Order) => void;
   onAdvance: (order: Order) => void;
   onCloseShort: (order: Order) => void;
+  /** "Sửa" and "Xóa nháp" on a draft. */
+  onEdit: (order: Order) => void;
+  onDelete: (order: Order) => void;
 }
 
 /** Prototype `openPO`: the order, its lines with what was received, its receipts and advances. */
-export function PoDrawer({ id, onClose, onReceive, onAdvance, onCloseShort }: PoDrawerProps) {
+export function PoDrawer({ id, onClose, onReceive, onAdvance, onCloseShort, onEdit, onDelete }: PoDrawerProps) {
   const order = useOrder(id);
   const o = order.data;
   const receipts = useOrderReceipts(id);
@@ -130,9 +133,17 @@ export function PoDrawer({ id, onClose, onReceive, onAdvance, onCloseShort }: Po
           </>
         ) : null}
         {o.status === "draft" ? (
-          <Button variant="primary" size="sm" pending={confirm.pending} onClick={() => void confirm.run({ id: o.id, docNo: o.doc_no, version: o.version })}>
-            Chốt đơn
-          </Button>
+          <>
+            <Button variant="primary" size="sm" pending={confirm.pending} onClick={() => void confirm.run({ id: o.id, docNo: o.doc_no, version: o.version })}>
+              Chốt đơn
+            </Button>
+            <Button variant="navy" size="sm" onClick={() => onEdit(o)}>
+              Sửa
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => onDelete(o)}>
+              Xóa nháp
+            </Button>
+          </>
         ) : null}
       </ButtonRow>
       <DataTable caption={`Dòng hàng ${o.doc_no}`} columns={lineColumns} rows={lines} rowKey={(l) => l.id} flat />
