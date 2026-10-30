@@ -36,8 +36,8 @@ for (const state of PARITY_STATES) {
   });
 }
 
-// The unit table's "×" buttons show no words, so each must name the unit it removes. The new-product
-// dialog always draws one removable row; a saved product's units may all be locked by documents.
+// The unit table's "Xóa" links say the same word on every row, so each must name the unit it removes.
+// The new-product dialog always draws one removable row; a saved product's units may all be locked by documents.
 const UNIT_TABLE = "Đơn vị tính & giá bán";
 
 for (const state of PARITY_STATES.filter((s) => s.id.startsWith("danh-muc.hang-hoa."))) {
@@ -46,7 +46,7 @@ for (const state of PARITY_STATES.filter((s) => s.id.startsWith("danh-muc.hang-h
     test.skip(reason !== undefined, reason);
 
     await openAppState(page, state);
-    const removes = page.getByRole("dialog").getByRole("group", { name: UNIT_TABLE }).getByRole("button").filter({ hasText: "×" });
+    const removes = page.getByRole("dialog").getByRole("group", { name: UNIT_TABLE }).getByRole("button").filter({ hasText: /^Xóa$/ });
     if (state.id === "danh-muc.hang-hoa.new-product-dialog") await expect(removes.first()).toBeVisible();
     for (const remove of await removes.all()) await expect(remove).toHaveAccessibleName(/^Xóa đơn vị \S/);
   });

@@ -21,6 +21,11 @@ export interface ParityState {
    */
   requires?: "E2E_SALES_DOC_ID" | "E2E_STATEMENT_ID" | "E2E_MULTI_UNIT_SKU_CODE";
   /**
+   * The state exists only on a demo store (sandbox), the one store with "Đặt lại mẫu". The seeded
+   * store `make seed` creates is a real one, so the state is skipped unless E2E_SANDBOX_STORE is set.
+   */
+  sandbox?: true;
+  /**
    * Prototype view, the JavaScript that opens the same dialog there (prototype actions are global),
    * and a selector of prototype-only controls the app leaves out on purpose, masked in its capture.
    */
@@ -52,6 +57,7 @@ export function stateURL(state: ParityState): string | null {
 /** Why a state cannot run in this environment, or undefined when it can. */
 export function skipReason(state: ParityState): string | undefined {
   if (state.requires && !process.env[state.requires]) return `${state.requires} is not set: the state needs the id of a seeded record`;
+  if (state.sandbox && !process.env.E2E_SANDBOX_STORE) return "E2E_SANDBOX_STORE is not set: the state needs a demo store";
   return undefined;
 }
 
@@ -113,6 +119,7 @@ const dialogStates: ParityState[] = [
     kind: "dialog",
     host: "tenant",
     path: HOME_PATH,
+    sandbox: true,
     prototype: { viewId: "tong-quan.dashboard", open: "A.reset()" },
     open: clickOpens("Đặt lại mẫu"),
   },
