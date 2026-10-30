@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -11,6 +12,7 @@ import (
 	"github.com/g0-up/tally/apps/api/internal/identity"
 	"github.com/g0-up/tally/apps/api/internal/org"
 	"github.com/g0-up/tally/apps/api/internal/platform/audit"
+	"github.com/g0-up/tally/apps/api/internal/platform/clock"
 	"github.com/g0-up/tally/apps/api/internal/platform/config"
 	"github.com/g0-up/tally/apps/api/internal/platform/db"
 	"github.com/g0-up/tally/apps/api/internal/platform/ids"
@@ -39,9 +41,10 @@ func newSeedDevCommand(lookup config.Lookup) *cobra.Command {
 			fmt.Sprintf("%d SKUs and at least %d stock moves (seed %d). Its owner is %s (default %s);\n",
 				devSeedOptions.Skus, devSeedOptions.Moves, devSeedOptions.Seed, devOwnerEmailEnv, devOwnerEmail) +
 			"with " + devOwnerPasswordEnv + " set the owner is activated with that password, otherwise they stay\n" +
-			"pending verification. When the store already exists nothing is changed, so running it again is\n" +
-			"safe; it fails when that store holds less than the sample data, since `tally tenant create` or a\n" +
-			"failed seed dev made it. Runs only with APP_ENV set to development or test (an unset APP_ENV is\n" +
+			"pending verification. The store is past onboarding: its opening balances are confirmed with\n" +
+			"yesterday as the cutoff, so the app opens on its screens. When the store already exists nothing\n" +
+			"is changed, so running it again is safe; it fails when that store holds less than the sample\n" +
+			"data, since `tally tenant create` or a failed seed dev made it. Runs only with APP_ENV set to development or test (an unset APP_ENV is\n" +
 			"refused; make seed sets development).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -88,11 +91,44 @@ func runSeedDev(ctx context.Context, w io.Writer, env accountEnv, policy *org.Sl
 	if _, err := fmt.Fprintf(w, "created tenant %s id=%s owner=%s %s\n", t.Slug, t.ID, email, state); err != nil {
 		return err
 	}
-	s, err := seedload.Run(ctx, seedDeps(env), devSeedOptions, t, nil)
+	deps := seedDeps(env)
+	s, err := seedload.Run(ctx, deps, devSeedOptions, t, nil)
 	if err != nil {
 		return fmt.Errorf("seed dev of tenant %s (created, partly filled): %w", t.Slug, err)
 	}
+	if err := finishDevOnboarding(ctx, deps.Org, env.stack.clock, t); err != nil {
+		return fmt.Errorf("seed dev of tenant %s (filled): %w", t.Slug, err)
+	}
 	return reportSeedTenant(ctx, w, env, t, s)
+}
+
+// finishDevOnboarding takes the filled store through its onboarding checklist as its owner, the
+// way the wizard does: the required steps are completed and the opening balances confirmed with
+// yesterday as the cutoff, so the period lock leaves today's postings open. The browser suites
+// sign in to this store and expect the app's screens, not the wizard the gate sends a new store to.
+func finishDevOnboarding(ctx context.Context, svc *org.Service, clk clock.Clock, t seedload.Tenant) error {
+	actor := audit.Actor{TenantID: t.ID, Type: audit.ActorOwner, ID: t.OwnerID, Source: audit.SourceCLI}
+	tenant, err := svc.Tenant(ctx, t.ID)
+	if err != nil {
+		return err
+	}
+	loc, err := time.LoadLocation(tenant.Timezone)
+	if err != nil {
+		return fmt.Errorf("timezone of the store: %w", err)
+	}
+	cutoff := clock.BusinessDate(clk.Now(), loc).AddDate(0, 0, -1).Format(time.DateOnly)
+	if _, err := svc.UpdateTenant(ctx, actor, tenant.Version, org.TenantPatch{OpeningCutoffDate: &cutoff}); err != nil {
+		return fmt.Errorf("set the opening cutoff: %w", err)
+	}
+	for _, step := range []string{org.StepStoreProfile, org.StepCatalogSetup, org.StepOpeningStock, org.StepOpeningDebt, org.StepOpeningCash} {
+		if _, err := svc.CompleteStep(ctx, actor, step); err != nil {
+			return fmt.Errorf("complete onboarding step %s: %w", step, err)
+		}
+	}
+	if _, _, err := svc.ConfirmOpeningBalances(ctx, actor); err != nil {
+		return fmt.Errorf("confirm the opening balances: %w", err)
+	}
+	return nil
 }
 
 // reportExistingDevStore leaves an existing development store as it is. It fails when the store
