@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # The patch release matches the go line of go.mod: GOTOOLCHAIN=local refuses an older one.
-FROM golang:1.26.9-alpine AS build
+FROM golang:1.26.10-alpine AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local
 COPY go.mod go.sum ./

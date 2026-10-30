@@ -1,6 +1,6 @@
 module github.com/g0-up/tally/apps/api
 
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/gin-gonic/gin v1.12.0
