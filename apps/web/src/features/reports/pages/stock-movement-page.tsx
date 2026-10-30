@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import { TextLink } from "../../../shared/ui/link-button";
 import { PageHeader } from "../../../shared/ui/page-header";
 import { StatusPill } from "../../../shared/ui/status-pill";
 import { stockCardHref } from "../../inventory";
@@ -13,7 +13,7 @@ import { useReportFilter } from "../use-report-filter";
 const COLUMNS = ["code", "name", "opening_qty", "in_qty", "out_qty", "closing_qty", "closing_value"] as const;
 
 /** A SKU code opens its stock card. */
-const codeLink: CellLink = (column, row, text) => (column.key === "code" && row.id ? <Link to={stockCardHref(row.id)}>{text}</Link> : undefined);
+const codeLink: CellLink = (column, row, text) => (column.key === "code" && row.id ? <TextLink to={stockCardHref(row.id)}>{text}</TextLink> : undefined);
 
 /** Nhập–xuất–tồn (/reports/stock-movement). */
 export default function StockMovementPage() {

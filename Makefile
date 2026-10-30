@@ -295,7 +295,7 @@ restore-drill: check-env
 GOVULNCHECK    = golang.org/x/vuln/cmd/govulncheck@v1.9.0
 # gosec through golangci-lint (the CI version), so the reviewed `//nolint:gosec` lines and the
 # exclusions of apps/api/.golangci.yml apply; plain gosec ignores both.
-GOLANGCI_LINT  = github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.7.2
+GOLANGCI_LINT  = github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
 TRIVY_IMAGE    = aquasec/trivy:0.76.0
 GITLEAKS_IMAGE = zricethezav/gitleaks:v8.30.1
 SCAN_IMAGES   ?= tally-api:$(VERSION) tally-web:$(VERSION) tally-walg:$(VERSION)

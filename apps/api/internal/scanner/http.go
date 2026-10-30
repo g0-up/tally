@@ -405,7 +405,7 @@ func (h *Handler) writable(c *gin.Context, tenantID uuid.UUID) bool {
 }
 
 func (h *Handler) setScanCookie(c *gin.Context, value string, maxAge int) {
-	http.SetCookie(c.Writer, &http.Cookie{
+	http.SetCookie(c.Writer, &http.Cookie{ //nolint:gosec // Secure is off only for plain-HTTP development
 		Name: h.cookies.Scan, Value: value, Path: "/", MaxAge: maxAge,
 		Secure: h.cookies.Secure, HttpOnly: true, SameSite: http.SameSiteStrictMode,
 	})

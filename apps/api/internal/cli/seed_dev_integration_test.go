@@ -67,6 +67,23 @@ func TestSeedDevCreatesTheDevelopmentStoreOnce(t *testing.T) {
 	if skus != devSeedOptions.Skus || moves < devSeedOptions.Moves {
 		t.Errorf("skus = %d, stock moves = %d; want %d and at least %d", skus, moves, devSeedOptions.Skus, devSeedOptions.Moves)
 	}
+	// Past onboarding: the only open step is the first POS sale, which never blocks the app.
+	var pending []string
+	if err := super.Select(&pending, `
+		SELECT step_key FROM tally.onboarding_steps
+		WHERE tenant_id = $1 AND completed_at IS NULL AND skipped_at IS NULL ORDER BY step_key`, id); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(pending, ",") != "first_sale" {
+		t.Errorf("pending onboarding steps = %v, want only first_sale", pending)
+	}
+	var cutoffBeforeToday bool
+	if err := super.Get(&cutoffBeforeToday, `SELECT opening_cutoff_date < current_date FROM tally.tenants WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if !cutoffBeforeToday {
+		t.Error("the opening cutoff is not before today")
+	}
 
 	again, err := run(t, env, "seed", "dev")
 	if err != nil {

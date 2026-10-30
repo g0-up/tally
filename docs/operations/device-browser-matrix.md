@@ -40,6 +40,8 @@ corepack pnpm e2e -- --project=firefox --project=webkit   # functional journeys 
 
 Two states need an id of a seeded document, and they are skipped with a reason when it is not set:
 `E2E_SALES_DOC_ID` for `/print/sales-documents/:id` and `E2E_STATEMENT_ID` for `/print/statements/:id`.
+The "Đặt lại mẫu" dialog exists only on a demo store, so its state runs only with `E2E_SANDBOX_STORE`
+set and `E2E_TENANT_URL` pointing at a demo store; the store of `make seed` is a real one.
 
 Parity additions (screens without a prototype) have committed baselines under `e2e/visual/`. A new
 addition or a visual change is reviewed by a person before `--update-snapshots` is run for it.

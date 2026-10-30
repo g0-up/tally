@@ -57,6 +57,11 @@ async function renderTable(props: Parameters<typeof Harness>[0]) {
 }
 
 describe("UnitPriceTable", () => {
+  it("names its table after the section title", async () => {
+    await renderTable({ initial: keo() });
+    expect(screen.getByRole("table", { name: "Đơn vị tính & giá bán" })).toBeInTheDocument();
+  });
+
   it("shows a blank unit price as base price × factor, and keeps it blank", async () => {
     const { user } = await renderTable({ initial: keo() });
     const retail = screen.getByRole("textbox", { name: "Giá bán lẻ / dây" });

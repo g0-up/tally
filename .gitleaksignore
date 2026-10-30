@@ -1,0 +1,2 @@
+# RFC 6238 test vector "12345678901234567890" in base32 (TOTP URI test), not a credential.
+436b6a863e9c4f5246add58e4c028c37bd24e75b:apps/api/internal/platform/authn/authn_test.go:generic-api-key:222

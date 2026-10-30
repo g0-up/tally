@@ -47,6 +47,8 @@ export async function mockSignedInStore(page: Page, options: MockApiOptions = {}
       csrf_token: "e2e-csrf-token",
       user: MOCK_OWNER,
       tenant: { id: MOCK_STORE.id, slug: MOCK_STORE.slug, display_name: MOCK_STORE.display_name, is_sandbox: sandbox },
+      // The prototype's seed business date (visual/prototype-harness.ts SEED_DATE); /me requires it.
+      server_time: "2026-10-12T09:00:00+07:00",
     },
     "GET /api/v1/tenant": { ...MOCK_STORE, is_sandbox: sandbox },
     "GET /api/v1/subscription": { status: "active", plan: "pro" },

@@ -604,8 +604,14 @@ input[type="checkbox"]:focus-visible { outline-offset: calc((var(--cb-mark) - va
 /* Narrow screens and touch pointers: 44px targets, whatever the container. */
 @media (max-width: 860px), (pointer: coarse) {
   .tgl-hit { min-width: 44px; min-height: 44px; margin: -10px; }
-  .btn, .btn-sm, a.lnk, button.lnk, .auth-links a, .cp, .chip, .x, .dp-btn, .bell, .nav-sub a, .tabs a, .toast .toast-x, .nav-tg, .btn-ic { min-height: 44px; }
-  a.lnk, button.lnk, .toast .toast-x, .x, .dp-btn, .cp, .chip, .btn-ic { min-width: 44px; }
+  /* The toggle button itself fills the 44px hit area; its 24px box is drawn behind the arrow. */
+  .tgl-hit .tgl { position: relative; isolation: isolate; width: 44px; height: 44px; line-height: 44px; border-color: transparent; background: none; }
+  .tgl-hit .tgl::before { content: ""; position: absolute; inset: 10px; z-index: -1; border: 1px solid var(--input-line); border-radius: var(--radius-xs); background: var(--surface-0); }
+  .tgl-hit .tgl[aria-expanded="true"] { background: none; border-color: transparent; }
+  .tgl-hit .tgl[aria-expanded="true"]::before { background: var(--navy-700); border-color: var(--navy-700); }
+  .btn, .btn-sm, a.lnk, button.lnk, .auth-links a, .cp, .chip, .x, .dp-btn, .bell, .nav-sub a, .tabs a, .toast .toast-x, .nav-tg, .btn-ic, .ut-t td.acts .lnk { min-height: 44px; }
+  a.lnk, button.lnk, .btn-sm, .toast .toast-x, .x, .dp-btn, .cp, .chip, .btn-ic { min-width: 44px; }
+  .btn-sm { justify-content: center; }
   .cp, .chip { justify-content: center; }
   .dp .dp-in { padding-right: 52px; }
   .btn-sm, button.lnk, .cp, .chip, .bell, .tabs a { display: inline-flex; align-items: center; }
