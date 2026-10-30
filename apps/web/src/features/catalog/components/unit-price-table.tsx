@@ -329,7 +329,7 @@ export function UnitPriceTable({ value, onChange, errors, baseUnitName, purchase
         <span className="hint">Tồn kho lưu theo đơn vị cơ sở ({base}). Nhập theo đơn vị nào, chứng từ ghi đúng đơn vị đó và tự quy đổi. Bỏ trống giá để tự tính theo hệ số.</span>
       </div>
       <div className="tw flat">
-        <table className="t ut-t">
+        <table className="t ut-t" aria-labelledby={fieldId("title")}>
           <thead>
             <tr>
               <th>Đơn vị</th>
