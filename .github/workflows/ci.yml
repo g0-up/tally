@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
   # Nightly: the jobs above plus the browser suites against a seeded stack (e2e-nightly).
   schedule:
@@ -97,6 +97,9 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     env:
+      # A throwaway database: `tally migrate` changes the schema without --backup-file only for
+      # APP_ENV development or test.
+      APP_ENV: test
       DATABASE_URL: postgres://tally_app:tally_app_ci@localhost:5432/tally?sslmode=disable
       MIGRATE_DATABASE_URL: postgres://tally_owner:tally_owner_ci@localhost:5432/tally?sslmode=disable
     steps:
