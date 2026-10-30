@@ -119,7 +119,8 @@ func CSRF(tokens *CSRFTokens, cookieName string) gin.HandlerFunc {
 // cookie is host-only and readable by the page script, which echoes it in X-CSRF-Token.
 func SetCSRFCookie(c *gin.Context, tokens *CSRFTokens, cookies Cookies, name, binding string) string {
 	token := tokens.Issue(binding)
-	http.SetCookie(c.Writer, &http.Cookie{
+	// Script-readable by design (double-submit); Secure is off only for plain-HTTP development.
+	http.SetCookie(c.Writer, &http.Cookie{ //nolint:gosec // see above
 		Name: name, Value: token, Path: "/",
 		Secure: cookies.Secure, HttpOnly: false, SameSite: http.SameSiteLaxMode,
 	})
@@ -129,7 +130,7 @@ func SetCSRFCookie(c *gin.Context, tokens *CSRFTokens, cookies Cookies, name, bi
 // SetSessionCookie stores an opaque session token in a host-only HttpOnly cookie. maxAge 0 makes
 // it a browser-session cookie; the server-side expiry is authoritative either way.
 func SetSessionCookie(c *gin.Context, cookies Cookies, name, token string, maxAge int) {
-	http.SetCookie(c.Writer, &http.Cookie{
+	http.SetCookie(c.Writer, &http.Cookie{ //nolint:gosec // Secure is off only for plain-HTTP development
 		Name: name, Value: token, Path: "/", MaxAge: maxAge,
 		Secure: cookies.Secure, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
@@ -137,7 +138,7 @@ func SetSessionCookie(c *gin.Context, cookies Cookies, name, token string, maxAg
 
 // ClearCookie deletes a host-only cookie.
 func ClearCookie(c *gin.Context, cookies Cookies, name string, httpOnly bool) {
-	http.SetCookie(c.Writer, &http.Cookie{
+	http.SetCookie(c.Writer, &http.Cookie{ //nolint:gosec // an expired cookie carries no value
 		Name: name, Value: "", Path: "/", MaxAge: -1,
 		Secure: cookies.Secure, HttpOnly: httpOnly, SameSite: http.SameSiteLaxMode,
 	})

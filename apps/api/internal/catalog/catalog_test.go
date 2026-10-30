@@ -538,7 +538,7 @@ func TestPlanUnitsChecksEachRowAndPicksTheBiggestPurchaseUnit(t *testing.T) {
 	if plan, _ := planUnits(f, "", piece, &piece, nil, units); plan.purchase != uuid.Nil || len(f) > 0 {
 		t.Errorf("base purchase unit = %v (fields %v), want none", plan.purchase, f)
 	}
-	if planUnits(f, "", piece, &box, nil, units); f["purchase_unit_id"] != "not_a_unit" {
+	if _, _ = planUnits(f, "", piece, &box, nil, units); f["purchase_unit_id"] != "not_a_unit" {
 		t.Errorf("fields = %v, want purchase_unit_id not_a_unit", f)
 	}
 

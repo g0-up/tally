@@ -125,7 +125,7 @@ func phone(g *RNG) string {
 	var b strings.Builder
 	b.WriteString(pick(g, prefixes))
 	for range 7 {
-		b.WriteByte(byte('0' + g.Intn(10)))
+		b.WriteByte("0123456789"[g.Intn(10)])
 	}
 	return b.String()
 }
