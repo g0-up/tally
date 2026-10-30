@@ -984,9 +984,11 @@ func TestSandboxResetSerialisesWithAccountChanges(t *testing.T) {
 		sandbox, userID := sandboxWithOwner(t, h)
 		// A writer that locks the account row before the tenant row: the reset holds the tenant row
 		// and waits for the account, then the writer waits for the tenant. PostgreSQL breaks the cycle
-		// in the backend that waited first, the reset.
+		// in the backend whose deadlock_timeout expires first; the writer's long timeout makes that the
+		// reset even when a loaded machine delays the writer's wait.
 		tx := super.MustBegin()
 		defer func() { _ = tx.Rollback() }()
+		tx.MustExec(`SET LOCAL deadlock_timeout = '30s'`)
 		tx.MustExec(`SELECT 1 FROM tally.users WHERE id = $1 FOR NO KEY UPDATE`, userID)
 		done := resetAsync(h, sandbox)
 		awaitLockWait(t, "UPDATE users SET tenant_id")
@@ -1013,6 +1015,7 @@ func TestSandboxResetSerialisesWithAccountChanges(t *testing.T) {
 		sandbox, userID := sandboxWithOwner(t, h)
 		tx := super.MustBegin()
 		defer func() { _ = tx.Rollback() }()
+		tx.MustExec(`SET LOCAL deadlock_timeout = '30s'`) // the reset is the victim, as above
 		tx.MustExec(`SELECT 1 FROM tally.users WHERE id = $1 FOR NO KEY UPDATE`, userID)
 		done := resetAsync(h, sandbox)
 		// Each round closes the cycle again, then lets the tenant row go (a row lock taken after a
