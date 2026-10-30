@@ -234,7 +234,8 @@ jobs:
       # refuse a superuser or a role that bypasses row level security).
       DATABASE_URL: postgres://tally_app:tally_app_dev@localhost:5442/tally?sslmode=disable
       MIGRATE_DATABASE_URL: postgres://tally_owner:tally_owner_dev@localhost:5442/tally?sslmode=disable
-      # The store `make seed` creates; its owner's password is a repository secret.
+      # The store `make seed` creates; its owner's password is the repository secret, or a per-run one
+      # (step "Owner password") when the secret is not set.
       E2E_OWNER_PASSWORD: ${{ secrets.E2E_OWNER_PASSWORD }}
       E2E_SALES_DOC_ID: ${{ vars.E2E_SALES_DOC_ID }}
       E2E_STATEMENT_ID: ${{ vars.E2E_STATEMENT_ID }}
@@ -253,6 +254,14 @@ jobs:
             echo "::warning::apps/web/e2e/${{ matrix.suite }} does not exist yet; the ${{ matrix.suite }} suite is skipped"
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
+      # Without a password `make seed` leaves the owner pending and every signed-in spec is skipped
+      # or fails on the missing saved session. The database is throwaway, so a per-run password works.
+      - name: Owner password
+        if: steps.suite.outputs.present == 'true' && env.E2E_OWNER_PASSWORD == ''
+        run: |
+          password="$(openssl rand -base64 24)"
+          echo "::add-mask::${password}"
+          echo "E2E_OWNER_PASSWORD=${password}" >> "$GITHUB_ENV"
       - uses: actions/setup-go@v6
         if: steps.suite.outputs.present == 'true'
         with:
